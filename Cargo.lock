@@ -3379,7 +3379,7 @@ dependencies = [
 
 [[package]]
 name = "patch"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "anyhow",
  "dhat",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "patch-ai"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-analysis",
  "patch-core",
@@ -3418,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "patch-analysis"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "libc",
  "patch-meter",
@@ -3429,7 +3429,7 @@ dependencies = [
 
 [[package]]
 name = "patch-bench"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-ai",
  "patch-analysis",
@@ -3444,7 +3444,7 @@ dependencies = [
 
 [[package]]
 name = "patch-broadcast"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-core",
  "patch-meter",
@@ -3453,14 +3453,14 @@ dependencies = [
 
 [[package]]
 name = "patch-build"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "slint-build",
 ]
 
 [[package]]
 name = "patch-controller"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "libc",
  "patch-core",
@@ -3470,7 +3470,7 @@ dependencies = [
 
 [[package]]
 name = "patch-core"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -3479,7 +3479,7 @@ dependencies = [
 
 [[package]]
 name = "patch-dsp"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "libc",
  "patch-core",
@@ -3489,7 +3489,7 @@ dependencies = [
 
 [[package]]
 name = "patch-engine"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "cc",
  "libc",
@@ -3512,7 +3512,7 @@ dependencies = [
 
 [[package]]
 name = "patch-host"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "anyhow",
  "image",
@@ -3525,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "patch-library"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "rusqlite",
  "serde",
@@ -3536,7 +3536,7 @@ dependencies = [
 
 [[package]]
 name = "patch-material"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-analysis",
  "patch-core",
@@ -3546,25 +3546,25 @@ dependencies = [
 
 [[package]]
 name = "patch-meter"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-dsp",
 ]
 
 [[package]]
 name = "patch-mock"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-model",
 ]
 
 [[package]]
 name = "patch-model"
-version = "0.8.6"
+version = "0.8.7"
 
 [[package]]
 name = "patch-network"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "libc",
  "patch-core",
@@ -3574,7 +3574,7 @@ dependencies = [
 
 [[package]]
 name = "patch-pattern"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-core",
  "serde",
@@ -3583,7 +3583,7 @@ dependencies = [
 
 [[package]]
 name = "patch-pipewire"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "libc",
  "patch-core",
@@ -3597,7 +3597,7 @@ dependencies = [
 
 [[package]]
 name = "patch-plugin"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3613,7 +3613,7 @@ dependencies = [
 
 [[package]]
 name = "patch-record"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "patch-core",
  "patch-dsp",
@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "patch-remote"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "anyhow",
  "libc",
@@ -3634,7 +3634,7 @@ dependencies = [
 
 [[package]]
 name = "patch-stems"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "libc",
  "patch-core",
@@ -3645,7 +3645,7 @@ dependencies = [
 
 [[package]]
 name = "patch-surfaces"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "glow",
  "libc",
@@ -3676,7 +3676,7 @@ dependencies = [
 
 [[package]]
 name = "patch-tune"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "serde",
  "toml 0.9.12+spec-1.1.0",
@@ -3684,7 +3684,7 @@ dependencies = [
 
 [[package]]
 name = "patch-ui"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "serde",
  "slint",
@@ -3693,7 +3693,7 @@ dependencies = [
 
 [[package]]
 name = "patch-visual"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "ab_glyph",
  "libc",

@@ -9,7 +9,8 @@ import struct
 import tarfile
 
 RUNTIME_FILES = {
-    'VERSION', 'LICENSE', 'NOTICE.md', 'README.txt', 'install.sh', 'uninstall.sh',
+    'VERSION', 'LICENSE', 'NOTICE.md', 'README.txt', 'install.sh', 'install-key.sh', 'uninstall.sh',
+    'crates/patch-core/modules.json',
     'THIRD_PARTY_LICENSES.html', 'THIRD_PARTY_LICENSES-CUSTOM.txt',
     'bin/omarchy-patch', 'bin/patch-remote',
     'packaging/70-omarchy-patch-controllers.rules',
@@ -91,9 +92,12 @@ def verify(path, version, arch):
         raise ValueError('missing required runtime files: ' + ', '.join(sorted(missing)))
     if not any(p.startswith('integration/desktop/') and p.endswith('.desktop') for p in files):
         raise ValueError('desktop launchers missing')
-    for theme in ('patch-light', 'patch-dark'):
-        if not any(p.startswith(f'themes/{theme}/') and not p.endswith('/') for p in files):
-            raise ValueError(f'theme missing: {theme}')
+    # A release kit (KIT_THEMES=0) has no themes: they download as a module.
+    # A test kit has both or neither.
+    themed = [t for t in ('patch-light', 'patch-dark')
+              if any(p.startswith(f'themes/{t}/') for p in files)]
+    if len(themed) == 1:
+        raise ValueError('only one theme in the kit: ' + themed[0])
     return {'archive': Path(path).name, 'sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest(),
             'version': version, 'architecture': arch, 'runtime_entries': len(files)}
 
