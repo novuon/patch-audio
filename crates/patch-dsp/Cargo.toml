@@ -1,0 +1,16 @@
+[package]
+name = "patch-dsp"
+description = "Patch DSP tiers: runtime CPU dispatch for every assembly kernel, with an override"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+patch-core.workspace = true
+serde.workspace = true
+serde_json = "1"
+libc = "0.2"
+
+[lints]
+workspace = true

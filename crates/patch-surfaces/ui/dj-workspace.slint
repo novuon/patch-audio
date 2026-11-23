@@ -1,0 +1,1186 @@
+import { Theme, Label, Peek, PathPeek, Button, Scroll, SearchField, SectionHeading, ListRow, Host } from "@patch-ui/patch-ui.slint";
+import { DjState, BoothKnob, KnobInline } from "dj.slint";
+import { AiDjState, AiPanel, FixedNote, FieldView } from "aidj.slint";
+import { RecState, RecorderSurface } from "recorder.slint";
+
+export struct WorkspaceItem { id: string, title: string, detail: string, selected: bool }
+export global DjWorkspaceState {
+    in-out property <string> tab: "play";
+    in property <bool> busy;
+    in property <bool> live;
+    in property <bool> paused;
+    in property <bool> fast-mode;
+    in property <bool> fast-mode-pending;
+    in property <string> message;
+    in property <string> session-name: "No active set";
+    // How loud the decks play: "loud", "balanced" or "streaming" ("" until
+    // the engine has answered).
+    in property <string> levels;
+    // The AI DJ's transition style (see patch_core::mix_style): the preset
+    // ("plain", "balanced", "adventurous"; "" until the engine has
+    // answered), its switches (id, label, one-line explanation, on), what
+    // the next transition will use, how many tracks of the set have stems
+    // and how much of each track plays.
+    in property <string> mix-style;
+    in property <string> style-about;
+    in property <string> style-status;
+    in property <[WorkspaceItem]> style-switches;
+    in property <string> stems-title;
+    in property <string> stems-hint;
+    in property <string> stems-batch-status;
+    in property <int> play-percent: 100;
+    in property <string> play-status;
+    // Stem preparation (see patch_core::mix_style::StemPrep): the level
+    // chosen ("auto", "off", "when_needed", "ahead", "everything"; "" until
+    // the engine has answered) and what it means here; a set prep among
+    // the set's sources and its own "prepare all stems" ("" none, "on",
+    // "off").
+    in property <string> stem-prep;
+    in property <string> stem-prep-note;
+    in property <string> set-prep-stems;
+    // Where the AI DJ takes the set's tempo (see patch_core::tempo_plan):
+    // "follow", "hold", "faster", "slower", "original" ("" until the engine
+    // has answered); Hold's BPM; what it does and what plays now.
+    in property <string> tempo-mode;
+    in property <string> tempo-bpm: "124";
+    in property <string> tempo-status;
+    // The Play tab's folded sections.
+    in-out property <bool> show-options: false;
+    in-out property <bool> show-deck-tools: false;
+    in-out property <bool> show-history: false;
+    in-out property <bool> show-dj-settings: false;
+    in-out property <bool> show-collections: false;
+    in property <bool> source-change-needed;
+    in property <string> source-change-label: "Change Auto Mix to this collection";
+    in property <string> collection-display: "New set: all library tracks";
+    in property <[WorkspaceItem]> collections;
+    // The timing steppers use short labels (set from the Booth's width).
+    in-out property <bool> steps-tight;
+    // How many of them are selected (0: the whole library).
+    in property <int> selected-collections;
+    in property <[WorkspaceItem]> saved-sets;
+    in property <[WorkspaceItem]> draft-tracks;
+    in property <[WorkspaceItem]> sessions;
+    in property <[WorkspaceItem]> reports;
+    in property <[WorkspaceItem]> jobs;
+    in property <[WorkspaceItem]> transitions;
+    in property <[WorkspaceItem]> auditions;
+    in property <[WorkspaceItem]> linked-takes;
+    in property <[WorkspaceItem]> live-queue;
+    in property <bool> undo-ready;
+    in property <string> details;
+    in property <string> selected-transition;
+    in property <string> selected-id;
+    in property <string> selected-job;
+    in property <bool> candidate-ready;
+    in property <string> replay-path;
+    in-out property <string> name: "Untitled set";
+    in-out property <string> notes;
+    in-out property <string> minutes;
+    in-out property <string> bpm-low;
+    in-out property <string> bpm-high;
+    in-out property <string> arc: "journey";
+    in-out property <string> mode: "suggest";
+    in-out property <bool> dirty;
+    in-out property <bool> show-trash;
+    in-out property <string> filter;
+    in-out property <string> track-path;
+    in-out property <string> report-notes;
+    callback action(string, string);
+}
+
+component Disclosure inherits Rectangle {
+    in property <string> text;
+    in property <string> detail;
+    in-out property <bool> open;
+    height: Theme.row-h + 4px;
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: (root.open ? "▾  " : "▸  ") + root.text; tone: ta.has-hover ? "bright" : "normal"; font-weight: 700; vertical-alignment: center; horizontal-stretch: 0; }
+        Label { text: root.detail; tone: "faint"; small: true; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: 0px; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.open = !root.open; } }
+}
+
+// The music the AI DJ picks from: a sheet over the Booth with one list
+// (the user, 2026-11-16: a scrolling list inside the scrolling column, its
+// edges invisible, was "just not user friendly"). Change… opens it; Done,
+// Esc or a click beside it closes it.
+component CollectionSheet inherits Rectangle {
+    background: #00000088;
+    TouchArea { clicked => { DjWorkspaceState.show-collections = false; } }
+    panel := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: Theme.s5;
+        width: Math.min(parent.width - 2 * Theme.s4, 640px);
+        height: parent.height - 2 * Theme.s5;
+        background: Theme.patch-style ? Theme.panel : Theme.raised;
+        border-radius: Theme.r-panel;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        TouchArea { }
+        VerticalLayout {
+            padding: Theme.s4;
+            spacing: Theme.s3;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: Theme.s1;
+                    Label { text: "Music for Auto Mix"; tone: "bright"; font-weight: 700; }
+                    Label { text: "Pick one or more collections, or your whole library."; tone: "dim"; small: true; wrap: word-wrap; }
+                }
+                VerticalLayout { alignment: start; Button { text: "Done"; key: "esc"; compact: true; clicked => { DjWorkspaceState.show-collections = false; } } }
+            }
+            Rectangle { height: 1px; background: Theme.border; }
+            Scroll {
+                vertical-stretch: 1;
+                min-height: 0px;
+                VerticalLayout {
+                    spacing: 0px;
+                    padding-right: Theme.s3;
+                    ListRow {
+                        pad: Theme.s2;
+                        selected: DjWorkspaceState.collections.length == 0 || !root.any;
+                        clicked => { DjWorkspaceState.action("all_collections", ""); }
+                        Label { text: (!root.any ? "✓  " : "    ") + "All library tracks"; tone: !root.any ? "bright" : "normal"; horizontal-stretch: 1; overflow: elide; }
+                    }
+                    for c in DjWorkspaceState.collections: ListRow {
+                        pad: Theme.s2;
+                        selected: c.selected;
+                        clicked => { DjWorkspaceState.action("collection", c.id); }
+                        Label { text: (c.selected ? "✓  " : "    ") + c.title; tone: c.selected ? "bright" : "normal"; horizontal-stretch: 1; overflow: elide; min-width: 0px; }
+                        Label { text: c.detail; tone: "faint"; small: true; horizontal-stretch: 0; vertical-alignment: center; }
+                    }
+                    if DjWorkspaceState.collections.length == 0: Label { text: "Create a collection in Library to add it here."; tone: "faint"; small: true; wrap: word-wrap; }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.border; }
+            Label { text: DjWorkspaceState.collection-display; tone: "dim"; small: true; wrap: word-wrap; }
+            HorizontalLayout {
+                spacing: Theme.s2;
+                alignment: end;
+                if DjState.set-on && !DjWorkspaceState.source-change-needed: Label { text: "Auto Mix already plays from this."; tone: "faint"; small: true; vertical-alignment: center; horizontal-stretch: 1; }
+                if DjState.set-on && DjWorkspaceState.source-change-needed: Label { text: "The track and queue keep playing; next picks use it."; tone: "faint"; small: true; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                if !DjState.set-on: Button { text: "Start a set from this"; primary: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.show-collections = false; DjWorkspaceState.action("start", ""); } }
+                if DjState.set-on && DjWorkspaceState.source-change-needed: Button { text: DjWorkspaceState.source-change-label; primary: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.show-collections = false; DjWorkspaceState.action("sources", ""); } }
+            }
+        }
+    }
+    property <bool> any: DjWorkspaceState.collections.length > 0 && root.selected-count > 0;
+    in property <int> selected-count;
+}
+
+// A label that names a group of buttons on the same line.
+component GroupLabel inherits Label {
+    tone: "faint";
+    small: true;
+    caps: true;
+    vertical-alignment: center;
+    min-height: Theme.row-h - 4px;
+}
+
+// A thin upright rule between groups of buttons.
+component GroupRule inherits Rectangle {
+    width: Theme.s3 + 1px;
+    min-height: Theme.row-h - 4px;
+    Rectangle { x: Theme.s3 / 2; width: 1px; height: parent.height - 6px; background: Theme.border-strong; }
+}
+
+// Tabs drawn from the workspace's own state, so a tab chosen anywhere
+// (keys, Rust) shows here.
+component WsTab inherits Rectangle {
+    in property <string> text;
+    in property <bool> current;
+    callback clicked();
+    width: t.preferred-width + Theme.s5 * 2;
+    height: Theme.row-h + 4px;
+    background: ta.has-hover && !root.current ? Theme.hover : transparent;
+    t := Text {
+        text: root.text;
+        color: root.current ? Theme.text-bright : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs;
+        font-weight: root.current ? 700 : 400;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    Rectangle { y: parent.height - 2px; height: 2px; background: root.current ? Theme.accent : transparent; }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// Browse what played before, and report it.
+component PreviousButtons inherits HorizontalLayout {
+    in-out property <bool> reporting;
+    spacing: Theme.s2;
+    Button { text: "‹"; compact: true; enabled: DjWorkspaceState.transitions.length > 0; clicked => { DjWorkspaceState.action("transition_older", ""); } }
+    Button { text: "›"; compact: true; enabled: DjWorkspaceState.transitions.length > 0; clicked => { DjWorkspaceState.action("transition_newer", ""); } }
+    Button { text: root.reporting ? "Close" : "Report"; compact: true; primary: root.reporting; enabled: AiDjState.previous != "" && DjWorkspaceState.live; clicked => { if !root.reporting { DjWorkspaceState.action("capture_previous", ""); } root.reporting = !root.reporting; } }
+}
+
+// Wrapping text that reserves the lines it needs. Slint measures a
+// wrapped Text one line high when a parent layout asks from outside, so a
+// two-line message spilled over whatever came next. The font is
+// monospaced: the line count follows from the length and the width.
+component WrapNote inherits VerticalLayout {
+    in property <string> text;
+    in property <string> tone: "dim";
+    probe := Text { text: "MMMMMMMMMM"; font-family: Theme.font; font-size: Theme.fs-small; overflow: elide; visible: false; height: 0px; }
+    property <length> advance: probe.preferred-width / 10;
+    property <int> lines: max(1, Math.ceil(root.text.character-count * root.advance / max(1px, root.width - root.advance * 4)));
+    Label { text: root.text; tone: root.tone; small: true; wrap: word-wrap; vertical-alignment: top; min-height: root.lines * probe.preferred-height; }
+}
+
+// One timing choice. Full height, not compact: these are the Booth's most
+// used controls (the user, 2026-11-16: "not clearly visible and usable").
+component ShiftButton inherits Button {
+    in property <string> direction;
+    in property <bool> can-adjust;
+    horizontal-stretch: 1;
+    min-width: 0px;
+    enabled: root.can-adjust;
+    clicked => { DjState.plan-shift(root.direction); }
+}
+
+// The next transition's timing and length as two steppers: the furthest
+// and one-step moves either side of what is planned now.
+//   WHEN    « Soonest  ‹ Sooner   in 24 bars   Later ›  Latest »
+//   LENGTH  « Shortest − Shorter   16 bars     Longer +  Longest »
+component TimingSteppers inherits VerticalLayout {
+    property <bool> can-adjust: DjState.plan-adjustable && !DjState.plan-adjusting && !DjWorkspaceState.busy;
+    // From the Booth's width (its own width would be a binding loop).
+    property <bool> tight: DjWorkspaceState.steps-tight;
+    property <length> label-w: root.tight ? 56px : 72px;
+    property <length> value-w: root.tight ? 96px : 128px;
+    spacing: Theme.s2;
+    HorizontalLayout {
+        spacing: Theme.s2;
+        GroupLabel { text: "WHEN"; width: root.label-w; horizontal-stretch: 0; vertical-alignment: center; }
+        ShiftButton { text: root.tight ? "«" : "« Soonest"; direction: "soonest"; can-adjust: root.can-adjust; }
+        ShiftButton { text: root.tight ? "‹" : "‹ Sooner"; direction: "sooner"; can-adjust: root.can-adjust; }
+        Label { width: root.value-w; text: AiDjState.plan-when != "" ? AiDjState.plan-when : "—"; tone: AiDjState.plan-when != "" ? "bright" : "faint"; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+        ShiftButton { text: root.tight ? "›" : "Later ›"; direction: "later"; can-adjust: root.can-adjust; }
+        ShiftButton { text: root.tight ? "»" : "Latest »"; direction: "latest"; can-adjust: root.can-adjust; }
+    }
+    HorizontalLayout {
+        spacing: Theme.s2;
+        GroupLabel { text: "LENGTH"; width: root.label-w; horizontal-stretch: 0; vertical-alignment: center; }
+        ShiftButton { text: root.tight ? "«" : "« Shortest"; direction: "shortest"; can-adjust: root.can-adjust; }
+        ShiftButton { text: root.tight ? "−" : "− Shorter"; direction: "shorter"; can-adjust: root.can-adjust; }
+        Label { width: root.value-w; text: AiDjState.plan-bars != "" ? AiDjState.plan-bars : "—"; tone: AiDjState.plan-bars != "" ? "bright" : "faint"; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+        ShiftButton { text: root.tight ? "+" : "Longer +"; direction: "longer"; can-adjust: root.can-adjust; }
+        ShiftButton { text: root.tight ? "»" : "Longest »"; direction: "longest"; can-adjust: root.can-adjust; }
+    }
+    // What the last request did, or why the steppers wait.
+    HorizontalLayout {
+        padding-left: root.label-w + Theme.s2;
+        FixedNote {
+            lines: 1;
+            text: DjState.plan-adjusting ? "Reviewing… " + DjState.plan-feedback
+                : DjState.plan-adjustable ? (DjState.plan-feedback != "" ? DjState.plan-feedback : "Move the next transition earlier or later, longer or shorter.")
+                : AiDjState.plan-when != "" ? "This transition is under way: the next one can be changed once it is planned."
+                : "The steppers work as soon as the next transition is planned.";
+            tone: DjState.plan-adjusting ? "accent" : DjState.plan-adjustable ? "dim" : "faint";
+        }
+    }
+}
+
+// The transitions, pinned at the top of Play: what comes next and how,
+// its timing choices while a planned transition can take them, what just
+// played (browse older ones), and its report. Every line wraps inside the
+// card; nothing flows into the next one.
+component TransitionBar inherits VerticalLayout {
+    // Off when the control strip above shows what comes next.
+    in property <bool> show-next: true;
+    in property <bool> show-timing: true;
+    property <bool> reporting;
+    vertical-stretch: 0;
+    property <length> label-w: self.width < 560px ? 64px : 80px;
+    property <bool> can-adjust: DjState.plan-adjustable && !DjState.plan-adjusting && !DjWorkspaceState.busy;
+    property <bool> planned: AiDjState.coming != "";
+    property <string> up-next: AiDjState.coming-to != "" ? AiDjState.coming-to : AiDjState.next-title != "" ? AiDjState.next-title : DjState.queue.length > 0 ? DjState.queue[0].title : "";
+    spacing: Theme.s3;
+    // Next: the track, then how and when it comes in, indented to the
+    // column.
+    if root.show-next: VerticalLayout {
+        spacing: Theme.s1;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            GroupLabel { text: "NEXT"; width: root.label-w; horizontal-stretch: 0; }
+            Label { text: root.up-next != "" ? root.up-next : "not selected yet"; tone: root.up-next != "" ? "accent" : "faint"; overflow: elide; min-width: 0px; horizontal-stretch: 1; }
+        }
+        VerticalLayout {
+            padding-left: root.label-w + Theme.s3;
+            FixedNote {
+                text: root.planned ? AiDjState.coming-how : root.up-next != "" ? "transition not planned yet" : "Auto Mix picks from your sources";
+                tone: root.planned ? "dim" : "faint";
+                lines: 2;
+            }
+        }
+    }
+    // The timing steppers stay in place, waiting until a planned
+    // transition can take them (they appeared with each plan and pushed
+    // the rest down). Off where the pinned strip shows them.
+    if root.show-next: Rectangle { height: 1px; background: Theme.border; }
+    if root.show-timing: TimingSteppers { }
+    Rectangle { height: 1px; background: Theme.border; }
+    // Previous: what played, then browse and report on it.
+    HorizontalLayout {
+        spacing: Theme.s3;
+        GroupLabel { text: "PREVIOUS"; width: root.label-w; horizontal-stretch: 0; vertical-alignment: top; }
+        FixedNote {
+            lines: 2;
+            horizontal-stretch: 1;
+            text: (DjWorkspaceState.selected-transition != "" ? DjWorkspaceState.selected-transition : AiDjState.previous != "" ? AiDjState.previous : "No transition has played yet") + (AiDjState.previous-reported != "" ? " · " + AiDjState.previous-reported : "");
+        }
+        VerticalLayout { alignment: start; horizontal-stretch: 0; PreviousButtons { reporting <=> root.reporting; } }
+    }
+    if root.reporting: VerticalLayout {
+        spacing: Theme.s2;
+        SearchField { text <=> DjWorkspaceState.report-notes; placeholder: "Optional notes"; }
+        FlexboxLayout {
+            spacing: Theme.s2;
+            GroupLabel { text: "WHAT WAS IT?"; }
+            for why in ["trainwreck", "off beat", "clash", "bad timing", "too loud", "too quiet", "boring", "other", "good transition"]: Button { text: why; compact: true; primary: why == "good transition"; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("report", why); root.reporting = false; } }
+        }
+    }
+}
+
+
+// The intervention controls, pinned above the Booth's columns (they never
+// scroll away): what plays and the moves on it, what comes next and how,
+// approving a prepared mix, and AI Auto.
+component ControlStrip inherits Rectangle {
+    property <bool> b-now: DjState.now-deck == "b";
+    property <bool> on: self.b-now ? DjState.deck-b.playing : DjState.deck-a.playing;
+    property <bool> ok: DjWorkspaceState.live && !DjWorkspaceState.busy;
+    property <string> up-next: AiDjState.coming-to != "" ? AiDjState.coming-to : AiDjState.next-title != "" ? AiDjState.next-title : DjState.queue.length > 0 ? DjState.queue[0].title : "";
+    // Patch style: a panel (Graphite 900); its controls are Graphite 800.
+    background: Theme.patch-style ? Theme.panel : Theme.raised;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+    padding: Theme.s3;
+    spacing: Theme.s4;
+    // The AI DJ's heartbeat: pinned with the controls, so it is always in
+    // view whatever the columns below scroll to.
+    FieldView { width: 76px; height: 76px; }
+    VerticalLayout {
+        horizontal-stretch: 1;
+        min-width: 0px;
+        spacing: Theme.s2;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            Rectangle {
+                width: 40px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-width: 1px;
+                border-color: root.on ? Theme.accent : Theme.border-strong;
+                background: root.on ? Theme.accent-soft : transparent;
+                Text { text: root.b-now ? "B" : "A"; color: root.on ? Theme.accent : Theme.text-dim; font-family: Theme.font; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                alignment: center;
+                Rectangle {
+                    Label { width: parent.width; text: root.b-now ? DjState.deck-b.title : DjState.deck-a.title; tone: "bright"; font-weight: 700; overflow: elide; }
+                    TouchArea { clicked => { Peek.show(root.b-now ? DjState.deck-b.source : DjState.deck-a.source); } }
+                }
+                Label { text: root.b-now ? DjState.deck-b.bpm + " BPM · " + DjState.deck-b.key + " · " + DjState.deck-b.time + " / " + DjState.deck-b.length : DjState.deck-a.bpm + " BPM · " + DjState.deck-a.key + " · " + DjState.deck-a.time + " / " + DjState.deck-a.length; tone: "dim"; small: true; overflow: elide; }
+            }
+            HorizontalLayout {
+                spacing: Theme.s2;
+                horizontal-stretch: 0;
+                alignment: end;
+                VerticalLayout { alignment: center; Button { text: "Mix now / Skip"; key: "n"; compact: true; primary: true; enabled: root.ok; clicked => { DjWorkspaceState.action("mix", ""); } } }
+                VerticalLayout { alignment: center; Button { text: "Change next"; compact: true; enabled: root.ok; clicked => { DjWorkspaceState.action("change_next", ""); } } }
+                VerticalLayout { alignment: center; Button { text: "Take over"; key: "esc"; compact: true; enabled: DjWorkspaceState.live; clicked => { AiDjState.cancel(); } } }
+            }
+        }
+        HorizontalLayout {
+            spacing: Theme.s3;
+            VerticalLayout { alignment: center; horizontal-stretch: 0; GroupLabel { text: "NEXT"; width: 40px; min-height: 0px; } }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                alignment: center;
+                Label { text: root.up-next != "" ? root.up-next : "Auto Mix picks from your sources"; tone: root.up-next != "" ? "accent" : "faint"; overflow: elide; }
+                Label { text: AiDjState.coming != "" ? AiDjState.coming-how : root.up-next != "" ? "transition not planned yet" : " "; tone: AiDjState.coming != "" ? "dim" : "faint"; small: true; overflow: elide; }
+            }
+            HorizontalLayout {
+                spacing: Theme.s2;
+                horizontal-stretch: 0;
+                alignment: end;
+                // Only what can be done now: Approve while a transition
+                // waits for it, Cancel while one is planned (greyed
+                // buttons read as broken, the user 2026-11-16).
+                if AiDjState.pending: VerticalLayout { alignment: center; Button { text: "Approve"; key: "enter"; compact: true; primary: true; clicked => { AiDjState.approve(); } } }
+                if AiDjState.plan-text != "": VerticalLayout { alignment: center; Button { text: "Cancel transition"; compact: true; clicked => { AiDjState.cancel(); } } }
+                VerticalLayout { alignment: center; Button {
+                    text: !AiDjState.live ? "AI Auto unavailable" : AiDjState.mode == "act" ? "● AI Auto on" : "Enable AI Auto";
+                    compact: true;
+                    lit: AiDjState.mode == "act";
+                    primary: AiDjState.live && AiDjState.mode != "act";
+                    enabled: AiDjState.live && AiDjState.mode != "act";
+                    clicked => { AiDjState.set-mode("act"); }
+                } }
+            }
+        }
+        // When and how long the next transition is: pinned with what plays,
+        // never in a column that scrolls (the user, 2026-11-16: "those are
+        // important").
+        Rectangle { height: 1px; background: Theme.border; }
+        TimingSteppers { }
+    }
+    }
+}
+
+// What plays, its three moves, and what comes next.
+component NowCard inherits Rectangle {
+    property <bool> b-now: DjState.now-deck == "b";
+    // Patch style: a panel (Graphite 900); its controls are Graphite 800.
+    background: Theme.patch-style ? Theme.panel : Theme.raised;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        HorizontalLayout {
+            spacing: Theme.s4;
+            // The deck letter, lit while it plays.
+            Rectangle {
+                width: Theme.fs-title + Theme.s4;
+                height: self.width;
+                property <bool> on: root.b-now ? DjState.deck-b.playing : DjState.deck-a.playing;
+                border-width: 1px;
+                border-color: self.on ? Theme.accent : Theme.border-strong;
+                background: self.on ? Theme.accent-soft : transparent;
+                Text { text: root.b-now ? "B" : "A"; color: parent.on ? Theme.accent : Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-large; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: Theme.s1;
+                horizontal-stretch: 1;
+                GroupLabel { text: "NOW PLAYING"; min-height: 0px; }
+                Rectangle {
+                    Label { text: root.b-now ? DjState.deck-b.title : DjState.deck-a.title; tone: "bright"; font-family: Theme.font-display; font-weight: 700; overflow: elide; }
+                    TouchArea { clicked => { Peek.show(root.b-now ? DjState.deck-b.source : DjState.deck-a.source); } }
+                }
+                Label { text: root.b-now ? DjState.deck-b.bpm + " BPM · " + DjState.deck-b.key + " · " + DjState.deck-b.time + " / " + DjState.deck-b.length : DjState.deck-a.bpm + " BPM · " + DjState.deck-a.key + " · " + DjState.deck-a.time + " / " + DjState.deck-a.length; tone: "dim"; small: true; }
+            }
+        }
+        FlexboxLayout {
+            spacing: Theme.s2;
+            Button { text: "Mix now / Skip"; key: "n"; enabled: DjWorkspaceState.live && !DjWorkspaceState.busy; primary: true; clicked => { DjWorkspaceState.action("mix", ""); } }
+            Button { text: "Change next"; enabled: DjWorkspaceState.live && !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("change_next", ""); } }
+            Button { text: "Take over"; key: "esc"; enabled: DjWorkspaceState.live; clicked => { AiDjState.cancel(); } }
+        }
+    }
+}
+
+// One switch of the transition style: its name as a toggle, and in a line
+// what it does.
+component StyleSwitch inherits HorizontalLayout {
+    in property <WorkspaceItem> item;
+    spacing: Theme.s3;
+    Button {
+        text: (root.item.selected ? "✓ " : "") + root.item.title;
+        compact: true;
+        lit: root.item.selected;
+        width: 156px;
+        enabled: DjWorkspaceState.live && !DjWorkspaceState.busy && DjWorkspaceState.mix-style != "";
+        clicked => { DjWorkspaceState.action("style_switch", root.item.id); }
+    }
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        min-width: 0px;
+        WrapNote { text: root.item.detail; tone: root.item.selected ? "normal" : "dim"; }
+    }
+}
+
+// A raised card with a heading: one group of the Play tab.
+component Card inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    // Patch style: a panel (Graphite 900); its controls are Graphite 800.
+    background: Theme.patch-style ? Theme.panel : Theme.raised;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        SectionHeading { text: root.title; detail: root.detail; pad: 0px; }
+        @children
+    }
+}
+
+// One setting: its name on the left, the choices and what they do beside
+// (the name above them when the window is narrow).
+component SettingRow inherits VerticalLayout {
+    in property <string> label;
+    in property <bool> stacked;
+    spacing: Theme.s1;
+    if root.stacked: GroupLabel { text: root.label; min-height: 0px; }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        if !root.stacked: VerticalLayout { alignment: start; horizontal-stretch: 0; GroupLabel { text: root.label; width: 72px; } }
+        VerticalLayout { horizontal-stretch: 1; min-width: 0px; spacing: Theme.s1; @children }
+    }
+}
+
+// How the AI DJ plays, one row per question: who mixes, the tempo, the
+// energy, the style, how much of each track plays and how loud. Every row
+// applies from the next transition on.
+component SetupCard inherits Rectangle {
+    property <bool> ready: DjWorkspaceState.live && !DjWorkspaceState.busy;
+    property <bool> style-ready: self.ready && DjWorkspaceState.mix-style != "";
+    property <bool> tempo-ready: self.ready && DjWorkspaceState.tempo-mode != "";
+    property <bool> stacked: self.width < 470px;
+    // A short Booth: the one-line explanations under control, style and
+    // play length give way, so the card fits beside the AI DJ.
+    in property <bool> terse;
+    background: Theme.patch-style ? Theme.panel : Theme.raised;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        Disclosure { text: "How Auto Mix plays"; detail: "each choice applies from the next track"; open <=> DjWorkspaceState.show-dj-settings; }
+        if DjWorkspaceState.show-dj-settings: VerticalLayout {
+            spacing: Theme.s3;
+    SettingRow {
+        label: "CONTROL";
+        stacked: root.stacked;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            for m in ["observe", "suggest", "prepare", "act"]: Button {
+                text: m == "act" ? "Auto" : m == "observe" ? "Observe" : m == "suggest" ? "Suggest" : "Prepare";
+                key: root.stacked ? "" : m == "observe" ? "1" : m == "suggest" ? "2" : m == "prepare" ? "3" : "4";
+                compact: true; horizontal-stretch: 1; min-width: 0px;
+                lit: AiDjState.mode == m; enabled: DjWorkspaceState.live;
+                clicked => { AiDjState.set-mode(m); }
+            }
+        }
+        if !root.terse: WrapNote { text: AiDjState.mode == "observe" ? "Observe listens; you control the decks." : AiDjState.mode == "suggest" ? "Suggest ranks tracks; you choose and mix." : AiDjState.mode == "prepare" ? "Prepare loads and plans; you approve each mix." : "Auto picks and mixes by itself; touching a deck takes over."; tone: "faint"; }
+    }
+    SettingRow {
+        label: "TEMPO";
+        stacked: root.stacked;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            for m in [["follow", "Follow"], ["hold", "Hold " + DjWorkspaceState.tempo-bpm], ["faster", "Faster"], ["slower", "Slower"], ["original", "Original"]]: Button {
+                text: m[1];
+                compact: true; horizontal-stretch: 1; min-width: 0px;
+                lit: DjWorkspaceState.tempo-mode == m[0];
+                enabled: root.tempo-ready;
+                clicked => { if (DjWorkspaceState.tempo-mode != m[0]) { DjWorkspaceState.action("tempo_mode", m[0]); } }
+            }
+        }
+        if DjWorkspaceState.tempo-mode == "hold": FlexboxLayout {
+            spacing: Theme.s2;
+            Button { text: "−1"; compact: true; enabled: root.tempo-ready; clicked => { DjWorkspaceState.action("tempo_bpm_step", "-1"); } }
+            Label { text: DjWorkspaceState.tempo-bpm + " BPM"; tone: "bright"; min-width: 72px; horizontal-alignment: center; vertical-alignment: center; }
+            Button { text: "+1"; compact: true; enabled: root.tempo-ready; clicked => { DjWorkspaceState.action("tempo_bpm_step", "1"); } }
+            Button { text: "Hold current tempo"; compact: true; enabled: root.tempo-ready; clicked => { DjWorkspaceState.action("tempo_hold_now", ""); } }
+        }
+        FixedNote { lines: 2; text: DjWorkspaceState.tempo-status != "" ? DjWorkspaceState.tempo-status + ". Blends always beat-match; the tempo glides only while a track plays alone." : "Waiting for the engine…"; tone: "dim"; }
+    }
+    SettingRow {
+        label: "ENERGY";
+        stacked: root.stacked;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            for dir in ["build", "hold", "release"]: Button {
+                text: dir == "build" ? "Build up" : dir == "hold" ? "Keep steady" : "Wind down";
+                compact: true; horizontal-stretch: 1; min-width: 0px;
+                lit: DjState.automix-dir == dir;
+                enabled: DjWorkspaceState.live;
+                clicked => { DjWorkspaceState.action("direction", dir); }
+            }
+        }
+    }
+    SettingRow {
+        label: "STYLE";
+        stacked: root.stacked;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            for st in [["plain", "Plain"], ["balanced", "Balanced"], ["adventurous", "Adventurous"]]: Button {
+                text: st[1];
+                compact: true; horizontal-stretch: 1; min-width: 0px;
+                lit: DjWorkspaceState.mix-style == st[0];
+                enabled: root.style-ready;
+                clicked => { if (DjWorkspaceState.mix-style != st[0]) { DjWorkspaceState.action("style", st[0]); } }
+            }
+        }
+        if !root.terse: WrapNote { text: DjWorkspaceState.style-about; tone: "faint"; }
+    }
+    SettingRow {
+        label: "PLAYS";
+        stacked: root.stacked;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: "−"; compact: true; enabled: root.style-ready && DjWorkspaceState.play-percent > 20; clicked => { DjWorkspaceState.action("play_step", "-5"); } }
+            for pc in [100, 75, 60, 50, 40, 30, 20]: Button {
+                text: pc == 100 ? "All" : pc + "%";
+                compact: true; horizontal-stretch: 1; min-width: 0px;
+                lit: DjWorkspaceState.play-percent == pc;
+                enabled: root.style-ready;
+                clicked => { if (DjWorkspaceState.play-percent != pc) { DjWorkspaceState.action("play_percent", "" + pc); } }
+            }
+            Button { text: "+"; compact: true; enabled: root.style-ready && DjWorkspaceState.play-percent < 100; clicked => { DjWorkspaceState.action("play_step", "+5"); } }
+        }
+        if !root.terse: WrapNote { text: DjWorkspaceState.play-status; tone: "faint"; }
+    }
+    SettingRow {
+        label: "LEVELS";
+        stacked: root.stacked;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            for m in [["loud", "Loud"], ["balanced", "Balanced"], ["streaming", "Streaming"]]: Button {
+                text: m[1];
+                compact: true; horizontal-stretch: 1; min-width: 0px;
+                lit: DjWorkspaceState.levels == m[0];
+                enabled: DjWorkspaceState.live && DjWorkspaceState.levels != "" && !DjWorkspaceState.busy;
+                clicked => { if (DjWorkspaceState.levels != m[0]) { DjWorkspaceState.action("levels", m[0]); } }
+            }
+        }
+    }
+        }
+    }
+}
+
+component TellDjCard inherits Card {
+    in-out property <string> query;
+    title: "Tell the DJ";
+    detail: "Set a direction for the next track";
+    HorizontalLayout {
+        spacing: Theme.s2;
+        SearchField {
+            text <=> root.query;
+            prompt: "";
+            placeholder: "e.g. more energy · around 126 BPM";
+            horizontal-stretch: 1;
+            min-width: 0px;
+            accepted => { if root.query != "" { DjState.say(root.query); root.query = ""; } }
+        }
+        Button {
+            text: "Send";
+            compact: true;
+            primary: true;
+            enabled: root.query != "" && DjWorkspaceState.live && !DjWorkspaceState.busy;
+            clicked => { DjState.say(root.query); root.query = ""; }
+        }
+    }
+    if DjState.say-reply != "": Label { text: DjState.say-reply; tone: "accent"; small: true; wrap: word-wrap; }
+}
+
+// What comes after this track: the queue, else the AI picks.
+component QueueCard inherits Card {
+    title: "Queue";
+    detail: DjState.queue.length == 0 ? "Auto Mix picks" : DjState.queue.length + " tracks";
+    for t[i] in DjWorkspaceState.live-queue: HorizontalLayout {
+        spacing: Theme.s2;
+        Label { text: (i + 1) + "."; tone: "faint"; small: true; width: 24px; vertical-alignment: center; }
+        Label { text: t.title; horizontal-stretch: 1; small: true; overflow: elide; vertical-alignment: center; }
+        Button { text: "↑"; compact: true; enabled: i > 0 && !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("queue_up", "" + i); } }
+        Button { text: "↓"; compact: true; enabled: i + 1 < DjState.queue.length && !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("queue_down", "" + i); } }
+        Button { text: "Remove"; compact: true; clicked => { DjWorkspaceState.action("queue_remove", "" + i); } }
+    }
+    if DjWorkspaceState.live-queue.length == 0: WrapNote { text: "Empty: Auto Mix picks from your sources. Queue a track from the Library to choose it yourself."; tone: "faint"; }
+    FlexboxLayout {
+        spacing: Theme.s2;
+        if DjWorkspaceState.undo-ready: Button { text: "Undo removal"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("queue_undo", ""); } }
+        Button { text: "Queue selected"; compact: true; clicked => { DjState.queue-selected(); } }
+        Button { text: "Open Library"; compact: true; clicked => { Host.focus-surface("library"); } }
+    }
+}
+
+// The transition style's finer switches, the stems and drum swaps: folded
+// away, since the style above already chooses them.
+component TransitionOptions inherits VerticalLayout {
+    property <bool> ready: DjWorkspaceState.live && DjWorkspaceState.mix-style != "" && !DjWorkspaceState.busy;
+    spacing: Theme.s3;
+    Disclosure {
+        text: "Transition options";
+        detail: DjWorkspaceState.style-status != "" ? "next: " + DjWorkspaceState.style-status : "";
+        open <=> DjWorkspaceState.show-options;
+    }
+    if DjWorkspaceState.show-options: VerticalLayout {
+        spacing: Theme.s3;
+        SettingRow {
+            label: "STEM PREP";
+            stacked: true;
+            VerticalLayout {
+                spacing: Theme.s2;
+                FlexboxLayout {
+                    spacing: Theme.s2;
+                    for p in [["auto", "Auto"], ["off", "Off"], ["when_needed", "When needed"], ["ahead", "Ahead"], ["everything", "Everything"]]: Button {
+                        text: p[1]; compact: true;
+                        lit: DjWorkspaceState.stem-prep == p[0];
+                        enabled: DjWorkspaceState.stem-prep != "" && !DjWorkspaceState.busy;
+                        clicked => { if (DjWorkspaceState.stem-prep != p[0]) { DjWorkspaceState.action("stem_prep", p[0]); } }
+                    }
+                }
+                if DjWorkspaceState.set-prep-stems != "": FlexboxLayout {
+                    spacing: Theme.s2;
+                    Button {
+                        text: (DjWorkspaceState.set-prep-stems == "on" ? "✓ " : "") + "Prepare all stems for this set";
+                        compact: true; lit: DjWorkspaceState.set-prep-stems == "on";
+                        enabled: !DjWorkspaceState.busy;
+                        clicked => { DjWorkspaceState.action("set_prep_stems", DjWorkspaceState.set-prep-stems == "on" ? "off" : "on"); }
+                    }
+                }
+                WrapNote { text: DjWorkspaceState.stem-prep-note; tone: "faint"; }
+            }
+        }
+        // Stems: how many tracks can lead with them, and the way to get more.
+        Rectangle {
+            background: Theme.patch-style ? Theme.panel : Theme.raised;
+            border-radius: Theme.r-panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding: Theme.s3;
+                spacing: Theme.s4;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    spacing: Theme.s1;
+                    Label { text: DjWorkspaceState.stems-title; tone: "bright"; overflow: elide; }
+                    WrapNote { text: DjWorkspaceState.stems-hint; tone: "dim"; }
+                    if DjWorkspaceState.stems-batch-status != "": WrapNote {
+                        text: DjWorkspaceState.stems-batch-status;
+                        tone: "normal";
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    Button { text: "Prepare stems"; primary: true; enabled: root.ready; clicked => { DjWorkspaceState.action("prepare_stems", ""); } }
+                }
+            }
+        }
+        for sw in DjWorkspaceState.style-switches: StyleSwitch { item: sw; }
+        // Mashups the AI may play: drum swaps, each rehearsed first, the
+        // conventional mix when it falls short.
+        HorizontalLayout {
+            spacing: Theme.s3;
+            Button { text: (DjState.drum-swaps ? "✓ " : "") + "Drum swaps"; compact: true; lit: DjState.drum-swaps; width: 156px; enabled: DjWorkspaceState.live; clicked => { DjState.drum-swaps-toggle(); } }
+            VerticalLayout { alignment: center; horizontal-stretch: 1; min-width: 0px; WrapNote { text: "Another track's drums under the incoming one for a phrase, only where it rehearses clean"; tone: DjState.drum-swaps ? "normal" : "dim"; } }
+        }
+    }
+}
+
+// The playing deck's own tools: folded away. Stem mixing stays on each deck.
+component DeckTools inherits VerticalLayout {
+    spacing: Theme.s3;
+    Disclosure { text: "Deck tools"; detail: "cue, loop, sync · stem mixing stays on the decks"; open <=> DjWorkspaceState.show-deck-tools; }
+    if DjWorkspaceState.show-deck-tools: VerticalLayout {
+        spacing: Theme.s3;
+        FlexboxLayout {
+            spacing: Theme.s2;
+            GroupLabel { text: "PLAYING DECK"; }
+            Button { text: "Cue"; compact: true; clicked => { DjState.light("cue"); } }
+            Button { text: "Loop"; compact: true; clicked => { DjState.light("loop"); } }
+            Button { text: "Sync"; compact: true; clicked => { DjState.light("sync"); } }
+            Button { text: "Advanced decks"; compact: true; clicked => { Host.focus-surface("deck-a"); } }
+        }
+    }
+}
+
+// What played before: browse it (playback does not change).
+component HistoryBlock inherits VerticalLayout {
+    spacing: 0px;
+    Disclosure { text: "Transition history"; detail: DjWorkspaceState.transitions.length > 0 ? DjWorkspaceState.transitions.length + " previous transitions" : "No previous transitions"; open <=> DjWorkspaceState.show-history; }
+    if DjWorkspaceState.show-history: VerticalLayout {
+        spacing: Theme.s1;
+        for t in DjWorkspaceState.transitions: ListRow {
+            pad: Theme.s2;
+            clicked => { DjWorkspaceState.action("transition", t.id); }
+            Label { text: t.title; small: true; horizontal-stretch: 1; overflow: elide; }
+        }
+        if DjWorkspaceState.details != "": Label { text: DjWorkspaceState.details; small: true; tone: "dim"; wrap: word-wrap; }
+    }
+}
+
+// A form row: the field's name stays in sight once the field has text.
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    spacing: Theme.s3;
+    GroupLabel { text: root.label; width: 88px; horizontal-stretch: 0; }
+    @children
+}
+
+component PrepareView inherits VerticalLayout {
+    property <bool> confirm-switch;
+    spacing: Theme.s3;
+    padding-right: Theme.s3;
+    padding-bottom: Theme.s2;
+    HorizontalLayout {
+        spacing: Theme.s2;
+        // Play the set edited here: start it, or (a set already playing)
+        // mix into it from the next transition, after a confirmation.
+        Button {
+            text: !DjState.set-on ? "Start this set" : root.confirm-switch ? "Yes, mix into it next" : "Mix into this set next";
+            compact: true;
+            primary: true;
+            enabled: !DjWorkspaceState.busy && DjWorkspaceState.live;
+            clicked => { if DjState.set-on && !root.confirm-switch { root.confirm-switch = true; } else { root.confirm-switch = false; DjWorkspaceState.action("start", ""); } }
+        }
+        if root.confirm-switch: Button { text: "Cancel"; compact: true; clicked => { root.confirm-switch = false; } }
+        GroupRule { }
+        Button { text: "New"; compact: true; clicked => { DjWorkspaceState.action("new", ""); } }
+        Button { text: "Save"; compact: true; primary: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("save", ""); } }
+        Button { text: "Save as"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("save_as", ""); } }
+        Label { text: DjWorkspaceState.dirty ? "● Unsaved changes" : "Saved / new draft"; tone: DjWorkspaceState.dirty ? "warn" : "faint"; small: true; vertical-alignment: center; horizontal-stretch: 1; }
+    }
+    if root.confirm-switch: Label { text: "The music keeps playing and the next transition mixes into this set; a transition already audible finishes first."; tone: "warn"; small: true; wrap: word-wrap; }
+    SectionHeading { text: "Set"; pad: 0px; }
+    Field { label: "NAME"; SearchField { prompt: ""; text <=> DjWorkspaceState.name; placeholder: "Set name"; edited => { DjWorkspaceState.dirty = true; } } }
+    Field { label: "NOTES"; SearchField { prompt: ""; text <=> DjWorkspaceState.notes; placeholder: "Notes"; edited => { DjWorkspaceState.dirty = true; } } }
+    Field {
+        label: "LENGTH";
+        SearchField { prompt: ""; text <=> DjWorkspaceState.minutes; placeholder: "Minutes (empty = open)"; edited => { DjWorkspaceState.dirty = true; } }
+        GroupLabel { text: "BPM"; horizontal-stretch: 0; }
+        SearchField { prompt: ""; text <=> DjWorkspaceState.bpm-low; placeholder: "Min BPM"; edited => { DjWorkspaceState.dirty = true; } }
+        SearchField { prompt: ""; text <=> DjWorkspaceState.bpm-high; placeholder: "Max BPM"; edited => { DjWorkspaceState.dirty = true; } }
+    }
+    FlexboxLayout {
+        spacing: Theme.s2;
+        GroupLabel { text: "ARC"; width: 88px; }
+        for arc in ["journey", "warmup", "peak"]: Button { text: arc == "journey" ? "Journey" : arc == "warmup" ? "Warm-up" : "Peak"; compact: true; lit: DjWorkspaceState.arc == arc; clicked => { DjWorkspaceState.arc = arc; DjWorkspaceState.dirty = true; } }
+        GroupRule { }
+        GroupLabel { text: "Auto Mix"; }
+        for m in ["suggest", "prepare", "act"]: Button { text: m == "act" ? "Auto" : m == "suggest" ? "Suggest" : "Prepare"; compact: true; lit: DjWorkspaceState.mode == m; clicked => { DjWorkspaceState.mode = m; DjWorkspaceState.dirty = true; } }
+    }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        GroupLabel { text: "MUSIC"; width: 88px; vertical-alignment: center; }
+        Label { text: DjWorkspaceState.collection-display; tone: "bright"; small: true; overflow: elide; min-width: 0px; horizontal-stretch: 1; vertical-alignment: center; }
+        Button { text: "Change…"; compact: true; clicked => { DjWorkspaceState.show-collections = true; } }
+    }
+    SectionHeading { text: "Track order"; detail: "Pins keep your chosen tracks visible"; pad: 0px; }
+    HorizontalLayout {
+        spacing: Theme.s2;
+        SearchField { text <=> DjWorkspaceState.track-path; prompt: "+"; placeholder: "Local audio path"; accepted => { DjWorkspaceState.action("add_path", DjWorkspaceState.track-path); } }
+        Button { text: "Add"; compact: true; clicked => { DjWorkspaceState.action("add_path", DjWorkspaceState.track-path); } }
+        Button { text: "Use queue"; compact: true; clicked => { DjWorkspaceState.action("use_queue", ""); } }
+    }
+    VerticalLayout {
+        spacing: Theme.s1;
+        for t[i] in DjWorkspaceState.draft-tracks: HorizontalLayout {
+            spacing: Theme.s2;
+            Label { text: (i + 1) + "."; tone: "faint"; small: true; width: 24px; vertical-alignment: center; }
+            Label { text: t.title; horizontal-stretch: 1; small: true; tone: t.selected ? "bright" : "normal"; overflow: elide; vertical-alignment: center; }
+            Button { text: t.selected ? "Pinned" : "Pin"; compact: true; lit: t.selected; clicked => { DjWorkspaceState.action("pin", "" + i); } }
+            Button { text: "↑"; compact: true; enabled: i > 0; clicked => { DjWorkspaceState.action("draft_up", "" + i); } }
+            Button { text: "↓"; compact: true; enabled: i + 1 < DjWorkspaceState.draft-tracks.length; clicked => { DjWorkspaceState.action("draft_down", "" + i); } }
+            Button { text: "Remove"; compact: true; clicked => { DjWorkspaceState.action("draft_remove", "" + i); } }
+        }
+        if DjWorkspaceState.draft-tracks.length == 0: Label { text: "No tracks pinned: Auto Mix picks from the collections."; tone: "faint"; small: true; wrap: word-wrap; }
+    }
+    HorizontalLayout { alignment: start; Button { text: "Check readiness"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("readiness", ""); } } }
+    SectionHeading { text: "Saved sets"; detail: "Loading edits the draft; music keeps playing"; pad: 0px; }
+    VerticalLayout {
+        spacing: Theme.s1;
+        for s in DjWorkspaceState.saved-sets: HorizontalLayout {
+            spacing: Theme.s2;
+            Label { text: s.title + " · " + s.detail; horizontal-stretch: 1; small: true; tone: s.selected ? "faint" : "normal"; overflow: elide; vertical-alignment: center; }
+            Button { text: "Load"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("load", s.id); } }
+            Button { text: "Copy"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("duplicate", s.id); } }
+            Button { text: s.selected ? "Restore" : "Delete"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action(s.selected ? "restore" : "trash", s.id); } }
+        }
+        if DjWorkspaceState.saved-sets.length == 0: Label { text: DjWorkspaceState.show-trash ? "Trash is empty." : "No saved sets yet."; tone: "faint"; small: true; }
+    }
+    HorizontalLayout { alignment: start; Button { text: DjWorkspaceState.show-trash ? "Hide trash" : "Show trash"; compact: true; clicked => { DjWorkspaceState.show-trash = !DjWorkspaceState.show-trash; DjWorkspaceState.action("refresh", ""); } } }
+}
+
+component ReportsView inherits VerticalLayout {
+    spacing: Theme.s3;
+    padding-right: Theme.s3;
+    padding-bottom: Theme.s2;
+    Label { text: "Replay reports, inspect evidence, then evaluate improvements. Offline processing runs while decks are stopped."; tone: "dim"; small: true; wrap: word-wrap; }
+    SearchField { text <=> DjWorkspaceState.filter; placeholder: "Filter reports"; edited => { DjWorkspaceState.action("filter", ""); } }
+    FlexboxLayout {
+        spacing: Theme.s2;
+        Button { text: "Select all"; compact: true; clicked => { DjWorkspaceState.action("select_reports", ""); } }
+        Button { text: "Replay selected"; compact: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action("process", "replay"); } }
+        Button { text: "Evaluate improvements"; compact: true; primary: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action("process", "improve"); } }
+    }
+    VerticalLayout {
+        spacing: Theme.s1;
+        for r in DjWorkspaceState.reports: HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: r.selected ? "✓" : "+"; compact: true; lit: r.selected; clicked => { DjWorkspaceState.action("select_report", r.id); } }
+            Label { text: r.title + " · " + r.detail; horizontal-stretch: 1; small: true; tone: r.selected ? "bright" : "normal"; overflow: elide; vertical-alignment: center; }
+            Button { text: "Details"; compact: true; clicked => { DjWorkspaceState.action("report_detail", r.id); } }
+        }
+        if DjWorkspaceState.reports.length == 0: Label { text: "No reports yet. Report a transition from Play."; tone: "faint"; small: true; }
+    }
+    SectionHeading { text: "Processing jobs"; detail: "active tuning changes only when you activate"; pad: 0px; }
+    VerticalLayout {
+        spacing: Theme.s1;
+        for j in DjWorkspaceState.jobs: HorizontalLayout {
+            spacing: Theme.s2;
+            Label { text: j.title + " · " + j.detail; horizontal-stretch: 1; small: true; overflow: elide; vertical-alignment: center; }
+            Button { text: "Review"; compact: true; clicked => { DjWorkspaceState.action("job_detail", j.id); } }
+            Button { text: "Cancel"; compact: true; enabled: j.selected; clicked => { DjWorkspaceState.action("cancel_job", j.id); } }
+            Button { text: "Retry"; compact: true; enabled: !j.selected; clicked => { DjWorkspaceState.action("retry", j.id); } }
+        }
+        if DjWorkspaceState.jobs.length == 0: Label { text: "No jobs."; tone: "faint"; small: true; }
+    }
+    FlexboxLayout {
+        spacing: Theme.s2;
+        if DjWorkspaceState.candidate-ready: Button { text: "Activate evaluated candidate"; primary: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("activate", DjWorkspaceState.selected-job); } }
+        Button { text: "Restore previous tuning"; compact: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action("rollback", ""); } }
+    }
+    if DjWorkspaceState.auditions.length > 0: FlexboxLayout {
+        spacing: Theme.s2;
+        GroupLabel { text: "AUDITION"; }
+        for replay in DjWorkspaceState.auditions: Button { text: "▶ " + replay.title; compact: true; clicked => { DjWorkspaceState.action("play_replay", replay.id); } }
+    }
+    if DjWorkspaceState.details != "": Rectangle {
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.border;
+        VerticalLayout { padding: Theme.s3; Label { text: DjWorkspaceState.details; tone: "dim"; small: true; wrap: word-wrap; } }
+    }
+}
+
+// The set: start or pause/resume, record, fast mode. In the tab row on a wide
+// Booth, on a row of its own otherwise.
+// Switching to another set lives in Prepare, beside the set it starts
+// ("Switch to this set" here read as nothing in particular).
+component SetBar inherits FlexboxLayout {
+    spacing: Theme.s2;
+    if !DjState.set-on: Button { text: "Start set"; primary: true; compact: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action("start", ""); } }
+    if DjState.set-on: Button { text: DjWorkspaceState.paused ? "Resume" : "Pause"; key: "space"; primary: !DjWorkspaceState.paused; compact: true; enabled: !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action(DjWorkspaceState.paused ? "resume" : "pause", ""); } }
+    if DjState.set-on: Button { text: "End set"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("end", ""); } }
+    GroupRule { }
+    Button { text: RecState.recording ? "■ Save recording" : "● Record"; compact: true; primary: RecState.recording; enabled: !RecState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action("record", ""); } }
+    Button { text: (DjWorkspaceState.fast-mode ? "✓ " : "") + "Fast mode"; compact: true; lit: DjWorkspaceState.fast-mode; enabled: DjState.set-on && !DjWorkspaceState.busy && DjWorkspaceState.live; clicked => { DjWorkspaceState.action("fast_mode", DjWorkspaceState.fast-mode ? "off" : "on"); } }
+}
+
+component MasterControl inherits HorizontalLayout {
+    spacing: Theme.s3;
+    horizontal-stretch: 0;
+    // The Booth's volume on the Patch mix as the Crossfader's BOOTH OUT
+    // knob shows it: 0 dB at 12 o'clock, the arc cut or boost (a bare
+    // slider here read as a progress bar).
+    KnobInline {
+        label: "MASTER";
+        value: BoothKnob.to-knob(DjState.master);
+        reset-value: 0;
+        readout: DjState.master-text;
+        moved(v) => { DjState.set-master(BoothKnob.from-knob(v)); }
+    }
+}
+
+export component DjWorkspaceSurface inherits Rectangle {
+    property <int> selected-count: DjWorkspaceState.selected-collections;
+    changed width => { DjWorkspaceState.steps-tight = self.width < 860px; }
+    property <bool> narrow: self.width < 700px;
+    property <bool> split: self.width >= 900px;
+    // Wide: three columns (what plays and comes next · how the AI plays ·
+    // the AI DJ), so a short Booth beside the decks needs no scrolling to
+    // reach its controls; the set's buttons share the tab row.
+    property <bool> three: self.width >= 1300px;
+    property <bool> wide-head: self.width >= 1500px;
+    property <bool> short: self.height < 340px;
+    init => { keys.focus(); DjWorkspaceState.steps-tight = self.width < 860px; }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if !DjState.key-guard(e.text) { return reject; }
+            // Space is the set bar's Pause/Resume; with no set it plays or
+            // pauses the decks (it answered "Start a set before pausing it").
+            if e.text == " " { if DjState.set-on { DjWorkspaceState.action(DjWorkspaceState.paused ? "resume" : "pause", ""); } else { DjState.light("play"); } return accept; }
+            if e.text == "n" { DjWorkspaceState.action("mix", ""); return accept; }
+            if e.text == "1" { AiDjState.set-mode("observe"); return accept; }
+            if e.text == "2" { AiDjState.set-mode("suggest"); return accept; }
+            if e.text == "3" { AiDjState.set-mode("prepare"); return accept; }
+            if e.text == "4" { AiDjState.set-mode("act"); return accept; }
+            // The AI DJ's keys: this window is the only one that takes them.
+            if e.text == Key.Return { AiDjState.approve(); return accept; }
+            if e.text == Key.Escape { if DjWorkspaceState.show-collections { DjWorkspaceState.show-collections = false; } else { AiDjState.cancel(); } return accept; }
+            if e.text == "a" || e.text == "s" || e.text == "d" { AiDjState.pick(e.text == "a" ? 1 : e.text == "s" ? 2 : 3); return accept; }
+            if e.text == "x" { AiDjState.drop(1); return accept; }
+            if e.text == "v" { AiDjState.view = AiDjState.view == "analysis" ? "operator" : "analysis"; return accept; }
+            return reject;
+        }
+    VerticalLayout {
+        padding: root.narrow ? Theme.s3 : Theme.s4;
+        padding-top: 0px;
+        spacing: Theme.s3;
+        // Tabs, and where the set stands.
+        Rectangle {
+            height: Theme.row-h + 4px;
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                spacing: 0px;
+                for tab in ["play", "prepare", "recordings", "reports"]: WsTab {
+                    text: tab == "play" ? "Play" : tab == "prepare" ? (root.width < 450px ? "Sets" : "Prepare") : tab == "recordings" ? (root.width < 450px ? "Takes" : "Recordings") : "Reports";
+                    current: DjWorkspaceState.tab == tab;
+                    clicked => { DjWorkspaceState.tab = tab; DjWorkspaceState.action("tab", tab); }
+                }
+                if root.wide-head: HorizontalLayout {
+                    padding-left: Theme.s5;
+                    VerticalLayout { alignment: center; SetBar { } }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if !root.narrow: HorizontalLayout {
+                    spacing: Theme.s3;
+                    padding-left: Theme.s4;
+                    if RecState.recording: Label { text: "● REC " + RecState.timecode; tone: "error"; small: true; font-weight: 700; }
+                    Label { text: DjWorkspaceState.session-name; tone: "dim"; small: true; overflow: elide; min-width: 0px; }
+                    Label { text: DjWorkspaceState.paused ? "PAUSED" : DjState.set-on ? "PLAYING" : "READY"; tone: DjWorkspaceState.paused ? "warn" : DjState.set-on ? "accent" : "faint"; small: true; caps: true; font-weight: 700; vertical-alignment: center; }
+                }
+                if root.wide-head: HorizontalLayout { padding-left: Theme.s5; MasterControl { } }
+            }
+        }
+        if root.narrow: Label { text: DjWorkspaceState.session-name + " · " + (DjWorkspaceState.paused ? "Paused" : DjState.set-on ? "Playing" : "Ready") + (RecState.recording ? " · REC " + RecState.timecode : ""); tone: "bright"; small: true; overflow: elide; }
+        // The set: start and stop it, record it, its options; the master
+        // volume at the end (in the tab row when the Booth is wide).
+        if !root.wide-head: HorizontalLayout {
+            spacing: Theme.s4;
+            SetBar { horizontal-stretch: 1; }
+            if !root.narrow: MasterControl { }
+        }
+        if root.narrow: HorizontalLayout { alignment: end; MasterControl { } }
+        Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 0;
+            min-width: 0px;
+            background: Theme.patch-style ? Theme.panel : Theme.raised;
+            border-radius: Theme.r-panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            VerticalLayout {
+                padding-left: Theme.s3;
+                padding-right: Theme.s2;
+                padding-top: Theme.s1;
+                padding-bottom: Theme.s1;
+                spacing: Theme.s1;
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    GroupLabel { text: "DJ PICKS FROM"; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "Change…";
+                        compact: true;
+                        clicked => { DjWorkspaceState.show-collections = true; }
+                    }
+                }
+                Label { text: DjWorkspaceState.collection-display; tone: "bright"; small: true; wrap: word-wrap; horizontal-stretch: 1; min-width: 0px; }
+            }
+        }
+        if !root.short && (DjWorkspaceState.fast-mode || DjWorkspaceState.fast-mode-pending): Label {
+            text: DjWorkspaceState.fast-mode-pending ? "Switching pace…" : "Fast mode: short solo passages · normal preparation";
+            tone: "faint"; small: true; overflow: elide;
+        }
+        if DjWorkspaceState.message != "": Rectangle {
+            background: Theme.accent-soft;
+            HorizontalLayout { padding-left: Theme.s3; padding-right: Theme.s3; padding-top: Theme.s2; padding-bottom: Theme.s2; Label { text: (DjWorkspaceState.busy ? "Working… " : "") + DjWorkspaceState.message; tone: "bright"; small: true; wrap: word-wrap; } }
+        }
+        if DjWorkspaceState.tab == "play" && !root.short && !root.split: TransitionBar { }
+        // Play: the live controls and the AI DJ side by side, stacked
+        // when the window is narrow (what plays and its moves first, so
+        // Pause and Mix need no scrolling). Side by side, the next
+        // transition sits in the left column: spanning both, it took half
+        // a short window and left two half-height scroll areas under it.
+        // (Placed by hand: two scroll areas in a HorizontalLayout make a
+        // width ↔ height binding loop.)
+        if DjWorkspaceState.tab == "play" && root.split: ControlStrip { }
+        // Each column's scroll pads its content (padding-right): the
+        // scrollbar sits over the last Theme.s3 of it, so unpadded text was
+        // cut off at the right edge (the AI panel, 2026-11-12).
+        if DjWorkspaceState.tab == "play" && root.three: Rectangle {
+            vertical-stretch: 1;
+            min-height: 0px;
+            property <length> gap: Theme.s4;
+            property <length> ai-w: Math.clamp(self.width * 0.30, 380px, 640px);
+            property <length> left-w: Math.clamp((self.width - self.ai-w) * 0.47, 420px, 760px);
+            property <length> mid-x: self.left-w + self.gap * 2 + 1px;
+            property <length> mid-w: self.width - self.ai-w - self.mid-x - self.gap * 2 - 1px;
+            Scroll { drag-scroll: false; x: 0px; y: 0px; width: parent.left-w; height: parent.height; VerticalLayout { spacing: Theme.s5; padding-right: Theme.s3; padding-bottom: Theme.s3; TransitionBar { show-next: false; show-timing: false; } QueueCard { } HistoryBlock { } } }
+            Rectangle { x: parent.left-w + parent.gap; y: 0px; width: 1px; height: parent.height; background: Theme.border; }
+            Scroll { drag-scroll: false; x: parent.mid-x; y: 0px; width: parent.mid-w; height: parent.height; VerticalLayout { spacing: Theme.s5; padding-right: Theme.s3; padding-bottom: Theme.s3; TellDjCard { } SetupCard { terse: root.height < 800px; } TransitionOptions { } DeckTools { } } }
+            Rectangle { x: parent.width - parent.ai-w - parent.gap - 1px; y: 0px; width: 1px; height: parent.height; background: Theme.border; }
+            Scroll { x: parent.width - parent.ai-w; y: 0px; width: parent.ai-w; height: parent.height; VerticalLayout { padding-right: Theme.s3; padding-bottom: Theme.s3; AiPanel { beside-strip: true; } } }
+        }
+        // Two columns (a Booth tile under the decks, ~920 px): the settings
+        // right under what plays; the AI DJ beside them already shows the
+        // planned transition, so timing and history come after.
+        if DjWorkspaceState.tab == "play" && root.split && !root.three: Rectangle {
+            vertical-stretch: 1;
+            min-height: 0px;
+            property <length> ai-w: Math.clamp(self.width * 0.38, 320px, 760px);
+            Scroll { drag-scroll: false; x: 0px; y: 0px; width: parent.width - parent.ai-w - Theme.s4 * 2 - 1px; height: parent.height; VerticalLayout { spacing: Theme.s5; padding-right: Theme.s3; padding-bottom: Theme.s3; TransitionBar { show-next: false; show-timing: false; } QueueCard { } TellDjCard { } SetupCard { terse: root.height < 800px; } TransitionOptions { } DeckTools { } HistoryBlock { } } }
+            Rectangle { x: parent.width - parent.ai-w - Theme.s4 - 1px; y: 0px; width: 1px; height: parent.height; background: Theme.border; }
+            Scroll { x: parent.width - parent.ai-w; y: 0px; width: parent.ai-w; height: parent.height; VerticalLayout { padding-right: Theme.s3; padding-bottom: Theme.s3; AiPanel { beside-strip: true; } } }
+        }
+        if DjWorkspaceState.tab == "play" && !root.split: Scroll { drag-scroll: false; vertical-stretch: 1; VerticalLayout { spacing: Theme.s5; padding-right: Theme.s3; padding-bottom: Theme.s3; if root.short: TransitionBar { } NowCard { } AiPanel { } QueueCard { } TellDjCard { } SetupCard { } TransitionOptions { } DeckTools { } HistoryBlock { } } }
+        if DjWorkspaceState.tab == "prepare": Scroll { vertical-stretch: 1; PrepareView { } }
+        if DjWorkspaceState.tab == "recordings": Scroll {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: Theme.s3;
+                padding-right: Theme.s3;
+                padding-bottom: Theme.s2;
+                SectionHeading { text: "Performed sets"; detail: "history remains when audio is unavailable"; pad: 0px; }
+                VerticalLayout {
+                    for s in DjWorkspaceState.sessions: ListRow {
+                        pad: Theme.s2;
+                        selected: s.id == DjWorkspaceState.selected-id;
+                        clicked => { DjWorkspaceState.action("session_detail", s.id); }
+                        Label { text: s.title; tone: s.id == DjWorkspaceState.selected-id ? "bright" : "normal"; small: true; horizontal-stretch: 1; overflow: elide; }
+                        Label { text: s.detail; tone: "faint"; small: true; horizontal-stretch: 0; }
+                    }
+                    if DjWorkspaceState.sessions.length == 0: Label { text: "No sets played yet."; tone: "faint"; small: true; }
+                }
+                if DjWorkspaceState.details != "": Label { text: DjWorkspaceState.details; small: true; tone: "dim"; wrap: word-wrap; }
+                for t in DjWorkspaceState.linked-takes: HorizontalLayout {
+                    spacing: Theme.s2;
+                    Label { text: t.title + " · " + t.detail; horizontal-stretch: 1; small: true; overflow: elide; vertical-alignment: center; }
+                    Button { text: "▶ Play"; compact: true; clicked => { RecState.play-take(t.id); } }
+                }
+                HorizontalLayout { alignment: start; Button { text: "Export selected set metadata / tracklist"; compact: true; enabled: DjWorkspaceState.selected-id != "" && !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("export_session", DjWorkspaceState.selected-id); } } }
+                SectionHeading { text: "Audio takes"; detail: RecState.folder; pad: 0px; }
+                VerticalLayout {
+                    spacing: Theme.s1;
+                    for t in RecState.takes: HorizontalLayout {
+                        spacing: Theme.s2;
+                        Label { text: t.name + " · " + t.detail; horizontal-stretch: 1; small: true; overflow: elide; vertical-alignment: center; }
+                        Button { text: "Metadata"; compact: true; clicked => { DjWorkspaceState.action("take_detail", t.path); } }
+                        Button { text: "Export"; compact: true; clicked => { DjWorkspaceState.action("export_take", t.path); } }
+                        Button { text: "▶ Play"; compact: true; clicked => { RecState.play-take(t.path); } }
+                    }
+                    if RecState.takes.length == 0: Label { text: "No takes yet: press Record during a set."; tone: "faint"; small: true; }
+                }
+                HorizontalLayout { alignment: start; Button { text: "Recorder settings"; compact: true; clicked => { Host.focus-surface("recorder"); } } }
+            }
+        }
+        if DjWorkspaceState.tab == "reports": Scroll { vertical-stretch: 1; ReportsView { } }
+    }
+    }
+    // Where the file is, for five seconds after a title click. Drawn last, as a
+    // child of the root, so it lies over the whole booth without moving anything.
+    if DjWorkspaceState.show-collections: CollectionSheet {
+        width: parent.width;
+        height: parent.height;
+        selected-count: root.selected-count;
+    }
+    PathPeek {
+        x: Theme.s5;
+        y: parent.height - self.height - Theme.s3;
+        width: Math.min(parent.width - Theme.s5 * 2, 900px);
+    }
+}

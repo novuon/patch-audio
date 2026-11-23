@@ -1,0 +1,12 @@
+{
+  "name": "patch-adapter-hydra",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Patch's adapter to hydra-synth as a shader compiler (a sandboxed sidecar speaking JSON lines). The adapter is MIT; hydra-synth itself is AGPL-3.0 and installed separately, never bundled into Patch.",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.mjs",
+  "dependencies": {
+    "hydra-synth": "1.4.0"
+  }
+}

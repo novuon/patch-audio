@@ -1,0 +1,220 @@
+import { Theme, Label, MockBadge, Tag, SectionHeading, Scroll, Meter, Slider, Toggle, EmptyState, KV, Host } from "@patch-ui/patch-ui.slint";
+import { AudioState, InspSection, InspRow, TargetItem } from "state.slint";
+import { ListRow, Dot } from "@patch-ui/patch-ui.slint";
+
+// One click per destination: the friendliest way to patch.
+component SendTo inherits VerticalLayout {
+    SectionHeading { text: "Send to"; detail: "click to patch"; }
+    for t in AudioState.targets: ListRow {
+        selected: t.current;
+        clicked => { AudioState.connect(AudioState.selected, t.id); }
+        VerticalLayout { alignment: center; Dot { state: t.current ? "accent" : "off"; } }
+        Label { text: t.name; tone: t.current ? "bright" : "normal"; horizontal-stretch: 1; }
+        Label { text: t.current ? "now" : ""; tone: "accent"; small: true; horizontal-stretch: 0; }
+    }
+    Rectangle { height: Theme.s2; }
+}
+
+component RowView inherits Rectangle {
+    in property <InspRow> r;
+    height: r.kind == "note" ? note.preferred-height + 6px : Theme.row-h - 2px;
+    HorizontalLayout {
+        padding-left: Theme.s4;
+        padding-right: Theme.s4;
+        spacing: Theme.s3;
+        if root.r.kind == "kv": Label { text: root.r.label; tone: "dim"; width: 38%; }
+        if root.r.kind == "kv": Label { text: root.r.value; horizontal-alignment: right; }
+
+        if root.r.kind == "live-meter": Label { text: root.r.label; tone: "dim"; width: 38%; }
+        if root.r.kind == "live-meter": VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Meter { vertical: false; kind: AudioState.sel-meter-kind; height: 4px; value: AudioState.sel-level; avg: AudioState.sel-vu; }
+        }
+        if root.r.kind == "live-meter": Label { text: root.r.value; tone: "dim"; small: true; width: 60px; horizontal-alignment: right; }
+
+        if root.r.kind == "gain": Label { text: root.r.label; tone: "dim"; width: 38%; }
+        if root.r.kind == "gain": VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Slider {
+                value: root.r.amount;
+                changed(v) => { AudioState.set-gain(AudioState.selected, v); }
+            }
+        }
+        if root.r.kind == "gain": Label { text: root.r.value; small: true; width: 60px; horizontal-alignment: right; }
+
+        if root.r.kind == "chain": Label { text: "▸"; tone: "faint"; width: 10px; }
+        if root.r.kind == "chain": Label { text: root.r.label; tone: root.r.active ? "normal" : "faint"; }
+        if root.r.kind == "chain": Label { text: root.r.value; tone: "dim"; small: true; horizontal-alignment: right; }
+        if root.r.kind == "chain": VerticalLayout { alignment: center; Toggle { checked: root.r.active; } }
+
+        if root.r.kind == "route": Label { text: root.r.label; tone: "faint"; width: 14px; }
+        if root.r.kind == "route": Label { text: root.r.value; }
+        if root.r.kind == "route": VerticalLayout { alignment: center; Tag { text: root.r.amount + "ch"; } }
+
+        if root.r.kind == "rule": VerticalLayout { alignment: center; Tag { text: root.r.label; } }
+        if root.r.kind == "rule": Label { text: root.r.value; tone: "normal"; }
+
+        if root.r.kind == "patch": Label { text: root.r.label; tone: "normal"; }
+        if root.r.kind == "patch": Label { text: root.r.value; tone: root.r.active ? "accent" : "faint"; small: true; horizontal-alignment: right; }
+        if root.r.kind == "patch": VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: root.r.active;
+                toggled => { AudioState.toggle-through-patch(AudioState.selected); }
+            }
+        }
+
+        // A voice stage (a microphone's): its name, setting, amount, on/off.
+        if root.r.kind == "voice": Label { text: root.r.label; tone: root.r.active ? "normal" : "faint"; width: 30%; }
+        if root.r.kind == "voice": VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Slider {
+                value: root.r.amount;
+                changed(v) => { AudioState.voice-set(AudioState.selected, root.r.label, root.r.active, v); }
+            }
+        }
+        if root.r.kind == "voice": Label { text: root.r.value; tone: "dim"; small: true; width: 64px; horizontal-alignment: right; }
+        if root.r.kind == "voice" && root.r.label != "Input trim" && root.r.label != "Output trim": VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: root.r.active;
+                toggled => { AudioState.voice-set(AudioState.selected, root.r.label, !root.r.active, root.r.amount); }
+            }
+        }
+
+        // A microphone's input to choose (value: the source's node name).
+        if root.r.kind == "monitor": Label { text: root.r.label; tone: "normal"; horizontal-stretch: 1; }
+        if root.r.kind == "monitor": VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: root.r.active;
+                toggled => { AudioState.voice-set(AudioState.selected, root.r.value != "" ? root.r.value : "Monitor", !root.r.active, 0); }
+            }
+        }
+        if root.r.kind == "source": TouchArea {
+            mouse-cursor: pointer;
+            clicked => { AudioState.mic-source(AudioState.selected, root.r.value); }
+            HorizontalLayout {
+                spacing: Theme.s3;
+                VerticalLayout { alignment: center; Dot { state: root.r.active ? "accent" : "off"; } }
+                Label { text: root.r.label; tone: root.r.active ? "bright" : "normal"; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                Label { text: root.r.active ? "in use" : ""; tone: "accent"; small: true; vertical-alignment: center; }
+            }
+        }
+
+        if root.r.kind == "remove-mic": TouchArea {
+            mouse-cursor: pointer;
+            clicked => { AudioState.mic-remove(AudioState.selected); }
+            Label { text: root.r.label; tone: "warn"; vertical-alignment: center; }
+        }
+
+        if root.r.kind == "toggle": Label { text: root.r.label; tone: "dim"; }
+        if root.r.kind == "toggle": VerticalLayout { alignment: center; Toggle { checked: root.r.active; toggled => { if root.r.label == "Muted" { AudioState.toggle-mute(AudioState.selected); } } } }
+
+    }
+    note := Label {
+        visible: root.r.kind == "note";
+        x: Theme.s4;
+        y: 3px;
+        width: root.width - 2 * Theme.s4;
+        text: root.r.kind == "note" ? root.r.value : "";
+        tone: "faint";
+        small: true;
+        wrap: word-wrap;
+        vertical-alignment: top;
+    }
+}
+
+component SectionView inherits VerticalLayout {
+    in property <InspSection> s;
+    SectionHeading { text: root.s.title; }
+    for r in root.s.rows: RowView { r: r; }
+    Rectangle { height: Theme.s2; }
+}
+
+export component InspectorSurface inherits Rectangle {
+    in property <bool> show-identity: true;
+    init => { keys.focus(); }
+    property <bool> two-col: self.width >= 920px;
+    // Keep label and value within reading distance on very wide tiles.
+    property <length> col-w: two-col ? Math.min(self.width / 2, 560px) : Math.min(self.width, 640px);
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.DownArrow || e.text == "j") { sc.scroll-by(Theme.row-h * 2); return accept; }
+            if (e.text == Key.UpArrow || e.text == "k") { sc.scroll-by(-Theme.row-h * 2); return accept; }
+            return reject;
+        }
+        if AudioState.selected == "": EmptyState {
+            title: "Nothing selected";
+            detail: "Select a node in the Router or a strip in the Mixer. The Inspector follows the selection across windows.";
+        }
+        VerticalLayout {
+            visible: AudioState.selected != "";
+            // Identity block
+            if root.show-identity: Rectangle {
+                height: id-row.preferred-height + 2 * Theme.s3;
+                background: Theme.bg-deep;
+                id-row := VerticalLayout {
+                    padding: Theme.s3;
+                    padding-left: Theme.s4;
+                    padding-right: Theme.s4;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: Theme.s3;
+                        Label {
+                            text: AudioState.sel-name;
+                            tone: "bright";
+                            font-size: Theme.fs-large;
+                            font-weight: 600;
+                            horizontal-stretch: 0;
+                        }
+                        if AudioState.sel-hardware && !AudioState.live: VerticalLayout { alignment: center; MockBadge { text: "MOCK DEVICE"; } }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Label { text: AudioState.sel-kind + " · " + AudioState.sel-detail; tone: "dim"; small: true; }
+                }
+            }
+            if AudioState.toast != "": Rectangle {
+                height: Theme.row-h + 4px;
+                background: Theme.bg-deep;
+                HorizontalLayout {
+                    padding-left: Theme.s4;
+                    Label { text: AudioState.toast; tone: "dim"; small: true; }
+                }
+            }
+            sc := Scroll {
+                vertical-stretch: 1;
+                if AudioState.targets.length > 0: SendTo { width: root.col-w; }
+                if !root.two-col: VerticalLayout {
+                    width: root.col-w;
+                    for s in AudioState.sections: SectionView { s: s; }
+                }
+                if root.two-col: HorizontalLayout {
+                    alignment: start;
+                    VerticalLayout {
+                        width: root.col-w;
+                        alignment: start;
+                        for s[i] in AudioState.sections: SectionView {
+                            visible: Math.mod(i, 2) == 0;
+                            height: Math.mod(i, 2) == 0 ? self.preferred-height : 0px;
+                            s: s;
+                        }
+                    }
+                    VerticalLayout {
+                        width: root.col-w;
+                        alignment: start;
+                        for s[i] in AudioState.sections: SectionView {
+                            visible: Math.mod(i, 2) == 1;
+                            height: Math.mod(i, 2) == 1 ? self.preferred-height : 0px;
+                            s: s;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

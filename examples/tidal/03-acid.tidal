@@ -1,0 +1,11 @@
+-- An acid line: a reese bass through a swept, resonant filter.
+setcps (130/60/4)
+
+d1 $ s "bd*4" # shape 0.4
+
+d2 $ n "0 ~ 0 12 ~ 3 0 7" # s "superreese" # octave 3
+  # cutoff (range 300 3000 $ slow 4 sine) # resonance 0.6 # legato 0.8
+
+d3 $ s "~ hh ~ hh" # hcutoff 3000
+
+d4 $ jux (hurry 2) $ s "~ ~ ~ cp" # room 0.25

@@ -1,0 +1,189 @@
+import { Theme } from "@patch-ui/patch-ui.slint";
+
+// A rotary knob: the decks' EQ and filter, and the stems. Drag up or down;
+// double-click resets. A jump turns visibly; under the hand it follows.
+export component Knob inherits VerticalLayout {
+    in property <float> value; // −1 … 1
+    in property <string> label;
+    in property <string> readout;
+    in property <bool> filter;
+    // No label or readout under it (the console's spine names the rows).
+    in property <bool> bare;
+    // 0…1 shown on the bipolar range: lit whenever up.
+    in property <bool> unipolar;
+    in property <float> reset-value: 0;
+    in property <bool> enabled: true;
+    // Whether what it controls is connected: unlit (grey) otherwise.
+    in property <bool> live: true;
+    callback moved(float);
+    in property <length> size: 30px;
+    // The label's room: narrower in a compact Mixer strip.
+    in property <length> label-w: 64px;
+    // The mixer's scaled slots: the circle and the name share a fixed height
+    // instead of the label pushing the next row down.
+    in property <bool> pack: false;
+    // Some compact controls have a numeric readout alongside the dial, so
+    // their position marker only adds clutter.
+    in property <bool> hide-pointer: false;
+    in property <length> label-h: Theme.fs-tiny;
+    // Patch style (the Crossfader): the name above the dial in tracked
+    // caps, the value always under it.
+    in property <bool> titled: false;
+    property <bool> lit: root.live && (root.unipolar ? root.value > -1 : root.value != 0);
+    spacing: root.pack ? 0px : 2px;
+    alignment: center;
+    if root.titled: Text {
+        text: root.label;
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        letter-spacing: 1.5px;
+        horizontal-alignment: center;
+        overflow: clip;
+    }
+    HorizontalLayout {
+        alignment: center;
+        height: root.size;
+        dial := Rectangle {
+            width: root.size;
+            height: root.size;
+            border-radius: self.width / 2;
+            // Patch style: a Graphite body inside a thin track ring; the
+            // value as an arc on the ring (from 12 o'clock, or from the
+            // start for a unipolar control) and a pointer line on the body.
+            // Knobs that hide their pointer still show the arc.
+            property <angle> a: clamp(root.value, -1, 1) * 135deg;
+            // A jump turns: a cut or a step shows as the hand's twist.
+            // Under the hand it follows at once.
+            animate a { duration: ta.pressed ? 0ms : 110ms; easing: ease-out; }
+            property <float> c: self.width / 1px / 2;
+            property <float> rr: self.c - 1.5;
+            property <angle> from: root.unipolar ? -135deg : 0deg;
+            property <float> fx: self.c + Math.sin(self.from) * self.rr;
+            property <float> fy: self.c - Math.cos(self.from) * self.rr;
+            property <float> tx: self.c + Math.sin(self.a) * self.rr;
+            property <float> ty: self.c - Math.cos(self.a) * self.rr;
+            property <bool> large: abs((self.a - self.from) / 1deg) > 180;
+            property <int> sweep: self.a > self.from ? 1 : 0;
+            // Classic: a filled dial, edged in the accent when lit, with a
+            // dotted pointer. Patch style: the track and arc below.
+            background: Theme.patch-style ? transparent : (ta.pressed ? Theme.selection : Theme.raised);
+            border-width: Theme.patch-style ? 0px : 1px;
+            border-color: root.lit ? Theme.accent : Theme.border-strong;
+            if !Theme.patch-style && !root.hide-pointer: Rectangle {
+                width: 4px;
+                height: 4px;
+                border-radius: self.width / 2;
+                x: parent.width / 2 + Math.sin(parent.a) * parent.width / 2 * 0.7 - self.width / 2;
+                y: parent.height / 2 - Math.cos(parent.a) * parent.height / 2 * 0.7 - self.height / 2;
+                background: root.lit ? Theme.accent : Theme.text;
+            }
+            for f in [0.34, 0.52, 0.7]: Rectangle {
+                visible: !Theme.patch-style && !root.hide-pointer;
+                width: Theme.patch-style || root.hide-pointer ? 0px : (f == 0.7 ? 4px : 3px);
+                height: self.width;
+                border-radius: self.width / 2;
+                x: parent.width / 2 + Math.sin(parent.a) * parent.width / 2 * f - self.width / 2;
+                y: parent.height / 2 - Math.cos(parent.a) * parent.height / 2 * f - self.height / 2;
+                background: root.lit ? Theme.accent : Theme.text;
+            }
+            // The track: 270°, from 7:30 to 4:30.
+            if Theme.patch-style: Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: parent.c * 2;
+                viewbox-height: parent.c * 2;
+                stroke: Theme.border-strong;
+                stroke-width: 1.5px;
+                commands: "M " + (parent.c - 0.7071 * parent.rr) + " " + (parent.c + 0.7071 * parent.rr)
+                    + " A " + parent.rr + " " + parent.rr + " 0 1 1 " + (parent.c + 0.7071 * parent.rr) + " " + (parent.c + 0.7071 * parent.rr);
+            }
+            if Theme.patch-style && abs((dial.a - dial.from) / 1deg) > 1: Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: parent.c * 2;
+                viewbox-height: parent.c * 2;
+                stroke: root.lit ? Theme.text-bright : Theme.text-faint;
+                stroke-width: 2px;
+                commands: "M " + parent.fx + " " + parent.fy + " A " + parent.rr + " " + parent.rr + " 0 " + (parent.large ? 1 : 0) + " " + parent.sweep + " " + parent.tx + " " + parent.ty;
+            }
+            if Theme.patch-style: body := Rectangle {
+                property <length> inset: Math.max(3px, Math.round(parent.width * 0.16 / 1px) * 1px);
+                x: self.inset;
+                y: self.inset;
+                width: parent.width - 2 * self.inset;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: ta.pressed ? Theme.hover : Theme.raised;
+                border-width: 1px;
+                border-color: ta.has-hover ? Theme.text-faint : Theme.border-strong;
+                if !root.hide-pointer: Path {
+                    property <float> bc: body.width / 1px / 2;
+                    width: body.width;
+                    height: body.height;
+                    viewbox-width: self.bc * 2;
+                    viewbox-height: self.bc * 2;
+                    stroke: root.live ? Theme.text-bright : Theme.text-faint;
+                    stroke-width: 2px;
+                    commands: "M " + (self.bc + Math.sin(dial.a) * self.bc * 0.25) + " " + (self.bc - Math.cos(dial.a) * self.bc * 0.25)
+                        + " L " + (self.bc + Math.sin(dial.a) * self.bc * 0.82) + " " + (self.bc - Math.cos(dial.a) * self.bc * 0.82);
+                }
+            }
+            ta := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: root.enabled ? ns-resize : default;
+                property <float> start;
+                property <length> y0;
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && root.enabled) {
+                        self.start = root.value;
+                        self.y0 = self.mouse-y;
+                    }
+                }
+                moved => {
+                    if (self.pressed && root.enabled) {
+                        // 150 px of travel covers the whole range; snaps to centre.
+                        let v = clamp(self.start - (self.mouse-y - self.y0) / 75px, -1, 1);
+                        root.moved(!root.unipolar && abs(v) < 0.04 ? 0 : v);
+                    }
+                }
+                double-clicked => { if (root.enabled) { root.moved(root.reset-value); } }
+            }
+        }
+    }
+    if root.titled: Text {
+        text: root.readout;
+        color: root.lit ? Theme.text-bright : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        horizontal-alignment: center;
+        overflow: clip;
+    }
+    if !root.bare && !root.pack && !root.titled: HorizontalLayout {
+        alignment: center;
+        Text {
+            text: ta.pressed || (root.value != 0 && !root.unipolar) ? root.readout : root.label;
+            color: root.lit && !root.unipolar ? (Theme.patch-style ? Theme.text-bright : Theme.accent) : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: center;
+            width: root.label-w;
+            overflow: clip;
+        }
+    }
+    if !root.bare && root.pack && !root.titled: HorizontalLayout {
+        alignment: center;
+        height: root.label-h;
+        Text {
+            text: ta.pressed || (root.value != 0 && !root.unipolar) ? root.readout : root.label;
+            color: root.lit && !root.unipolar ? (Theme.patch-style ? Theme.text-bright : Theme.accent) : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: root.label-w;
+            height: root.label-h;
+            overflow: clip;
+        }
+    }
+}

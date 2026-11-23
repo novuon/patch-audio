@@ -1,0 +1,11 @@
+-- Chords on a pad, the same chords arpeggiated, a broken beat under them.
+setcps (100/60/4)
+
+d1 $ slow 2 $ n "<c'maj7 a'min7 f'maj7 g'dom7>" # s "superpad" # room 0.5 # size 0.8
+
+d2 $ arp "<up downup>" $ n "<c'maj7'5 a'min7'5 f'maj7'5 g'dom7'5>"
+  # s "supermandolin" # delay 0.3 # delaytime 0.3
+
+d3 $ s "bd ~ ~ bd ~ ~ bd ~, ~ ~ sn ~" # gain 0.9
+
+d4 $ off 0.125 (|+ n 12) $ n (scale "major" "<0 2> 4") # s "superfm" # gain 0.7

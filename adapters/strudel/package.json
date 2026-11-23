@@ -1,0 +1,17 @@
+{
+  "name": "patch-adapter-strudel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Patch's adapter to the Strudel pattern engine (a sandboxed sidecar speaking JSON lines). The adapter is MIT; Strudel itself is AGPL-3.0-or-later and installed separately, never bundled into Patch.",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.mjs",
+  "dependencies": {
+    "@strudel/core": "1.2.6",
+    "@strudel/mini": "1.2.6",
+    "@strudel/transpiler": "1.2.6"
+  },
+  "overrides": {
+    "@kabelsalat/web": "file:./stubs/kabelsalat"
+  }
+}

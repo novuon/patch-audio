@@ -1,0 +1,18 @@
+# Licenses selected for the public tester kit. OR expressions prefer the
+# first compatible permissive license; Slint's custom license text is in a
+# separate notice generated from Cargo metadata.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "LicenseRef-Slint-Royalty-free-2.0",
+]
+workarounds = ["ring", "rustls"]
+private = { ignore = true }

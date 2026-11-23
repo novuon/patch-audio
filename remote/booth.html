@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1210">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Patch Booth">
+<title>Patch · DJ Booth</title>
+<link rel="stylesheet" href="/booth.css">
+<link rel="stylesheet" href="/navigation.css"><script src="/pairing.js" defer></script><script src="/navigation.js" defer></script><script src="/booth.js" defer></script>
+</head>
+<body>
+<patch-navigation page="booth"></patch-navigation>
+<main><div class="remote-session"><span id="connection" role="status">Connecting…</span></div>
+<div class="decks" id="decks"></div>
+<section class="mixer" aria-labelledby="mix-title">
+<div class="section-heading"><h2 id="mix-title">Mix</h2><output id="mix-position">—</output></div>
+<label class="crossfader-label" for="crossfader"><span>A</span><span>Crossfader</span><span>B</span></label>
+<input id="crossfader" type="range" min="0" max="1" step="0.01" value="0.5" aria-label="Crossfader: deck A to deck B" disabled>
+<div class="mix-shortcuts"><button data-mix="0">A only</button><button data-mix="0.5">Centre</button><button data-mix="1">B only</button></div>
+</section>
+<details class="help"><summary>About these controls</summary><p>Play and Pause control each deck. Cue pauses and returns to its saved cue point. Sync matches the other deck’s tempo and beats. Level sets that deck’s fader.</p><p>Manual transport and mixer changes go through Patch’s human controls, so Auto Mix yields according to the engine’s rules. Music stays on the computer.</p><a href="/remote/dj">Open Auto Mix controls →</a></details>
+</main>
+<footer><span id="ack" role="status" aria-live="polite">Waiting for Patch…</span><span id="access">PRIVATE REMOTE</span></footer>
+</body>
+</html>

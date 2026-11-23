@@ -1,0 +1,11 @@
+{
+  "format": "patch-dj",
+  "format_version": 1,
+  "schema_version": 4,
+  "package_id": "18d8e56d-c1a9-42ff-a001-000000000000",
+  "mode": "set",
+  "name": "Patch DJ Reference Set",
+  "created_at": "1790433111.426292384Z",
+  "audio_policy": "relative_or_embedded",
+  "extensions": []
+}

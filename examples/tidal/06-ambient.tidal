@@ -1,0 +1,10 @@
+-- Slow, wide, wet.
+setcps (70/60/4)
+
+d1 $ slow 4 $ n "<c'min9 ef'maj9 bf'sus4 af'maj7>"
+  # s "superpad" # attack 1 # release 3 # room 0.8 # size 0.95
+
+d2 $ degradeBy 0.6 $ n (segment 8 $ scale "minPent" $ irand 10)
+  # s "supersine" # octave 6 # delay 0.5 # delaytime 0.66 # delayfeedback 0.7 # gain 0.8
+
+d3 $ slow 2 $ s "~ rim" # gain 0.6 # room 0.6

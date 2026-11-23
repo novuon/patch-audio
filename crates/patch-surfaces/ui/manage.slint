@@ -1,0 +1,437 @@
+// Library manager: sources (folders and drives) with their folders, your
+// collections, and the tracks of whatever is selected, with what is known
+// about each. Organising happens here; the Library window is for playing.
+// The track list draws only the rows in view (thousands stay quick).
+import { Theme, Label, SectionHeading, Button, Tag, SearchField, Scroll } from "@patch-ui/patch-ui.slint";
+
+export struct MSource {
+    id: int,
+    name: string,
+    place: string,
+    connected: bool,
+    tracks: int,
+    ready: int,
+    check: int,
+    waiting: int,
+    failed: int,
+    selected: bool,
+}
+
+export struct MFolder {
+    source: int,
+    // Relative to the source ("" is the source's own top level).
+    path: string,
+    label: string,
+    count: int,
+    selected: bool,
+}
+
+export struct MCollection {
+    id: int,
+    name: string,
+    count: int,
+    selected: bool,
+}
+
+export struct MOffer {
+    path: string,
+    label: string,
+}
+
+export struct MRow {
+    title: string,
+    artist: string,
+    // "ready", "check", "waiting", "failed", "offline".
+    state: string,
+    why: string,
+    bpm: string,
+    key: string,
+    lufs: string,
+    length: string,
+    folder: string,
+    checked: bool,
+}
+
+export global ManageState {
+    in property <[MSource]> sources;
+    in property <[MFolder]> folders;
+    in property <[MCollection]> collections;
+    in property <[MOffer]> offers;
+    in property <string> activity;
+    in property <bool> busy;
+    // What the right side shows.
+    in property <string> heading;
+    in property <string> summary;
+    in property <bool> in-collection;
+    in property <bool> is-source;
+    in property <bool> is-folder;
+    in property <int> selected-source: -1;
+    in property <int> selected-collection: -1;
+    in property <string> state-filter: "all";
+    in property <[int]> state-counts: [0, 0, 0, 0, 0];
+    // The rows in view: `first` is the index of rows[0] in the whole list.
+    in property <[MRow]> rows;
+    in property <int> count;
+    in property <int> first;
+    in property <int> checked-count;
+    in property <string> note;
+    // Inline editing and confirming: "source:3", "collection:7", "new".
+    in-out property <string> editing;
+    in-out property <string> confirming;
+    in-out property <string> edit-text;
+    callback select-all();
+    callback select-source(int);
+    callback select-folder(int, string);
+    callback select-collection(int);
+    callback add-folder();
+    callback add-drive(string, string);
+    callback rescan(int);
+    callback rename-source(int, string);
+    callback remove-source(int);
+    callback new-collection(string);
+    callback rename-collection(int, string);
+    callback delete-collection(int);
+    callback folder-to-collection(int, string);
+    callback search(string);
+    callback set-state(string);
+    callback scrolled(int, int);
+    callback toggle(int);
+    callback check-all(bool);
+    callback add-checked-to(int);
+    callback add-checked-to-new(string);
+    callback remove-checked();
+    callback reanalyse-checked();
+}
+
+component Side inherits Rectangle {
+    in property <bool> selected;
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> dim;
+    in property <length> indent: 0px;
+    callback clicked();
+    height: Theme.row-h + (detail != "" ? Theme.fs-small : 0px);
+    background: selected ? Theme.selection : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { clicked => { root.clicked(); } }
+    VerticalLayout {
+        padding-left: Theme.s3 + root.indent;
+        padding-right: Theme.s3;
+        alignment: center;
+        Label { text: root.title; tone: root.dim ? "dim" : root.selected ? "bright" : "normal"; min-width: 0px; overflow: elide; }
+        if root.detail != "": Label { text: root.detail; tone: "faint"; small: true; min-width: 0px; overflow: elide; }
+    }
+}
+
+// A name edited in place: Enter saves, Esc cancels.
+component NameEdit inherits HorizontalLayout {
+    in property <string> placeholder;
+    callback save(string);
+    callback cancel();
+    spacing: Theme.s2;
+    padding-left: Theme.s3;
+    padding-right: Theme.s3;
+    height: Theme.row-h;
+    f := SearchField {
+        horizontal-stretch: 1;
+        prompt: "✎";
+        placeholder: root.placeholder;
+        text: ManageState.edit-text;
+        edited(t) => { ManageState.edit-text = t; }
+        accepted => { root.save(self.text); }
+        cancelled => { root.cancel(); }
+    }
+    Button { text: "Save"; compact: true; primary: true; clicked => { root.save(f.text); } }
+    Button { text: "Cancel"; compact: true; clicked => { root.cancel(); } }
+    init => { f.start-edit(); }
+}
+
+// Are you sure: the question and two buttons.
+component Confirm inherits HorizontalLayout {
+    in property <string> question;
+    in property <string> yes;
+    callback confirmed();
+    spacing: Theme.s2;
+    padding-left: Theme.s3;
+    padding-right: Theme.s3;
+    height: Theme.row-h;
+    Label { text: root.question; tone: "warn"; small: true; horizontal-stretch: 1; vertical-alignment: center; }
+    Button { text: root.yes; compact: true; primary: true; clicked => { ManageState.confirming = ""; root.confirmed(); } }
+    Button { text: "Keep"; compact: true; clicked => { ManageState.confirming = ""; } }
+}
+
+component TrackRow inherits Rectangle {
+    in property <MRow> r;
+    in property <int> index;
+    background: r.checked ? Theme.selection : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { clicked => { ManageState.toggle(root.index); } }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s3;
+        // The tick box.
+        VerticalLayout {
+            alignment: center;
+            width: 16px;
+            Rectangle {
+                width: 14px;
+                height: 14px;
+                border-width: 1px;
+                border-color: root.r.checked ? Theme.accent : Theme.border-strong;
+                background: root.r.checked ? Theme.accent : transparent;
+                if root.r.checked: Text { text: "✓"; color: Theme.accent-ink; font-size: Theme.fs-tiny; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 58px;
+            Label {
+                text: root.r.state;
+                tone: root.r.state == "ready" ? "dim" : root.r.state == "check" ? "warn" : root.r.state == "failed" ? "error" : "faint";
+                small: true;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Label { text: root.r.title; tone: root.r.state == "offline" ? "dim" : "normal"; }
+            Label { text: root.r.why != "" ? root.r.why : root.r.artist; tone: root.r.state == "failed" ? "error" : root.r.state == "check" ? "warn" : "faint"; small: true; }
+        }
+        VerticalLayout { alignment: center; width: 56px; Label { text: root.r.bpm; horizontal-alignment: right; } }
+        VerticalLayout { alignment: center; width: 36px; Label { text: root.r.key; tone: "dim"; horizontal-alignment: right; } }
+        VerticalLayout { alignment: center; width: 76px; Label { text: root.r.lufs; tone: "faint"; small: true; horizontal-alignment: right; } }
+        VerticalLayout { alignment: center; width: 44px; Label { text: root.r.length; tone: "faint"; small: true; horizontal-alignment: right; } }
+        if parent.width > 900px: VerticalLayout { alignment: center; width: 180px; Label { text: root.r.folder; tone: "faint"; small: true; } }
+    }
+}
+
+// Only the rows in view exist: Rust hands over the slice for `first`.
+component Tracks inherits Rectangle {
+    property <length> row-h: Theme.row-h + Theme.fs-small;
+    clip: true;
+    changed height => { ManageState.scrolled(Math.floor(-fl.content-y / root.row-h), Math.ceil(self.height / root.row-h) + 2); }
+    init => { ManageState.scrolled(0, Math.ceil(self.height / root.row-h) + 2); }
+    fl := Flickable {
+        content-height: max(self.height, ManageState.count * root.row-h);
+        changed content-y => { ManageState.scrolled(Math.floor(-self.content-y / root.row-h), Math.ceil(root.height / root.row-h) + 2); }
+        for r[i] in ManageState.rows: TrackRow {
+            y: (ManageState.first + i) * root.row-h;
+            width: fl.width;
+            height: root.row-h;
+            r: r;
+            index: ManageState.first + i;
+        }
+    }
+    // A scroll bar that says where you are.
+    if ManageState.count * root.row-h > root.height: Rectangle {
+        x: root.width - 3px;
+        width: 2px;
+        height: max(16px, root.height * root.height / (ManageState.count * root.row-h));
+        y: (root.height - self.height) * (-fl.content-y / max(1px, ManageState.count * root.row-h - root.height));
+        background: Theme.border-strong;
+    }
+}
+
+export component ManageSurface inherits Rectangle {
+    property <bool> narrow: self.width < 900px;
+    add-popup := PopupWindow {
+        x: root.width - 380px;
+        y: 120px;
+        width: 360px;
+        Rectangle {
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            VerticalLayout {
+                padding: Theme.s3;
+                spacing: Theme.s1;
+                Label { text: "Add " + ManageState.checked-count + " track" + (ManageState.checked-count == 1 ? "" : "s") + " to…"; tone: "bright"; }
+                for c in ManageState.collections: Side {
+                    title: c.name;
+                    detail: c.count + (c.count == 1 ? " track" : " tracks");
+                    clicked => { ManageState.add-checked-to(c.id); add-popup.close(); }
+                }
+                if ManageState.collections.length == 0: Label { text: "No collections yet: make one below."; tone: "faint"; small: true; }
+            }
+        }
+    }
+    HorizontalLayout {
+        // ---- left: sources with their folders, and collections ----
+        Rectangle {
+            width: root.narrow ? 260px : 320px;
+            background: Theme.bg-deep;
+            Scroll {
+                VerticalLayout {
+                    padding-top: Theme.s2;
+                    Side {
+                        title: "All tracks";
+                        selected: ManageState.selected-source < 0 && ManageState.selected-collection < 0 && !ManageState.is-folder;
+                        clicked => { ManageState.select-all(); }
+                    }
+                    HorizontalLayout {
+                        padding-right: Theme.s3;
+                        SectionHeading { text: "Sources"; horizontal-stretch: 1; }
+                        VerticalLayout { alignment: center; Button { text: "Add folder…"; compact: true; clicked => { ManageState.add-folder(); } } }
+                    }
+                    for o in ManageState.offers: HorizontalLayout {
+                        padding-left: Theme.s3;
+                        padding-right: Theme.s3;
+                        spacing: Theme.s2;
+                        height: Theme.row-h;
+                        Label { text: "Drive " + o.label + " is plugged in"; small: true; tone: "bright"; horizontal-stretch: 1; vertical-alignment: center; }
+                        Button { text: "Add"; compact: true; primary: true; clicked => { ManageState.add-drive(o.path, o.label); } }
+                    }
+                    for s in ManageState.sources: VerticalLayout {
+                        if ManageState.editing != "source:" + s.id: Side {
+                            title: s.name + (s.connected ? "" : " · not connected");
+                            detail: s.connected ? s.tracks + " tracks · " + s.ready + " ready" + (s.waiting > 0 ? " · " + s.waiting + " waiting" : "") : s.tracks + " tracks offline";
+                            dim: !s.connected;
+                            selected: s.selected;
+                            clicked => { ManageState.select-source(s.id); }
+                        }
+                        if ManageState.editing == "source:" + s.id: NameEdit {
+                            placeholder: "Name this source";
+                            save(t) => { ManageState.rename-source(s.id, t); ManageState.editing = ""; }
+                            cancel => { ManageState.editing = ""; }
+                        }
+                        if s.selected && ManageState.editing != "source:" + s.id && ManageState.confirming != "source:" + s.id: HorizontalLayout {
+                            padding-left: Theme.s3;
+                            padding-right: Theme.s3;
+                            spacing: Theme.s2;
+                            height: Theme.row-h;
+                            Button { text: "Rescan"; compact: true; enabled: s.connected; clicked => { ManageState.rescan(s.id); } }
+                            Button { text: "Rename"; compact: true; clicked => { ManageState.edit-text = s.name; ManageState.editing = "source:" + s.id; } }
+                            Button { text: "Remove"; compact: true; clicked => { ManageState.confirming = "source:" + s.id; } }
+                            Rectangle { }
+                        }
+                        if ManageState.confirming == "source:" + s.id: Confirm {
+                            question: "Remove " + s.name + "? Files stay; analyses are kept.";
+                            yes: "Remove";
+                            confirmed => { ManageState.remove-source(s.id); }
+                        }
+                        // Its folders, to browse (and make collections of).
+                        if s.selected: VerticalLayout {
+                            for f in ManageState.folders: HorizontalLayout {
+                                Side {
+                                    horizontal-stretch: 1;
+                                    indent: Theme.s4;
+                                    title: f.label;
+                                    detail: f.count + (f.count == 1 ? " track" : " tracks");
+                                    selected: f.selected;
+                                    clicked => { ManageState.select-folder(f.source, f.path); }
+                                }
+                                if f.selected && f.path != "": VerticalLayout {
+                                    alignment: center;
+                                    padding-right: Theme.s3;
+                                    Button { text: "Make collection"; compact: true; clicked => { ManageState.folder-to-collection(f.source, f.path); } }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-right: Theme.s3;
+                        SectionHeading { text: "Collections"; horizontal-stretch: 1; }
+                        VerticalLayout { alignment: center; Button { text: "New"; compact: true; clicked => { ManageState.edit-text = ""; ManageState.editing = "new"; } } }
+                    }
+                    if ManageState.editing == "new": NameEdit {
+                        placeholder: "Name the new collection";
+                        save(t) => { ManageState.new-collection(t); ManageState.editing = ""; }
+                        cancel => { ManageState.editing = ""; }
+                    }
+                    for c in ManageState.collections: VerticalLayout {
+                        if ManageState.editing != "collection:" + c.id: Side {
+                            title: c.name;
+                            detail: c.count + (c.count == 1 ? " track" : " tracks");
+                            selected: c.selected;
+                            clicked => { ManageState.select-collection(c.id); }
+                        }
+                        if ManageState.editing == "collection:" + c.id: NameEdit {
+                            placeholder: "Name this collection";
+                            save(t) => { ManageState.rename-collection(c.id, t); ManageState.editing = ""; }
+                            cancel => { ManageState.editing = ""; }
+                        }
+                        if c.selected && ManageState.editing != "collection:" + c.id && ManageState.confirming != "collection:" + c.id: HorizontalLayout {
+                            padding-left: Theme.s3;
+                            padding-right: Theme.s3;
+                            spacing: Theme.s2;
+                            height: Theme.row-h;
+                            Button { text: "Rename"; compact: true; clicked => { ManageState.edit-text = c.name; ManageState.editing = "collection:" + c.id; } }
+                            Button { text: "Delete"; compact: true; clicked => { ManageState.confirming = "collection:" + c.id; } }
+                            Rectangle { }
+                        }
+                        if ManageState.confirming == "collection:" + c.id: Confirm {
+                            question: "Delete " + c.name + "? Its tracks stay in the library.";
+                            yes: "Delete";
+                            confirmed => { ManageState.delete-collection(c.id); }
+                        }
+                    }
+                    if ManageState.collections.length == 0 && ManageState.editing != "new": Label {
+                        x: Theme.s3;
+                        text: "None yet. New makes one; tick tracks on the right and add them.";
+                        tone: "faint";
+                        small: true;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { height: Theme.s4; }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: Theme.border; }
+        // ---- right: the tracks of what is selected ----
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding: Theme.s3;
+            spacing: Theme.s2;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                height: Theme.row-h;
+                Label { text: ManageState.heading; tone: "bright"; font-weight: 700; horizontal-stretch: 0; vertical-alignment: center; min-width: 0px; overflow: elide; }
+                Label { text: ManageState.summary; tone: "dim"; small: true; horizontal-stretch: 0; vertical-alignment: center; min-width: 0px; overflow: elide; }
+                Label { text: ManageState.activity; tone: ManageState.busy ? "accent" : "faint"; small: true; horizontal-stretch: 1; vertical-alignment: center; min-width: 0px; overflow: elide; }
+            }
+            HorizontalLayout {
+                spacing: Theme.s2;
+                height: Theme.row-h;
+                SearchField { horizontal-stretch: 1; min-width: 0px; placeholder: "Search title, artist or folder"; edited(t) => { ManageState.search(t); } cancelled => { self.text = ""; ManageState.search(""); } }
+                for f[k] in [
+                    { id: "all", label: "All" },
+                    { id: "ready", label: "Ready" },
+                    { id: "check", label: "Check" },
+                    { id: "waiting", label: "Waiting" },
+                    { id: "failed", label: "Failed" },
+                ]: Button {
+                    text: f.label + " " + ManageState.state-counts[k];
+                    compact: true;
+                    lit: ManageState.state-filter == f.id;
+                    clicked => { ManageState.set-state(f.id); }
+                }
+            }
+            // What to do with the ticked tracks.
+            HorizontalLayout {
+                spacing: Theme.s2;
+                height: Theme.row-h;
+                if ManageState.checked-count == 0: Label {
+                    text: ManageState.note != "" ? ManageState.note : "Tick tracks to add them to a collection or analyse them again.";
+                    tone: "faint";
+                    small: true;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if ManageState.checked-count > 0: Label { text: ManageState.checked-count + " ticked"; tone: "accent"; vertical-alignment: center; horizontal-stretch: 0; }
+                if ManageState.checked-count > 0: Button { text: "Add to collection…"; compact: true; primary: true; clicked => { add-popup.show(); } }
+                if ManageState.checked-count > 0 && ManageState.in-collection: Button { text: "Remove from this collection"; compact: true; clicked => { ManageState.remove-checked(); } }
+                if ManageState.checked-count > 0: Button { text: "Analyse again"; compact: true; clicked => { ManageState.reanalyse-checked(); } }
+                if ManageState.checked-count > 0: Button { text: "Untick all"; compact: true; clicked => { ManageState.check-all(false); } }
+                if ManageState.checked-count > 0: Label { text: ManageState.note; tone: "dim"; small: true; vertical-alignment: center; horizontal-stretch: 1; }
+                Button { text: "Tick all " + ManageState.count; compact: true; enabled: ManageState.count > 0; clicked => { ManageState.check-all(true); } }
+            }
+            Rectangle { height: 1px; background: Theme.border; }
+            if ManageState.count == 0: Label {
+                text: "No tracks here" + (ManageState.state-filter != "all" ? " with this state" : "") + ".";
+                tone: "faint";
+                horizontal-alignment: center;
+                vertical-stretch: 1;
+            }
+            if ManageState.count > 0: Tracks { vertical-stretch: 1; }
+        }
+    }
+}

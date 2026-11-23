@@ -1,0 +1,63 @@
+{
+ "mode": "suggest",
+ "phase": "unavailable",
+ "origin": "demo:ai_unavailable",
+ "direction": "build",
+ "section": "build",
+ "sources": [
+  {
+   "id": "deck-a",
+   "title": "Losing It",
+   "artist": "Fisher",
+   "playing": true,
+   "presence": 1.0,
+   "beat": 224.0,
+   "bpm": 125.0,
+   "beat_confidence": 0.92,
+   "key": "9A",
+   "energy": 0.72,
+   "energy_ahead": [
+    0.72,
+    0.74,
+    0.78,
+    0.8,
+    0.82,
+    0.85,
+    0.86,
+    0.88
+   ],
+   "position": 107.5,
+   "remaining": 141.2
+  },
+  {
+   "id": "deck-b",
+   "playing": false
+  }
+ ],
+ "candidates": [],
+ "transition": null,
+ "confidence": 0.0,
+ "uncertainty": [],
+ "environment": null,
+ "clock": {
+  "nsec": 1000000000000,
+  "output_latency_ns": 42000000,
+  "latency_level": "reported"
+ },
+ "history": [
+  {
+   "title": "Cola",
+   "style": "blend",
+   "age_s": 184.0
+  },
+  {
+   "title": "Turn Off The Lights",
+   "style": "loopout",
+   "age_s": 452.0
+  }
+ ],
+ "override_age_s": null,
+ "eval_ms": 3.4,
+ "eval_age_s": 1.2,
+ "note": "no analysis for this track: the music plays on"
+}

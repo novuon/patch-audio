@@ -1,0 +1,34 @@
+import { Theme, Label, SectionHeading, Scroll, EmptyState } from "@patch-ui/patch-ui.slint";
+
+// One diagnostics row: a heading (key empty) or key/value.
+export struct DiagRow {
+    key: string,
+    value: string,
+    warn: bool,
+}
+
+export global DiagState {
+    in property <[DiagRow]> rows;
+    // Shown while there are no rows: waiting for the first reply, the
+    // service not running, or why it could not be read (the window was
+    // blank, 2026-11-12).
+    in property <string> note: "Reading the Patch service…";
+}
+
+// Engine diagnostics: dense, monospaced, updated while open.
+export component DiagSurface inherits Rectangle {
+    if DiagState.rows.length == 0: EmptyState { width: parent.width; height: parent.height; title: DiagState.note; }
+    if DiagState.rows.length > 0: Scroll {
+        for r in DiagState.rows: Rectangle {
+            height: r.key == "" ? Theme.row-h + Theme.s2 : Theme.row-h - 4px;
+            if r.key == "": SectionHeading { y: Theme.s2; text: r.value; }
+            if r.key != "": HorizontalLayout {
+                padding-left: Theme.s5;
+                padding-right: Theme.s4;
+                spacing: Theme.s4;
+                Label { text: r.key; tone: "dim"; small: true; width: 140px; vertical-alignment: center; }
+                Label { text: r.value; tone: r.warn ? "warn" : "normal"; small: true; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+            }
+        }
+    }
+}

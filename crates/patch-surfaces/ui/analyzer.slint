@@ -1,0 +1,330 @@
+import { Theme, Label, MockBadge, SectionHeading, Button } from "@patch-ui/patch-ui.slint";
+
+export struct AnStat {
+    key: string,
+    l: string,
+    r: string,
+    warn: bool,
+}
+
+export struct AnLabel {
+    text: string,
+    // 0…1 across the RTA.
+    pos: float,
+}
+
+export global AnalyzerState {
+    // What the images show (a hash): Rust redraws only when it changes.
+    in-out property <int> drawn-key: -1;
+    in property <image> rta;
+    in property <image> scope;
+    // "LIVE SIGNAL", "SIMULATED SIGNAL" or "NO ENGINE".
+    in property <string> source;
+    // Shown over the RTA when there is nothing to analyse.
+    in property <string> message;
+    in property <float> correlation;
+    in property <string> corr-text;
+    in property <float> balance;
+    in property <string> bal-text;
+    in property <string> width-text;
+    in property <string> ms-text;
+    in property <[AnStat]> stats;
+    in property <[AnLabel]> freq-labels;
+    in property <bool> bars-fast: true;
+    in property <string> gain-text;
+    in property <string> status;
+    callback toggle-fast();
+    callback reset-hold();
+    callback toggle-gain();
+    // Output latency: "MEASURED" or "REPORTED", the figure and its details,
+    // a note (instructions, progress or why a measurement failed).
+    in property <string> lat-level;
+    in property <string> lat-text;
+    in property <string> lat-note;
+    in property <bool> lat-busy;
+    in property <bool> lat-saved;
+    callback measure-latency();
+    callback forget-latency();
+    // Where the images go, logical size; Rust renders at physical size.
+    in-out property <length> rta-w: 600px;
+    in-out property <length> rta-h: 300px;
+    in-out property <length> scope-size: 200px;
+}
+
+// Display range of the RTA (analyzer.rs TOP_DB / FLOOR_DB).
+component RtaView inherits Rectangle {
+    property <length> axis-h: Theme.fs-tiny + 6px;
+    property <length> gutter: 30px;
+    area := Rectangle {
+        x: root.gutter;
+        y: 0;
+        width: root.width - root.gutter;
+        height: root.height - root.axis-h;
+        init => { AnalyzerState.rta-w = self.width; AnalyzerState.rta-h = self.height; }
+        changed width => { AnalyzerState.rta-w = self.width; }
+        changed height => { AnalyzerState.rta-h = self.height; }
+        Image {
+            source: AnalyzerState.rta;
+            width: parent.width;
+            height: parent.height;
+            image-fit: fill;
+        }
+        if AnalyzerState.message != "": Rectangle {
+            width: msg.preferred-width + 2 * Theme.s4;
+            height: msg.preferred-height + 2 * Theme.s3;
+            background: Theme.bg.with-alpha(0.85);
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            msg := Label { text: AnalyzerState.message; tone: "dim"; small: true; }
+        }
+    }
+    // dB scale: every 10 dB where there is room, else every 30.
+    for d in [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]: Text {
+        visible: area.height >= 180px || Math.mod(d, 30) == 0;
+        x: 0;
+        width: root.gutter - 4px;
+        y: Math.clamp(area.height * d / 90 - self.height / 2, 0, area.height - self.height);
+        text: d == 0 ? "0" : "−" + d;
+        horizontal-alignment: right;
+        color: Math.mod(d, 30) == 0 ? Theme.text-dim : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+    }
+    for l in AnalyzerState.freq-labels: Text {
+        visible: area.width >= 360px || l.text == "31.5" || l.text == "125" || l.text == "500" || l.text == "2k" || l.text == "8k";
+        x: Math.clamp(root.gutter + area.width * l.pos - self.width / 2, root.gutter, root.width - self.width);
+        y: area.height + 3px;
+        text: l.text;
+        color: l.text == "1k" ? Theme.text-dim : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+    }
+}
+
+component Scale3 inherits HorizontalLayout {
+    in property <string> a;
+    in property <string> b;
+    in property <string> c;
+    height: Theme.fs-tiny + 2px;
+    Text { text: root.a; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: left; }
+    Text { text: root.b; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: center; }
+    Text { text: root.c; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: right; }
+}
+
+// A centre-zero bar: fill from the centre to `value` (−1…+1).
+component CentreBar inherits Rectangle {
+    in property <float> value;
+    in property <color> fill: Theme.accent;
+    height: 10px;
+    background: Theme.bg-deeper;
+    border-width: 1px;
+    border-color: Theme.border;
+    for t in [0.25, 0.5, 0.75]: Rectangle {
+        x: root.width * t;
+        width: 1px;
+        background: t == 0.5 ? Theme.border-strong : Theme.border;
+    }
+    Rectangle {
+        x: root.width * (0.5 + Math.min(root.value, 0) / 2);
+        y: 2px;
+        width: Math.max(root.width * Math.abs(root.value) / 2, 2px);
+        height: root.height - 4px;
+        background: root.fill;
+    }
+}
+
+component Correlation inherits VerticalLayout {
+    spacing: 2px;
+    SectionHeading { text: "Correlation"; detail: AnalyzerState.corr-text; pad: 0px; }
+    CentreBar {
+        value: AnalyzerState.correlation;
+        fill: AnalyzerState.correlation < -0.2 ? Theme.error : AnalyzerState.correlation < 0.3 ? Theme.warn : Theme.accent;
+    }
+    Scale3 { a: "−1"; b: "0"; c: "+1"; }
+}
+
+component Balance inherits VerticalLayout {
+    spacing: 2px;
+    SectionHeading { text: "Balance"; detail: AnalyzerState.bal-text; pad: 0px; }
+    // ±12 dB full scale; left louder draws to the left.
+    CentreBar { value: Math.clamp(-AnalyzerState.balance / 12, -1, 1); fill: Theme.text-dim; }
+    Scale3 { a: "L 12"; b: "C"; c: "12 R"; }
+}
+
+component Stats inherits VerticalLayout {
+    spacing: 0px;
+    HorizontalLayout {
+        height: Theme.row-h - 8px;
+        Label { text: ""; width: 56px; }
+        Label { text: "L"; tone: "dim"; small: true; horizontal-stretch: 1; horizontal-alignment: right; vertical-alignment: center; }
+        Label { text: "R"; tone: "dim"; small: true; horizontal-stretch: 1; horizontal-alignment: right; vertical-alignment: center; }
+    }
+    for s in AnalyzerState.stats: HorizontalLayout {
+        height: Theme.row-h - 8px;
+        Label { text: s.key; tone: "dim"; small: true; width: 56px; vertical-alignment: center; }
+        Label { text: s.l; tone: s.warn ? "warn" : "normal"; small: true; horizontal-stretch: 1; horizontal-alignment: right; vertical-alignment: center; }
+        Label { text: s.r; tone: s.warn ? "warn" : "normal"; small: true; horizontal-stretch: 1; horizontal-alignment: right; vertical-alignment: center; }
+    }
+    HorizontalLayout {
+        height: Theme.row-h - 8px;
+        Label { text: "M / S"; tone: "dim"; small: true; width: 56px; vertical-alignment: center; }
+        Label { text: AnalyzerState.ms-text; small: true; horizontal-stretch: 1; horizontal-alignment: right; vertical-alignment: center; overflow: elide; }
+    }
+    HorizontalLayout {
+        height: Theme.row-h - 8px;
+        Label { text: "width"; tone: "dim"; small: true; width: 56px; vertical-alignment: center; }
+        Label { text: AnalyzerState.width-text; small: true; horizontal-stretch: 1; horizontal-alignment: right; vertical-alignment: center; overflow: elide; }
+    }
+}
+
+// Output latency: what the meters delay by, and the loop that measures it.
+component LatencyView inherits VerticalLayout {
+    spacing: Theme.s2;
+    SectionHeading { text: "Output latency"; detail: AnalyzerState.lat-level; pad: 0px; }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: AnalyzerState.lat-text; tone: AnalyzerState.lat-level == "MEASURED" ? "bright" : "dim"; small: true; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+        Button { text: AnalyzerState.lat-busy ? "Measuring…" : "Measure"; key: "l"; compact: true; enabled: !AnalyzerState.lat-busy; clicked => { AnalyzerState.measure-latency(); } }
+        if AnalyzerState.lat-saved: Button { text: "Forget"; compact: true; enabled: !AnalyzerState.lat-busy; clicked => { AnalyzerState.forget-latency(); } }
+    }
+    if AnalyzerState.lat-note != "": Label { text: AnalyzerState.lat-note; tone: AnalyzerState.lat-busy ? "accent" : "faint"; small: true; wrap: word-wrap; }
+}
+
+component ScopeView inherits Rectangle {
+    init => { AnalyzerState.scope-size = Math.min(self.width, self.height); }
+    changed width => { AnalyzerState.scope-size = Math.min(self.width, self.height); }
+    changed height => { AnalyzerState.scope-size = Math.min(self.width, self.height); }
+    Image {
+        source: AnalyzerState.scope;
+        width: Math.min(root.width, root.height);
+        height: self.width;
+        image-fit: fill;
+    }
+    // Axis names at the edges of the square.
+    property <length> side: Math.min(root.width, root.height);
+    property <length> x0: (root.width - self.side) / 2;
+    property <length> y0: (root.height - self.side) / 2;
+    Text { x: root.x0 + root.side / 2 + 4px; y: root.y0 + 2px; text: "M"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+    Text { x: root.x0 + root.side * 0.16; y: root.y0 + root.side * 0.16; text: "L"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+    Text { x: root.x0 + root.side * 0.84 - self.width; y: root.y0 + root.side * 0.16; text: "R"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+    Text { x: root.x0 + root.side - self.width - 2px; y: root.y0 + root.side / 2 + 2px; text: "S"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+    Text { x: root.x0 + 2px; y: root.y0 + root.side - self.height - 2px; text: AnalyzerState.gain-text; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+}
+
+component Legend inherits HorizontalLayout {
+    // Narrow: the title and source only.
+    in property <bool> brief;
+    spacing: Theme.s4;
+    height: Theme.row-h - 4px;
+    Label { text: root.brief ? "RTA" : "RTA · 1/6 oct · dBFS"; tone: "bright"; small: true; vertical-alignment: center; horizontal-stretch: 0; }
+    if !root.brief: HorizontalLayout {
+        spacing: Theme.s2;
+        horizontal-stretch: 0;
+        VerticalLayout { alignment: center; Rectangle { width: 10px; height: 8px; background: Theme.text-dim; } }
+        Label { text: AnalyzerState.bars-fast ? "fast 125 ms" : "slow 1 s"; tone: "dim"; small: true; vertical-alignment: center; }
+    }
+    if !root.brief: HorizontalLayout {
+        spacing: Theme.s2;
+        horizontal-stretch: 0;
+        VerticalLayout { alignment: center; Rectangle { width: 10px; height: 2px; background: Theme.text-bright; } }
+        Label { text: AnalyzerState.bars-fast ? "slow" : "fast"; tone: "dim"; small: true; vertical-alignment: center; }
+    }
+    if !root.brief: HorizontalLayout {
+        spacing: Theme.s2;
+        horizontal-stretch: 0;
+        VerticalLayout { alignment: center; Rectangle { width: 10px; height: 2px; background: Theme.accent; } }
+        Label { text: "hold"; tone: "dim"; small: true; vertical-alignment: center; }
+    }
+    Rectangle { horizontal-stretch: 1; }
+    VerticalLayout { alignment: center; MockBadge { text: AnalyzerState.source; subtle: AnalyzerState.source == "LIVE SIGNAL"; } }
+}
+
+export component AnalyzerSurface inherits Rectangle {
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == "f") { AnalyzerState.toggle-fast(); return accept; }
+            if (e.text == "x") { AnalyzerState.reset-hold(); return accept; }
+            if (e.text == "z") { AnalyzerState.toggle-gain(); return accept; }
+            if (e.text == "l") { AnalyzerState.measure-latency(); return accept; }
+            return reject;
+        }
+    }
+    // Side column beside the RTA when wide; below it otherwise; the RTA
+    // and correlation alone when very short.
+    property <bool> side: self.width >= 720px && self.height >= 300px;
+    property <bool> tiny: !side && self.height < 380px;
+    // Narrow and tall: one column.
+    property <bool> column: !side && !tiny && self.width < 480px;
+    // Between those, the readouts need 290 px under the correlation column:
+    // shorter, the numbers go in a column of their own, or wait for more room.
+    property <bool> short-mid: !side && !tiny && !column && self.height < 580px;
+    property <bool> stats-beside: short-mid && self.width >= 620px;
+    property <length> col-w: Math.clamp(self.width * 0.3, 240px, 340px);
+    property <length> scope-h: Math.min(self.col-w, self.height - 440px);
+    if root.side: HorizontalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s5;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Theme.s2;
+            Legend { }
+            RtaView { vertical-stretch: 1; }
+        }
+        VerticalLayout {
+            width: root.col-w;
+            spacing: Theme.s4;
+            // The scope takes what the readouts leave (they always fit).
+            if root.scope-h >= 100px: SectionHeading { text: "Vectorscope"; detail: ""; pad: 0px; }
+            if root.scope-h >= 100px: ScopeView { height: root.scope-h; }
+            Correlation { }
+            Balance { }
+            Stats { }
+            Rectangle { vertical-stretch: 1; }
+            LatencyView { }
+        }
+    }
+    if root.column: VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        Legend { brief: true; }
+        RtaView { vertical-stretch: 1; min-height: 160px; }
+        ScopeView { height: Math.min(root.width - 2 * Theme.s4, root.height * 0.3); }
+        Correlation { }
+        Balance { }
+        Stats { }
+        LatencyView { }
+    }
+    if !root.side && !root.tiny && !root.column: VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        Legend { }
+        RtaView { vertical-stretch: 1; }
+        HorizontalLayout {
+            height: Math.min(root.height * 0.5, 300px);
+            spacing: Theme.s4;
+            ScopeView { width: self.height; }
+            VerticalLayout {
+                spacing: Theme.s3;
+                Correlation { }
+                Balance { }
+                if !root.short-mid: Stats { }
+                Rectangle { vertical-stretch: 1; }
+            }
+            if root.stats-beside: VerticalLayout {
+                width: 200px;
+                Stats { }
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+        LatencyView { }
+    }
+    if root.tiny: VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s2;
+        Legend { brief: root.width < 480px; }
+        RtaView { vertical-stretch: 1; }
+        Correlation { }
+    }
+}

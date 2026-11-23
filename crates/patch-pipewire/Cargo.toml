@@ -1,0 +1,20 @@
+[package]
+name = "patch-pipewire"
+description = "Live AudioProvider for Patch: reads the PipeWire graph, meters playback, routes streams through the Patch bus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+libc = "0.2"
+patch-model.workspace = true
+patch-engine.workspace = true
+patch-core.workspace = true
+patch-meter.workspace = true
+serde.workspace = true
+serde_json = "1"
+patch-tune.workspace = true
+
+[lints]
+workspace = true

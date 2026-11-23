@@ -1,0 +1,140 @@
+[workspace]
+resolver = "3"
+# Vendored with Patch's changes (vendor/vst3-host/PATCH.md): built as a
+# dependency, not linted as one of ours.
+exclude = ["vendor/vst3-host"]
+members = [
+    "app",
+    "crates/patch-core",
+    "crates/patch-controller",
+    "crates/patch-stems",
+    "crates/patch-model",
+    "crates/patch-mock",
+    "crates/patch-pipewire",
+    "crates/patch-meter",
+    "crates/patch-record",
+    "crates/patch-broadcast",
+    "crates/patch-network",
+    "crates/patch-engine",
+    "crates/patch-dsp",
+    "crates/patch-analysis",
+    "crates/patch-library",
+    "crates/patch-ai",
+    "crates/patch-bench",
+    "crates/patch-ui",
+    "crates/patch-build",
+    "crates/patch-host",
+    "crates/patch-surfaces",
+    "crates/patch-tune",
+    "crates/patch-visual",
+    "crates/patch-pattern",
+    "crates/patch-material",
+    "crates/patch-plugin",
+    "crates/patch-remote",
+]
+
+[workspace.package]
+version = "0.8.6"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit-wayland", "renderer-femtovg", "renderer-software", "software-renderer-systemfonts", "software-renderer-path"] }
+slint-build = "1.18"
+anyhow = "1"
+toml = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+rand = "0.8"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+patch-core = { path = "crates/patch-core" }
+patch-controller = { path = "crates/patch-controller" }
+patch-stems = { path = "crates/patch-stems" }
+patch-model = { path = "crates/patch-model" }
+patch-mock = { path = "crates/patch-mock" }
+patch-pipewire = { path = "crates/patch-pipewire" }
+patch-meter = { path = "crates/patch-meter" }
+patch-record = { path = "crates/patch-record" }
+patch-broadcast = { path = "crates/patch-broadcast" }
+patch-network = { path = "crates/patch-network" }
+patch-engine = { path = "crates/patch-engine" }
+patch-dsp = { path = "crates/patch-dsp" }
+patch-analysis = { path = "crates/patch-analysis" }
+patch-library = { path = "crates/patch-library" }
+patch-ai = { path = "crates/patch-ai" }
+patch-ui = { path = "crates/patch-ui" }
+patch-build = { path = "crates/patch-build" }
+patch-host = { path = "crates/patch-host" }
+patch-surfaces = { path = "crates/patch-surfaces" }
+patch-tune = { path = "crates/patch-tune" }
+patch-visual = { path = "crates/patch-visual" }
+patch-pattern = { path = "crates/patch-pattern" }
+patch-material = { path = "crates/patch-material" }
+patch-plugin = { path = "crates/patch-plugin" }
+
+[profile.dev]
+opt-level = 1
+# Full debug info makes the generated Slint UI and its caches enormous.
+debug = 0
+
+[profile.dev.package."*"]
+opt-level = 2
+
+# The shipped binary. Thin LTO and one codegen unit. `panic = "abort"` so a
+# panic in the PipeWire callback (`extern "C"`) ends the process instead of
+# unwinding through C. The C shim is not part of that LTO: `patch-engine`'s
+# build script compiles it with `-fno-lto` and drops `-flto` from packager
+# C flags. This is rustc LTO, not linker-plugin LTO, so `cc` does not rebuild
+# the shim as bitcode.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+# Trying a change on this machine: release speed, but no LTO, parallel
+# codegen and incremental builds, so a UI edit rebuilds in a fraction of the
+# time. Never shipped: releases come from `[profile.release]`.
+# `cargo build --profile dev-fast` → target/dev-fast/omarchy-patch.
+[profile.dev-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+# Slint generates one huge module for the windows, which compiles as one
+# codegen unit; unoptimised it takes a third of the time (a .slint edit
+# 142 s → 49 s here). The binary's own crate likewise (52 s → 1 s). The
+# engine, DSP and Slint's renderer stay optimised; time the UI on a release
+# build, not this one.
+[profile.dev-fast.package.patch-surfaces]
+opt-level = 0
+
+[profile.dev-fast.package.patch]
+opt-level = 0
+
+# `cargo bench` inherits release. It stays off LTO: a bench is a measurement,
+# not the shipped binary. Cargo 1.99's `cargo test --release` does not use
+# this profile. It uses `[profile.release]` and forces panic = unwind,
+# ignoring a panic key, so the harness can still catch.
+[profile.bench]
+lto = false
+codegen-units = 16
+
+# Style lints the code breaks on purpose: DSP loops index several buffers
+# in lockstep, engine entry points take their parameters flat, and frame
+# loops use chunks_exact (as_chunks needs Rust 1.88).
+[workspace.lints.clippy]
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+chunks_exact_to_as_chunks = "allow"
+
+# vst3-host 0.10.0 with the editor of a running plugin (vendor/vst3-host/PATCH.md).
+[patch.crates-io]
+vst3-host = { path = "vendor/vst3-host" }
+# Slint's femtovg renderer with one change: a glyph run it cannot draw is
+# skipped and logged instead of unwrapped (the unwrap aborted Patch).
+i-slint-renderer-femtovg = { path = "vendor/i-slint-renderer-femtovg" }

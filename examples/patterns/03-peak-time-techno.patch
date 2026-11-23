@@ -1,0 +1,15 @@
+// Peak-time techno roller: a rumbling kick with a skipped beat every
+// eighth bar, 16th hats with an open hat on the off-beat, Euclidean
+// percussion rotating each bar, and an 8-bar build that chunks the
+// percussion into double time before the turn.
+// Visuals: "prism" with symmetry snapping on the drop bar.
+// Safe: drums and visuals only.
+cycle 4
+kick:  s("bd*4").lastOf(8, within(0.75, 1, degradeBy(1)))
+open:  s("~ oh ~ oh")
+hats:  s("hh*16").degradeBy(0.15).chunk(4, fast(2))
+perc:  s("<perc(5,16) perc(5,16,2) perc(7,16,1) perc(3,8,5)>")
+build: s("<~ ~ ~ ~ ~ ~ sd*8 sd*16>")
+scene("<prism prism prism prism prism prism nebula prism>")
+visual.intensity("<0.6 0.6 0.7 0.7 0.8 0.8 0.95 1>")
+visual.symmetry("<0.3 0.3 0.5 0.5 0.6 0.6 0.8 1>")

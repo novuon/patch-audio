@@ -1,0 +1,11 @@
+-- Rolling, broken techno: euclidean kicks, chance on the hats.
+setcps (132/60/4)
+
+d1 $ s "bd(3,8) [~ bd] bd ~" # shape 0.35
+
+d2 $ sometimes (# speed 2) $ s "hh*16?" # gain 0.9 # pan sine # hcutoff 3000
+
+d3 $ every 4 (fast 2) $ s "~ rim ~ [rim cp]"
+  # delay 0.4 # delaytime 0.18 # delayfeedback 0.5
+
+d4 $ whenmod 8 6 (# crush 5) $ s "~ ~ cp ~" # room 0.3

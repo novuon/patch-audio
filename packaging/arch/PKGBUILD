@@ -1,0 +1,52 @@
+# Maintainer: novuon <228564085+novuon@users.noreply.github.com>
+pkgname=omarchy-patch
+pkgver=0.7.8
+pkgrel=1
+pkgdesc="Patch: the Omarchy audio environment (routing, mixing, metering, recording, DJing, an AI DJ and a visualiser)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/novuon/Patch"
+# The source is MIT. The binary links Rubber Band and FFTW (GPL-2.0-or-later)
+# and Slint (GPL-3.0 option): as built here it is distributed under GPL-3.0.
+# See NOTICE.md.
+license=('MIT' 'GPL-3.0-only')
+depends=('pipewire' 'libpulse' 'wireplumber' 'ffmpeg' 'rubberband' 'sqlite' 'fontconfig' 'libnotify' 'xdg-user-dirs' 'rtkit' 'realtime-privileges' 'uv' 'python')
+makedepends=('git' 'rust' 'pkgconf' 'gcc')
+optdepends=('hyprland: tiled Unit windows and layouts (Omarchy)'
+            'xdg-desktop-portal: the desktop'"'"'s folder chooser in the Library (any backend)'
+            'wl-clipboard: copying from Patch')
+install=omarchy-patch.install
+source=("git+https://github.com/novuon/Patch.git#tag=v${pkgver}")
+sha256sums=('SKIP')
+
+prepare() {
+  cd Patch
+  # rust-toolchain.toml pins rustup. RUSTUP_TOOLCHAIN would override that file.
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd Patch
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd Patch
+  cargo test --frozen --release --workspace
+}
+
+package() {
+  cd Patch
+  install -Dm644 tools/stems/setup.py "$pkgdir/usr/share/omarchy-patch/stems/setup.py"
+  install -Dm644 tools/stems/demucs_adapter.py "$pkgdir/usr/share/omarchy-patch/stems/demucs_adapter.py"
+  install -Dm755 target/release/omarchy-patch "$pkgdir/usr/bin/omarchy-patch"
+  install -Dm644 integration/desktop/omarchy-patch.desktop "$pkgdir/usr/share/applications/omarchy-patch.desktop"
+  install -Dm644 integration/desktop/omarchy-patch.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-patch.svg"
+  install -Dm644 packaging/systemd/omarchy-patch.service "$pkgdir/usr/lib/systemd/user/omarchy-patch.service"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 NOTICE.md "$pkgdir/usr/share/licenses/$pkgname/NOTICE.md"
+  install -Dm644 README.md CHANGELOG.md -t "$pkgdir/usr/share/doc/$pkgname/"
+  cp -r docs "$pkgdir/usr/share/doc/$pkgname/"
+  install -d "$pkgdir/usr/share/$pkgname/themes"
+  cp -r themes/patch-light themes/patch-dark "$pkgdir/usr/share/$pkgname/themes/"
+}

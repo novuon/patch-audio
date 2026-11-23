@@ -1,0 +1,320 @@
+// Broadcast Unit: send Patch's audio somewhere else — an Icecast server, an
+// RTMP endpoint, or a file on this machine. The capture runs in a detached
+// process, so a stream keeps running when this window closes.
+import { Theme, Label, Button, SearchField, SectionHeading, Dot, Meter, MeterKind, Scroll, HLine, Host } from "@patch-ui/patch-ui.slint";
+
+export struct BcSource {
+    id: string,
+    label: string,
+    selected: bool,
+}
+
+export global BroadcastState {
+    // A broadcast is running (whether or not it has a server yet).
+    in property <bool> active;
+    // offline | connecting | live | reconnecting | error (FAILED: `note` says why)
+    in property <string> state: "offline";
+    in property <bool> live;
+    in property <string> uptime: "00:00:00";
+    in property <string> sent: "0:00";
+    in property <string> size: "—";
+    in property <string> peak: "−∞";
+    in property <float> level-pos;
+    in property <float> peak-pos;
+    in property <int> dropouts;
+    in property <string> message;
+    in property <string> note;
+    // The destination as it will be written, credentials masked.
+    in property <string> destination;
+
+    in property <[BcSource]> sources;
+    in property <int> source-cursor;
+    in property <string> source-label: "—";
+
+    // Form (the user edits these directly).
+    in-out property <string> kind: "file";
+    in-out property <string> codec: "opus";
+    in-out property <int> bitrate: 128;
+    in-out property <int> rate: 48000;
+    in-out property <string> target;
+    in-out property <string> mount: "patch";
+    in-out property <string> user: "source";
+    in-out property <string> password;
+    // The RTMP stream key: a secret, never shown.
+    in-out property <string> key;
+    // The picture an RTMP stream carries: performer | visualiser | none,
+    // what is said about it, and whether all is well with it.
+    in-out property <string> picture: "performer";
+    in property <string> picture-note;
+    in property <bool> picture-ok: true;
+    in-out property <string> name: "Patch";
+
+    callback go-live();
+    callback stop-stream();
+    callback move-source(int);
+    callback set-kind(string);
+    callback set-codec(string);
+    callback set-bitrate(int);
+    callback set-rate(int);
+    callback set-picture(string);
+    // A form field changed: its name and new text.
+    callback edit(string, string);
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: Theme.row-h;
+    width: t.preferred-width + 20px;
+    background: on ? Theme.accent-soft : ta.has-hover ? Theme.hover : transparent;
+    border-width: 1px;
+    border-color: on ? Theme.accent : Theme.border-strong;
+    t := Text {
+        text: root.text;
+        color: !root.enabled ? Theme.text-faint : root.on ? Theme.accent : Theme.text;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component GoButton inherits Rectangle {
+    in property <bool> active;
+    in property <bool> ready;
+    callback clicked();
+    height: 56px;
+    background: ta.pressed ? Theme.selection : ta.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: root.active ? Theme.error : Theme.border-strong;
+    HorizontalLayout {
+        alignment: center;
+        spacing: Theme.s4;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                border-radius: root.active ? 0px : 8px;
+                background: root.active ? Theme.error : root.ready ? Theme.accent : Theme.text-faint;
+            }
+        }
+        Text {
+            text: root.active ? "Stop broadcast" : "Go live";
+            color: Theme.text-bright;
+            font-family: Theme.font;
+            font-size: Theme.fs-large;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.active ? "esc" : root.ready ? "enter" : "pick a source";
+            color: Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// The form is locked while a broadcast runs: change a destination by
+// stopping first.
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> value;
+    callback edited(string);
+    spacing: Theme.s3;
+    Label { text: root.label; tone: "faint"; small: true; caps: true; width: 96px; vertical-alignment: center; }
+    SearchField {
+        horizontal-stretch: 1;
+        prompt: "";
+        read-only: BroadcastState.active;
+        placeholder: root.placeholder;
+        text <=> root.value;
+        edited(t) => { root.edited(t); }
+    }
+}
+
+// A field whose text is never shown (a stream password).
+component SecretField inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> value;
+    callback edited(string);
+    spacing: Theme.s3;
+    Label { text: root.label; tone: "faint"; small: true; caps: true; width: 96px; vertical-alignment: center; }
+    Rectangle {
+        horizontal-stretch: 1;
+        height: Theme.row-h + 4px;
+        background: Theme.bg-deep;
+        HorizontalLayout {
+            padding-left: Theme.s4;
+            padding-right: Theme.s4;
+            input := TextInput {
+                horizontal-stretch: 1;
+                width: 100%;
+                height: 100%;
+                color: Theme.text-bright;
+                font-family: Theme.font;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+                single-line: true;
+                read-only: BroadcastState.active;
+                input-type: password;
+                text <=> root.value;
+                edited => { root.edited(self.text); }
+            }
+            if input.text == "" && !input.has-focus: Text {
+                text: root.placeholder;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component BroadcastSurface inherits Rectangle {
+    init => { keys.focus(); }
+    property <bool> ready: BroadcastState.target != "" && BroadcastState.sources.length > 0;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.DownArrow && !BroadcastState.active) { BroadcastState.move-source(1); return accept; }
+            if (e.text == Key.UpArrow && !BroadcastState.active) { BroadcastState.move-source(-1); return accept; }
+            if (e.text == Key.Return && root.ready && !BroadcastState.active) { BroadcastState.go-live(); return accept; }
+            if (e.text == Key.Escape && BroadcastState.active) { BroadcastState.stop-stream(); return accept; }
+            return reject;
+        }
+        Scroll {
+            VerticalLayout {
+                padding: Theme.s5;
+                spacing: Theme.s4;
+                // What is happening now.
+                HorizontalLayout {
+                    spacing: Theme.s4;
+                    VerticalLayout { alignment: center; Dot { state: BroadcastState.state == "live" ? "accent" : BroadcastState.state == "error" ? "error" : BroadcastState.active ? "warn" : "off"; } }
+                    Label {
+                        text: BroadcastState.state == "live" ? "ON AIR" : BroadcastState.state == "reconnecting" ? "RECONNECTING" : BroadcastState.state == "connecting" ? "CONNECTING" : BroadcastState.state == "error" ? "FAILED" : "OFFLINE";
+                        tone: BroadcastState.live ? "bright" : BroadcastState.state == "error" ? "warn" : "dim";
+                        font-size: Theme.fs-title * 1.2;
+                        font-weight: 300;
+                        horizontal-stretch: 0;
+                    }
+                    Rectangle { }
+                    VerticalLayout {
+                        alignment: center;
+                        Label { text: BroadcastState.active ? BroadcastState.uptime : "—"; tone: "bright"; horizontal-alignment: right; }
+                        Label {
+                            text: BroadcastState.live ? BroadcastState.sent + " of audio"
+                                : BroadcastState.state == "reconnecting" ? "reconnecting…"
+                                : BroadcastState.state == "connecting" ? "connecting…"
+                                : BroadcastState.state == "error" ? "stopped"
+                                : "ready";
+                            tone: "faint";
+                            small: true;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+                // What is going out.
+                VerticalLayout {
+                    spacing: 3px;
+                    Meter { vertical: false; kind: MeterKind.System; height: 8px; value: BroadcastState.level-pos; peak: BroadcastState.peak-pos; }
+                    HorizontalLayout {
+                        spacing: Theme.s5;
+                        Label { text: "peak " + BroadcastState.peak + " dBFS"; tone: "dim"; small: true; horizontal-stretch: 0; }
+                        Label { text: "dropouts " + BroadcastState.dropouts; tone: BroadcastState.dropouts > 0 ? "warn" : "dim"; small: true; horizontal-stretch: 0; }
+                        Label { text: BroadcastState.active ? BroadcastState.size : "not encoding"; tone: "dim"; small: true; horizontal-stretch: 0; }
+                        Rectangle { }
+                    }
+                }
+                GoButton {
+                    active: BroadcastState.active;
+                    ready: root.ready;
+                    clicked => { if BroadcastState.active { BroadcastState.stop-stream(); } else { BroadcastState.go-live(); } }
+                }
+                if BroadcastState.message != "": Label { text: BroadcastState.message; tone: "dim"; small: true; wrap: word-wrap; }
+                if BroadcastState.note != "": Label { text: BroadcastState.note; tone: BroadcastState.state == "error" ? "warn" : "faint"; small: true; wrap: word-wrap; }
+                HLine { }
+                // Source.
+                SectionHeading { text: "Source"; detail: "what goes out"; }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Button { text: "‹"; enabled: !BroadcastState.active; clicked => { BroadcastState.move-source(-1); } }
+                    Label { text: BroadcastState.source-label; tone: "bright"; }
+                    Button { text: "›"; enabled: !BroadcastState.active; clicked => { BroadcastState.move-source(1); } }
+                    Rectangle { }
+                }
+                // Destination.
+                SectionHeading { text: "Destination"; detail: "where the stream goes"; }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Chip { text: "Icecast"; on: BroadcastState.kind == "icecast"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-kind("icecast"); } }
+                    Chip { text: "RTMP"; on: BroadcastState.kind == "rtmp"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-kind("rtmp"); } }
+                    Chip { text: "File"; on: BroadcastState.kind == "file"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-kind("file"); } }
+                    Rectangle { }
+                }
+                Field {
+                    label: BroadcastState.kind == "file" ? "File path" : "Server";
+                    placeholder: BroadcastState.kind == "icecast" ? "http://host:8000" : BroadcastState.kind == "rtmp" ? "rtmp://host/app" : "~/Music/Patch Broadcast/set.ogg";
+                    value <=> BroadcastState.target;
+                    edited(t) => { BroadcastState.edit("target", t); }
+                }
+                if BroadcastState.kind == "icecast": Field { label: "Mount"; placeholder: "patch"; value <=> BroadcastState.mount; edited(t) => { BroadcastState.edit("mount", t); } }
+                if BroadcastState.kind == "icecast": Field { label: "User"; placeholder: "source"; value <=> BroadcastState.user; edited(t) => { BroadcastState.edit("user", t); } }
+                if BroadcastState.kind == "icecast": SecretField { label: "Password"; placeholder: "stream password"; value <=> BroadcastState.password; edited(t) => { BroadcastState.edit("password", t); } }
+                if BroadcastState.kind == "rtmp": SecretField { label: "Stream key"; placeholder: "from your streaming service"; value <=> BroadcastState.key; edited(t) => { BroadcastState.edit("key", t); } }
+                // The picture (RTMP): a Patch window as drawn, or none.
+                if BroadcastState.kind == "rtmp": HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "Picture"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 96px; vertical-alignment: center; }
+                    Chip { text: "Performer"; on: BroadcastState.picture == "performer"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-picture("performer"); } }
+                    Chip { text: "Visualiser"; on: BroadcastState.picture == "visualiser"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-picture("visualiser"); } }
+                    Chip { text: "Sound only"; on: BroadcastState.picture == "none"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-picture("none"); } }
+                    Rectangle { }
+                    if BroadcastState.picture != "none": Button {
+                        text: BroadcastState.picture == "visualiser" ? "Show Visualiser" : "Show Performer";
+                        clicked => { Host.focus-surface(BroadcastState.picture); }
+                    }
+                }
+                if BroadcastState.kind == "rtmp": Label { text: BroadcastState.picture-note; tone: BroadcastState.picture-ok ? "faint" : "warn"; small: true; wrap: word-wrap; }
+                Field { label: "Stream name"; placeholder: "Patch"; value <=> BroadcastState.name; edited(t) => { BroadcastState.edit("name", t); } }
+                // Codec, bitrate, rate.
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "Codec"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 96px; }
+                    Chip { text: "Opus"; on: BroadcastState.codec == "opus"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-codec("opus"); } }
+                    Chip { text: "MP3"; on: BroadcastState.codec == "mp3"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-codec("mp3"); } }
+                    Chip { text: "AAC"; on: BroadcastState.codec == "aac"; enabled: !BroadcastState.active; clicked => { BroadcastState.set-codec("aac"); } }
+                    Rectangle { }
+                }
+                if BroadcastState.kind == "rtmp": Label { text: "RTMP carries H.264 and AAC in an FLV stream; Opus and MP3 are sent as AAC here."; tone: "faint"; small: true; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "Bitrate"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 96px; }
+                    Chip { text: "96k"; on: BroadcastState.bitrate == 96; enabled: !BroadcastState.active; clicked => { BroadcastState.set-bitrate(96); } }
+                    Chip { text: "128k"; on: BroadcastState.bitrate == 128; enabled: !BroadcastState.active; clicked => { BroadcastState.set-bitrate(128); } }
+                    Chip { text: "160k"; on: BroadcastState.bitrate == 160; enabled: !BroadcastState.active; clicked => { BroadcastState.set-bitrate(160); } }
+                    Chip { text: "192k"; on: BroadcastState.bitrate == 192; enabled: !BroadcastState.active; clicked => { BroadcastState.set-bitrate(192); } }
+                    Chip { text: "256k"; on: BroadcastState.bitrate == 256; enabled: !BroadcastState.active; clicked => { BroadcastState.set-bitrate(256); } }
+                    Rectangle { }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "Rate"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 96px; }
+                    Chip { text: "44.1 kHz"; on: BroadcastState.rate == 44100; enabled: !BroadcastState.active; clicked => { BroadcastState.set-rate(44100); } }
+                    Chip { text: "48 kHz"; on: BroadcastState.rate == 48000; enabled: !BroadcastState.active; clicked => { BroadcastState.set-rate(48000); } }
+                    Rectangle { }
+                }
+                if BroadcastState.destination != "": Label { text: "Sends to " + BroadcastState.destination; tone: "faint"; small: true; wrap: word-wrap; }
+                Label { text: "Enter go live · Esc stop. The stream keeps running when this window closes; stop it here, from the controller, or with `omarchy-patch broadcast stop`."; tone: "faint"; small: true; wrap: word-wrap; }
+            }
+        }
+    }
+}

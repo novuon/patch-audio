@@ -1,0 +1,2127 @@
+// The Classic (Omarchy) Decks and Crossfader: the layouts from before the
+// Patch style's (master 8110407), chosen per window by `Theme.patch-style`
+// (see audio.slint). The Patch-style layouts live in dj.slint.
+import { Knob } from "knob.slint";
+import { StemControls } from "stems.slint";
+import { Theme, Label, MockBadge, Tag, SectionHeading, ListRow, Scroll, Slider, Button, Pad, Icon, Meter, MeterScale, MeterKind, MeterStyle, HLine, EmptyState, SearchField, HeaderCell, Host } from "@patch-ui/patch-ui.slint";
+import { DjState, SamplePanel, SourceChip, XfCurveButton, DeckFavourite, MissionEvent, TrackPart, DeckItem, EqKnobs, DeckLevels, LibItem, LibSource, LibOffer, QueueItem, CollectionItem, TrackCollection } from "dj.slint";
+
+// A deck channel's dB scale.
+component DeckMeterScale inherits Rectangle {
+    MeterScale { width: root.width; height: root.height; kind: MeterKind.System; }
+}
+
+
+// Deck letter, lit while the deck plays.
+component DeckBadge inherits Rectangle {
+    in property <string> letter;
+    in property <bool> lit;
+    width: Theme.row-h + Theme.s3;
+    height: self.width;
+    background: lit ? Theme.accent : Theme.bg-deep;
+    border-width: 1px;
+    border-color: lit ? Theme.accent : Theme.border-strong;
+    Text {
+        text: root.letter;
+        color: root.lit ? Theme.accent-ink : Theme.text-bright;
+        font-family: Theme.font-display;
+        font-size: Theme.fs-large;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Tape ruler: the track as a strip of tape with a tick every 15 s (tall at
+// every minute, numbered when there is room), the played part shaded and the
+// playhead in accent. Click anywhere to seek there.
+component TapeRuler inherits Rectangle {
+    in property <float> progress;
+    in property <float> duration-s;
+    in property <bool> labels: true;
+    // Waveform overview (two images: unplayed, played) and phrase lines
+    // (8 bars, 0…1).
+    in property <bool> has-wave;
+    in property <image> wave-rest;
+    in property <image> wave-played;
+    in property <[float]> phrases;
+    // The track map: it takes the minute numbers' row (the ticks stay).
+    in property <bool> has-map;
+    in property <image> map-lane;
+    in property <[TrackPart]> parts;
+    in property <float> bar-s;
+    in property <[float]> cues;
+    in property <float> loop-from: -1;
+    in property <float> loop-to: -1;
+    in property <bool> loop-on;
+    callback seek(float);
+    property <int> ticks: duration-s > 0 ? Math.min(Math.floor(duration-s / 15), 480) : 0;
+    property <length> per-minute: duration-s > 0 ? root.width * 60 / duration-s : 0px;
+    // The tape's height when set (the deck: the AI timeline's, so both
+    // views draw their waveform in the same band).
+    in property <length> band: 0px;
+    property <length> tape-h: band > 0 ? band : has-wave && labels ? Theme.row-h * 2 : Theme.row-h;
+    property <bool> map-row: root.labels && root.has-map && root.parts.length > 0;
+    height: !labels ? tape-h : map-row ? tape-h + 8px + Theme.fs-tiny : tape-h + Theme.fs-tiny + Theme.s2;
+    // tape
+    Rectangle {
+        y: 0;
+        height: root.tape-h;
+        background: Theme.bg-deeper;
+        border-width: 1px;
+        border-color: Theme.border;
+    }
+    // played
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width * clamp(root.progress, 0, 1);
+        height: root.tape-h;
+        background: Theme.text-faint.with-alpha(0.22);
+    }
+    // waveform: played part brighter, symmetric around the centre line (two
+    // images; per frame only the played part's width changes)
+    if root.has-wave: Image {
+        x: 0;
+        y: 2px;
+        width: root.width;
+        height: root.tape-h - 4px;
+        source: root.wave-rest;
+        image-fit: fill;
+        image-rendering: pixelated;
+    }
+    if root.has-wave: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width * clamp(root.progress, 0, 1);
+        height: root.tape-h;
+        clip: true;
+        Image {
+            x: 0;
+            y: 2px;
+            width: root.width;
+            height: root.tape-h - 4px;
+            source: root.wave-played;
+            image-fit: fill;
+            image-rendering: pixelated;
+        }
+    }
+    // loop region
+    if root.loop-from >= 0 && root.loop-to > root.loop-from: Rectangle {
+        x: root.width * root.loop-from;
+        width: Math.max(2px, root.width * (root.loop-to - root.loop-from));
+        y: 0;
+        height: root.tape-h;
+        background: root.loop-on ? Theme.accent.with-alpha(0.25) : Theme.accent.with-alpha(0.08);
+        border-width: 1px;
+        border-color: Theme.accent;
+    }
+    // hot cues: numbered flags
+    for c[i] in root.cues: Rectangle {
+        visible: c >= 0;
+        x: clamp(root.width * c - 1px, 0px, root.width - 14px);
+        y: 0;
+        width: 2px;
+        height: root.tape-h;
+        background: Theme.accent;
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: 12px;
+            height: 12px;
+            background: Theme.accent;
+            Text { text: i + 1; color: Theme.bg; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: center; vertical-alignment: center; }
+        }
+    }
+    // phrase lines every 8 bars
+    for f in root.phrases: Rectangle {
+        x: root.width * f;
+        y: root.tape-h - 5px;
+        width: 1px;
+        height: 5px;
+        background: Theme.accent.with-alpha(0.7);
+    }
+    // ticks, hanging from the top edge like a ruler
+    for i in root.ticks + 1: Rectangle {
+        property <bool> minute: Math.mod(i, 4) == 0;
+        x: Math.min(root.width * i * 15 / root.duration-s, root.width - 1px);
+        y: 0;
+        width: 1px;
+        height: minute ? root.tape-h * 0.5 : root.tape-h * 0.25;
+        background: minute ? Theme.text-dim : Theme.border-strong;
+    }
+    // The track map, under the tape: a hairline per part (solid where the
+    // kick plays, dotted where it is out, the mix spots in accent) and its
+    // word; the part playing counts down its bars.
+    if root.map-row: Image {
+        x: 0;
+        y: root.tape-h + 1px;
+        width: root.width;
+        height: 4px;
+        source: root.map-lane;
+        image-fit: fill;
+        image-rendering: pixelated;
+    }
+    if root.map-row: Rectangle {
+        y: root.tape-h + 7px;
+        height: Theme.fs-tiny;
+        // A mix spot's rank: an outlined numeral (hot cues are filled flags).
+        for p in root.parts: Rectangle {
+            property <bool> here: root.progress >= p.from && root.progress < p.to;
+            property <int> left: root.bar-s > 0 ? Math.ceil((p.to - root.progress) * root.duration-s / root.bar-s) : 0;
+            property <length> box: p.rank > 0 ? Theme.fs-tiny + 2px : 0px;
+            x: root.width * p.from + 2px;
+            y: -1px;
+            width: Math.max(0px, root.width * (p.to - p.from) - 4px);
+            height: Theme.fs-tiny + 2px;
+            visible: self.width >= (p.chars + (self.here ? 4 : 0)) * Theme.fs-tiny * 0.62;
+            clip: true;
+            if p.rank > 0: Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.box;
+                height: parent.box;
+                border-width: 1px;
+                border-color: Theme.accent;
+                Text { text: p.rank; color: Theme.accent; font-family: Theme.font; font-size: Theme.fs-tiny * 0.85; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            Text {
+                x: parent.box > 0 ? parent.box + 4px : 0;
+                height: parent.height;
+                vertical-alignment: center;
+                text: parent.here && parent.left > 0 ? p.word + " · " + parent.left : p.word;
+                color: parent.here ? Theme.text-bright : p.rank > 0 ? Theme.text-dim : Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                letter-spacing: 1px;
+            }
+        }
+    }
+    // minute numbers under the tape
+    if root.labels && !root.map-row && root.per-minute >= 26px: Rectangle {
+        y: root.tape-h + Theme.s2;
+        height: Theme.fs-tiny;
+        for m in Math.floor(root.duration-s / 60) + 1: Text {
+            x: Math.min(root.per-minute * m, root.width - self.width) - (m == 0 ? 0px : self.width / 2);
+            text: m;
+            color: Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+        }
+    }
+    // playhead
+    Rectangle {
+        x: clamp(root.width * root.progress - 1px, 0px, root.width - 2px);
+        y: 0;
+        width: 2px;
+        height: root.tape-h;
+        background: Theme.accent;
+    }
+    TouchArea {
+        height: root.tape-h;
+        y: 0;
+        mouse-cursor: pointer;
+        clicked => { root.seek(clamp(self.mouse-x / self.width, 0, 1)); }
+    }
+}
+
+component MissionTape inherits Rectangle {
+    in property <DeckItem> deck;
+    in property <[MissionEvent]> events;
+    callback seek(float);
+    in property <bool> compact;
+    in property <bool> mini;
+    private property <color> hud-bg: Theme.bg;
+    private property <color> hud-ink: Theme.text-bright;
+    private property <color> hud-muted: Theme.text-dim;
+    private property <bool> holding-playhead: root.events.length > 3 && root.events[3].freeze-progress >= 0;
+    private property <float> playhead: self.holding-playhead ? root.events[3].freeze-progress : root.deck.progress;
+    height: mini ? 20px : compact ? 56px : 64px;
+    background: root.hud-bg;
+    clip: true;
+    property <length> wave-y: root.mini ? 10px : root.compact ? 46px : 54px;
+    property <float> base: root.compact ? 34 : 42;
+    property <float> rise: root.compact ? 14 : 20;
+    property <string> trajectory: root.compact ? "M 0 34 Q 500 6 1000 34" : "M 0 42 Q 500 2 1000 42";
+    // The track's loudness along the rail: faint ahead, lit where played.
+    Image { x: 0px; y: 0px; width: root.width; height: root.height; source: root.compact ? root.deck.mission-wave-compact : root.deck.mission-wave; image-fit: fill; colorize: Theme.text-faint.with-alpha(0.4); }
+    Rectangle {
+        visible: !root.mini; x: 0px; y: 0px; width: root.width * root.playhead; height: root.height; clip: true;
+        Image { x: 0px; y: 0px; width: root.width; height: root.height; source: root.compact ? root.deck.mission-wave-compact : root.deck.mission-wave; image-fit: fill; colorize: Theme.accent.with-alpha(0.6); }
+    }
+    // A broad mission trajectory, with a quieter second arc beneath it.
+    Path { visible: !root.mini; y: 5px; width: root.width; height: root.height; viewbox-width: 1000; viewbox-height: root.height / 1px; fit: fill; commands: root.trajectory; stroke: root.hud-muted.with-alpha(0.23); stroke-width: 1px; }
+    Path { visible: !root.mini; width: root.width; height: root.height; viewbox-width: 1000; viewbox-height: root.height / 1px; fit: fill; commands: root.trajectory; stroke: root.hud-ink.with-alpha(0.25); stroke-width: 0.8px; }
+    Rectangle {
+        visible: !root.mini; x: 0px; y: 0px; width: root.width * root.playhead; height: root.height; clip: true;
+        Path { x: 0px; y: 0px; width: root.width; height: root.height; viewbox-width: 1000; viewbox-height: root.height / 1px; fit: fill; commands: root.trajectory; stroke: Theme.accent.with-alpha(0.65); stroke-width: 1.2px; }
+    }
+    // Single-character stage labels stay directly above their actual dots.
+    for event[i] in root.events: Text {
+        property <float> p: clamp(event.progress, 0, 1);
+        visible: !root.mini && !event.preview && i != 0 && event.progress >= 0;
+        // Whole pixels: a letter placed at a fraction of one is drawn
+        // differently each time the estimate moves, and shimmered.
+        x: Math.round(clamp(root.width * self.p - 5px, 0px, root.width - 10px) / 1px) * 1px;
+        y: Math.round(Math.max(0px, (root.base - 4 * root.rise * self.p * (1 - self.p)) * 1px - 23px) / 1px) * 1px;
+        width: 10px; height: 14px;
+        text: i == 0 ? "P" : i == 1 ? "8" : i == 2 ? "M" : "C";
+        horizontal-alignment: center; font-family: Theme.font; font-size: 12px;
+        color: event.status == 2 ? Theme.warn : event.status == 1 ? Theme.accent : root.hud-muted;
+    }
+    Rectangle {
+        visible: !root.mini && root.deck.loaded;
+        x: clamp(root.width * root.deck.cue-progress - 5px, 0px, root.width - 10px);
+        y: (root.base - 4 * root.rise * root.deck.cue-progress * (1 - root.deck.cue-progress)) * 1px - 5px;
+        width: 10px; height: 10px; border-radius: 5px; border-width: 1.2px; border-color: root.events.length > 0 && root.events[0].status == 1 ? Theme.accent : root.hud-ink; background: root.events.length > 0 && root.events[0].status == 1 ? Theme.accent : root.hud-bg;
+    }
+    Text {
+        visible: !root.mini && root.deck.loaded;
+        x: clamp(root.width * root.deck.cue-progress - 5px, 0px, root.width - 10px);
+        y: Math.max(0px, (root.base - 4 * root.rise * root.deck.cue-progress * (1 - root.deck.cue-progress)) * 1px - 21px);
+        width: 10px; height: 14px; text: "P"; horizontal-alignment: center;
+        color: root.events.length > 0 && root.events[0].status == 1 ? Theme.accent : root.hud-ink; font-family: Theme.font; font-size: 12px;
+    }
+    for event[i] in root.events: Rectangle {
+        visible: !event.preview && i != 0 && event.progress >= 0;
+        x: Math.round(clamp(root.width * event.progress - 6px, 0px, root.width - 12px) / 1px) * 1px;
+        y: Math.round(((root.base - 4 * root.rise * event.progress * (1 - event.progress)) * 1px - 6px) / 1px) * 1px;
+        width: 12px; height: 12px; border-radius: 6px; background: root.hud-bg;
+    }
+    for event[i] in root.events: Rectangle {
+        property <float> p: clamp(event.progress, 0, 1);
+        visible: !event.preview && i != 0 && event.progress >= 0;
+        x: Math.round(clamp(root.width * self.p - 5px, 0px, root.width - 10px) / 1px) * 1px;
+        y: root.mini ? 2px : Math.round(((root.base - 4 * root.rise * self.p * (1 - self.p)) * 1px - 5px) / 1px) * 1px;
+        width: 10px; height: 10px; border-radius: 5px; border-width: 1.2px;
+        border-color: event.status == 2 ? Theme.warn : event.status == 1 ? Theme.accent : root.hud-muted;
+        background: event.status == 1 ? Theme.accent : root.hud-bg;
+    }
+    Rectangle {
+        visible: !root.mini && (root.deck.playing || root.holding-playhead);
+        x: root.width * root.playhead - 0.5px;
+        y: (root.base - 4 * root.rise * root.playhead * (1 - root.playhead)) * 1px - 7px;
+        width: 1px; height: 14px; background: Theme.accent;
+    }
+    Rectangle {
+        visible: !root.mini && (root.deck.playing || root.holding-playhead);
+        x: root.width * root.playhead - 4px;
+        y: (root.base - 4 * root.rise * root.playhead * (1 - root.playhead)) * 1px - 4px;
+        width: 8px; height: 8px; transform-rotation: 45deg;
+        border-width: 2px; border-color: Theme.accent; background: root.hud-bg;
+    }
+    if root.events.length == 0: Text { x: Theme.s2; y: root.mini ? 0px : 15px; text: "Auto Mix · awaiting next plan"; color: root.hud-muted; font-family: Theme.font; font-size: Theme.fs-tiny; }
+
+    Text {
+        visible: !root.mini; x: 0px; y: root.height - 11px; width: root.width; height: 11px;
+        text: "P prepared  ·  8 check  ·  M mix  ·  C complete";
+        horizontal-alignment: center; font-family: Theme.font; font-size: 9px; color: root.hud-muted;
+        overflow: elide;
+    }
+    // The canvas keeps its normal cursor; only visible waveform strokes accept seeking.
+    TouchArea {
+        x: 0px; y: 0px; width: root.width; height: root.height;
+        property <float> p: clamp(self.mouse-x / self.width, 0, 0.999999);
+        property <float> cell: self.p * root.deck.mission-bins.length;
+        // Matches overview::render_arc (ARC_STROKE, arc_reach).
+        property <float> half: root.deck.mission-bins.length > 0 ? 1 + (root.compact ? 9 : 12) * root.deck.mission-bins[floor(self.cell)] : 0;
+        property <bool> wave-hit: root.deck.mission-bins.length > 0 && abs(self.cell - floor(self.cell) - 0.5) <= 0.34 && abs(self.mouse-y / 1px - (root.base - 4 * root.rise * self.p * (1 - self.p))) <= self.half;
+        mouse-cursor: self.wave-hit ? pointer : default;
+        clicked => { if (self.wave-hit) { root.seek(self.p); } }
+    }
+    for event[i] in root.events: TouchArea {
+        visible: !event.preview && i != 0 && event.progress >= 0;
+        x: clamp(root.width * event.progress - 5px, 0px, root.width - 10px);
+        y: (root.base - 4 * root.rise * event.progress * (1 - event.progress)) * 1px - 5px;
+        width: 10px; height: 10px; mouse-cursor: pointer;
+        clicked => { root.seek(event.progress); }
+    }
+    TouchArea {
+        visible: !root.mini && (root.deck.playing || root.holding-playhead);
+        x: clamp(root.width * root.playhead - 5px, 0px, root.width - 10px);
+        y: (root.base - 4 * root.rise * root.playhead * (1 - root.playhead)) * 1px - 5px;
+        width: 10px; height: 10px; mouse-cursor: pointer;
+        clicked => { root.seek(root.playhead); }
+    }
+    TouchArea {
+        visible: !root.mini && root.deck.loaded;
+        x: clamp(root.width * root.deck.cue-progress - 5px, 0px, root.width - 10px);
+        y: (root.base - 4 * root.rise * root.deck.cue-progress * (1 - root.deck.cue-progress)) * 1px - 5px;
+        width: 10px; height: 10px; mouse-cursor: pointer;
+        clicked => { root.seek(root.deck.cue-progress); }
+    }
+
+}
+
+// Tempo fader, vertical like a turntable's: centre detent (0 %), up = faster.
+// Drag; double-click resets to 0 %.
+component TempoFader inherits Rectangle {
+    in property <float> value; // −1 … 1 of the range
+    in property <string> range-text;
+    callback moved(float);
+    callback reset();
+    width: 44px;
+    property <length> cap-h: 12px;
+    property <length> track-y: Theme.fs-tiny + Theme.s2;
+    property <length> track-h: root.height - 2 * self.track-y;
+    Text { y: 0; width: root.width; text: "+"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: center; }
+    Text { y: root.height - Theme.fs-tiny; width: root.width; text: "−"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: center; }
+    // groove
+    Rectangle { x: (root.width - 4px) / 2; y: root.track-y; width: 4px; height: root.track-h; background: Theme.bg-deeper; border-width: 1px; border-color: Theme.border; }
+    // centre detent and quarter marks
+    for m in [0.0, 0.25, 0.5, 0.75, 1.0]: Rectangle {
+        x: m == 0.5 ? 6px : 12px;
+        width: root.width - 2 * self.x;
+        y: root.track-y + root.track-h * m;
+        height: 1px;
+        background: m == 0.5 ? Theme.text-dim : Theme.border-strong;
+    }
+    // cap
+    Rectangle {
+        x: 4px;
+        width: root.width - 8px;
+        height: root.cap-h;
+        y: root.track-y + root.track-h * (0.5 - clamp(root.value, -1, 1) / 2) - root.cap-h / 2;
+        background: ta.pressed ? Theme.accent : Theme.raised;
+        border-width: 1px;
+        border-color: ta.pressed || root.value != 0 ? Theme.accent : Theme.text-dim;
+        Rectangle { width: parent.width - 8px; height: 1px; background: ta.pressed ? Theme.bg : Theme.text; }
+    }
+    ta := TouchArea {
+        mouse-cursor: ns-resize;
+        moved => {
+            if (self.pressed) {
+                root.moved(clamp((0.5 - (self.mouse-y - root.track-y) / root.track-h) * 2, -1, 1));
+            }
+        }
+        double-clicked => { root.reset(); }
+    }
+}
+
+export component DeckClassic inherits Rectangle {
+    // The performance waveform is the deck's default view; an AI DJ session
+    // raises the phrase timeline (the app sets the flag this is bound to). The
+    // toggle below flips the same flag, so a hand choice outlives the session.
+    private property <bool> mission-view: deck == "a" ? DjState.mission-view-a : deck == "b" ? DjState.mission-view-b : false;
+    in property <string> deck; // "a" | "b"
+    property <DeckItem> d: DjState.item(deck);
+    property <DeckLevels> lv: DjState.levels(deck);
+    property <bool> narrow: self.width < 480px;
+    // Compact below the height the full layout needs (big time, title,
+    // artist and format, ruler labels, loops, cues and pads; 16 px more in
+    // the Patch style's larger type) plus the stems panel: in one row from
+    // 800 px wide, two by two (taller) under.
+    property <bool> stems-one-row: root.width >= 800px;
+    property <length> stems-h;
+    property <bool> sample-open: DjState.sample-deck == root.deck;
+    property <bool> compact-sample: root.sample-open && root.height < 760px;
+    property <bool> short: self.height < (Theme.patch-style ? 576px : 560px) + root.stems-h;
+    // Rows that join the compact layout as height allows.
+    property <bool> show-loops: root.d.native && self.height >= 340px;
+    property <bool> show-cues: !root.d.live && self.height >= 380px;
+    property <length> pad-h: short ? Theme.row-h + Theme.s3 : Theme.row-h * 2;
+    // Under 620 px the button rows fold (cues 4 + 4, loops over their
+    // controls), the pads show icons, the key name goes: nothing runs off.
+    property <bool> fold: self.width < 620px;
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (DjState.sample-deck == root.deck && e.text == Key.Escape) { DjState.sample-close(); return accept; }
+            if (DjState.sample-deck == root.deck && e.text == Key.Return) { DjState.sample-save(); return accept; }
+            // A loop exit must work immediately, even after another deck key.
+            if (e.text == "o" && !e.modifiers.shift && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                if (e.repeat) { return accept; }
+            } else if (!DjState.key-guard(e.text)) { return reject; }
+            if (DjState.key("deck-" + root.deck, DjState.key-name(e.text), e.modifiers.shift, e.modifiers.control, e.modifiers.alt, true)) { return accept; }
+            return reject;
+        }
+        key-released(e) => {
+            if (DjState.key("deck-" + root.deck, DjState.key-name(e.text), e.modifiers.shift, e.modifiers.control, e.modifiers.alt, false)) { return accept; }
+            return reject;
+        }
+        if !root.d.loaded: EmptyState {
+            title: root.d.name + " is empty";
+            detail: "Load a track or station from the Library (a / b), or click Load A / Load B there.";
+        }
+        // Everything fits from the default height up; a window smaller
+        // than the deck needs scrolls (wheel or drag), never clips, and
+        // says there is more below.
+        if root.d.loaded: Rectangle {
+          deck-fl := Flickable {
+            // The wheel scrolls; a drag belongs to the knobs (stems turn
+            // with a vertical drag, which the Flickable took to scroll).
+            interactive: false;
+            content-height: Math.max(self.height, body.min-height);
+          body := HorizontalLayout {
+            height: deck-fl.content-height;
+          VerticalLayout {
+            horizontal-stretch: 1;
+            padding-left: root.narrow ? Theme.s4 : Theme.s5;
+            padding-right: self.padding-left;
+            padding-top: self.padding-left;
+            padding-bottom: self.padding-top;
+            spacing: root.short ? Theme.s3 : Theme.s4;
+            // Everything but the transport, top-aligned; the pads dock at the
+            // bottom, so spare height sits between the two.
+            VerticalLayout {
+                vertical-stretch: 1;
+                alignment: stretch;
+                spacing: root.short ? Theme.s3 : Theme.s4;
+                // 1 · Identity: deck letter, title and artist, state. The file
+                // path is a setup switch (off: title and artist only).
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: Theme.s4;
+                    VerticalLayout { alignment: start; DeckBadge { letter: root.deck.to-uppercase(); lit: root.d.playing; } }
+                    if !root.short: VerticalLayout {
+                        alignment: center;
+                        spacing: Theme.s1;
+                        horizontal-stretch: 1;
+                        Label { text: root.d.title; tone: "bright"; font-family: Theme.font-display; font-weight: 700; font-size: root.narrow || root.height < 820px ? Theme.fs-large * 1.2 : Theme.fs-title; overflow: elide; }
+                        // Always there (a space without an artist): a line that came and went
+                        // with each track moved the waveform under it.
+                        Label { text: root.d.artist != "" ? root.d.artist : " "; tone: "dim"; small: true; overflow: elide; }
+                        if DjState.show-track-path && root.d.source != "": Label { text: root.d.source; tone: "faint"; small: true; overflow: elide; }
+                        if root.d.native: Label { text: root.d.format + " · engine" + (root.d.loop-text != "" ? " · " + root.d.loop-text : ""); tone: "dim"; small: true; overflow: elide; }
+                    }
+                    // Short: title and artist share one line, level with the badge.
+                    if root.short: HorizontalLayout {
+                        spacing: Theme.s4;
+                        horizontal-stretch: 1;
+                        Label { text: root.d.title; tone: "bright"; font-family: Theme.font-display; font-weight: 700; font-size: Theme.fs-large; overflow: elide; horizontal-stretch: 2; }
+                        if root.d.artist != "": Label { text: root.d.artist; tone: "dim"; small: true; overflow: elide; horizontal-stretch: 1; }
+                        if DjState.show-track-path && root.d.source != "": Label { text: root.d.source; tone: "faint"; small: true; overflow: elide; horizontal-stretch: 1; }
+                    }
+                    VerticalLayout {
+                        alignment: start;
+                        if !root.d.live: MockBadge { text: root.d.playing ? "PLAYING" : "PAUSED"; subtle: !root.d.playing; }
+                    }
+                }
+                // The deck's stems, under what it plays
+                StemControls {
+                    deck: root.deck;
+                    one-row: root.stems-one-row;
+                    init => { root.stems-h = self.preferred-height; }
+                    changed preferred-height => { root.stems-h = self.preferred-height; }
+                }
+                // 2 · Time: elapsed large, length, remaining
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: Theme.s3;
+                    alignment: stretch;
+                    Text {
+                        text: root.d.time;
+                        color: Theme.text-bright;
+                        // Monospaced: the running time must not jitter.
+                        font-family: Theme.font;
+                        font-weight: 700;
+                        letter-spacing: root.short ? 0px : -2px;
+                        // Full size only where the deck has height to spare.
+                        font-size: root.short ? Theme.fs-title : root.height >= 820px ? Theme.fs-hero : Theme.fs-title * 1.4;
+                        vertical-alignment: bottom;
+                        horizontal-stretch: 0;
+                    }
+                    if !root.d.live: Text {
+                        text: "/ " + root.d.length;
+                        color: Theme.text-faint;
+                        font-family: Theme.font;
+                        font-size: Theme.fs;
+                        vertical-alignment: bottom;
+                        horizontal-stretch: 0;
+                    }
+                    if !root.d.live && DjState.beat-text(root.deck) != "": Text {
+                        text: "bar " + DjState.beat-text(root.deck);
+                        color: Theme.text-dim;
+                        font-family: Theme.font;
+                        font-size: Theme.fs;
+                        vertical-alignment: bottom;
+                        horizontal-stretch: 0;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    if !root.d.live: Text {
+                        text: "−" + root.d.remaining;
+                        color: Theme.text-dim;
+                        font-family: Theme.font;
+                        font-size: root.short ? Theme.fs : Theme.fs-large;
+                        vertical-alignment: bottom;
+                        horizontal-stretch: 0;
+                    }
+                }
+                // 2b · Tempo and key
+                if !root.d.live: HorizontalLayout {
+                    vertical-stretch: 0;
+                    // Under 720 px the row tightens and drops the key's −/+ ([ ] still
+                    // shift it), so it never pushes the deck past its window.
+                    spacing: root.width < 720px ? Theme.s3 : Theme.s5;
+                    alignment: start;
+                    // BPM: effective large, original small
+                    HorizontalLayout {
+                        spacing: Theme.s2;
+                        Text {
+                            min-width: Math.max(bpm-wide0.preferred-width, bpm-wide8.preferred-width);
+                            horizontal-alignment: right;
+                            text: root.d.bpm;
+                            color: root.d.bpm-sure ? Theme.text-bright : Theme.text-dim;
+                            font-family: Theme.font-data;
+                            font-weight: Theme.data-weight;
+                            font-size: root.short ? Theme.fs-large : Theme.fs-title;
+                            vertical-alignment: bottom;
+                        }
+                        VerticalLayout {
+                            alignment: end;
+                            min-width: root.fold ? 0px : orig-wide.preferred-width;
+                            Label { text: root.d.analysing ? "analysing…" : "BPM"; tone: "faint"; small: true; }
+                            if !root.short && !root.fold: Label { text: root.d.bpm-orig; tone: "faint"; small: true; }
+                        }
+                    }
+                    // Tempo: percent, range, keylock
+                    VerticalLayout {
+                        alignment: end;
+                        spacing: Theme.s1;
+                        min-width: tempo-wide.preferred-width;
+                        Label { text: root.d.tempo-text; tone: root.d.tempo == 0 ? "dim" : "accent"; }
+                        HorizontalLayout {
+                            spacing: Theme.s2;
+                            Button { text: root.d.range-text; compact: true; clicked => { DjState.cycle-range(root.deck); } }
+                            Button { text: "KEYLOCK"; compact: true; lit: root.d.keylock; clicked => { DjState.toggle-keylock(root.deck); } }
+                        }
+                    }
+                    // Key: Camelot large, name and shift small, transpose
+                    HorizontalLayout {
+                        spacing: Theme.s2;
+                        Text {
+                            min-width: Math.max(key-wide0.preferred-width, key-wide8.preferred-width);
+                            text: root.d.key;
+                            color: root.d.key-sure ? Theme.text-bright : Theme.text-dim;
+                            font-family: Theme.font-data;
+                            font-weight: Theme.data-weight;
+                            font-size: root.short ? Theme.fs-large : Theme.fs-title;
+                            vertical-alignment: bottom;
+                        }
+                        VerticalLayout {
+                            alignment: end;
+                            min-width: key-name-wide.preferred-width;
+                            Label { text: root.d.shift-text; tone: root.d.shift-text == "" ? "faint" : "accent"; small: true; }
+                            if !root.short && !root.fold: Label { text: root.d.key-name; tone: "faint"; small: true; }
+                        }
+                        if root.width >= 720px: VerticalLayout {
+                            alignment: end;
+                            HorizontalLayout {
+                                spacing: Theme.s1;
+                                Button { text: "−"; compact: true; clicked => { DjState.shift-key(root.deck, -1); } }
+                                Button { text: "+"; compact: true; clicked => { DjState.shift-key(root.deck, 1); } }
+                            }
+                        }
+                    }
+                    // The widest each value above can read, measured here out
+                    // of the layout: its column keeps that width, so a BPM,
+                    // pitch or key changing width never moves the row.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        bpm-wide0 := Text { visible: false; text: "000.00"; font-family: Theme.font-data; font-weight: Theme.data-weight; font-size: root.short ? Theme.fs-large : Theme.fs-title; }
+                        bpm-wide8 := Text { visible: false; text: "888.88"; font-family: Theme.font-data; font-weight: Theme.data-weight; font-size: root.short ? Theme.fs-large : Theme.fs-title; }
+                        orig-wide := Text { visible: false; text: "orig 000.00"; font-family: Theme.font; font-size: Theme.fs-small; }
+                        tempo-wide := Text { visible: false; text: "+00.00 % nudge"; font-family: Theme.font; font-size: Theme.fs; }
+                        key-wide0 := Text { visible: false; text: "10B"; font-family: Theme.font-data; font-weight: Theme.data-weight; font-size: root.short ? Theme.fs-large : Theme.fs-title; }
+                        key-wide8 := Text { visible: false; text: "12B"; font-family: Theme.font-data; font-weight: Theme.data-weight; font-size: root.short ? Theme.fs-large : Theme.fs-title; }
+                        key-name-wide := Text { visible: false; text: "E♭ minor"; font-family: Theme.font; font-size: Theme.fs-small; }
+                    }
+                    VerticalLayout {
+                        alignment: end;
+                        Button { text: root.d.synced ? "SYNC ON" : "SYNC"; key: "s"; primary: root.d.synced; enabled: root.d.can-sync; clicked => { DjState.sync(root.deck); } }
+                        // Kept when empty: the AI syncs each incoming deck, and the line
+                        // appearing pushed the waveform down.
+                        Label { text: root.d.sync-text != "" ? root.d.sync-text : " "; tone: "accent"; small: true; }
+                    }
+                }
+                // 3a · Scrolling waveform around the playhead (8 s)
+                // Elastic: it takes spare height up to a modest cap (a
+                // third of the deck, never past 184 px: taller only blew
+                // up the strip) and gives it back first, so the controls
+                // below never clip.
+                if root.compact-sample: SamplePanel {
+                    deck: root.deck;
+                    compact: true;
+                    deck-width: root.width;
+                }
+                if !root.d.live && !root.compact-sample: Rectangle {
+                    // Never gone: below this the deck scrolls instead.
+                    min-height: root.short ? 44px : 74px;
+                    preferred-height: 118px;
+                    max-height: Math.min(184px, Math.max(118px, root.height * 0.276));
+                    // Far ahead of the spacer below: spare height fills the
+                    // waveform up to its cap before anything else grows.
+                    vertical-stretch: 100;
+                    clip: true;
+                    Image {
+                        source: DjState.scope(root.deck);
+                        image-fit: fill;
+                        width: parent.width * 2;
+                        height: parent.height;
+                        x: -parent.width / 2 + (DjState.shift(root.deck)) * parent.width * 2;
+                        // Not quite 1: the renderer snaps an unscaled image
+                        // to whole pixels, so the strip moved 3, 4, 4, 3 …
+                        // pixels a frame (a fine stutter). Scaled, it is
+                        // drawn where it is (the stretch is a third of a
+                        // pixel across the strip).
+                        transform-scale-x: 1.0001;
+                    }
+                    // What played, veiled up to the playhead: moves with it
+                    // every frame (dimmed in the strip, it changed only when
+                    // the strip was redrawn, every few seconds).
+                    Rectangle { x: 0; width: parent.width / 2; height: parent.height; background: Theme.bg-deeper; opacity: 0.55; }
+                    // The beat being heard, lit on its downbeat and fading
+                    // until the next (not in the classic style).
+                    property <float> phase: DjState.phase(root.deck);
+                    property <float> beat-w: (DjState.scope-beat(root.deck)) * self.width / 1px;
+                    property <float> into: self.phase - Math.floor(self.phase);
+                    if DjState.scope-style != "classic" && self.beat-w > 0 && self.phase >= 0: Rectangle {
+                        x: parent.width / 2 - parent.into * parent.beat-w * 1px;
+                        width: parent.beat-w * 1px;
+                        height: parent.height;
+                        background: Theme.accent;
+                        opacity: root.d.playing ? 0.14 * (1 - parent.into) : 0.06;
+                    }
+                    if DjState.scope-style != "classic" && self.beat-w > 0 && self.phase >= 0: Rectangle {
+                        x: parent.width / 2 - parent.into * parent.beat-w * 1px;
+                        y: parent.height - 3px;
+                        width: parent.beat-w * 1px;
+                        height: 3px;
+                        background: Theme.accent;
+                        opacity: root.d.playing ? 0.35 + 0.65 * (1 - parent.into) : 0.5;
+                    }
+                    // The playhead: fixed in the middle, over the moving strip.
+                    Rectangle { x: parent.width / 2 - 1px; width: 2px; height: parent.height; background: Theme.accent; }
+                    // Drag the music like a platter (the strip shows 8 s
+                    // across): left moves forward. Rests where released when
+                    // paused, so a cue can be set exactly there.
+                    TouchArea {
+                        mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+                        pointer-event(e) => {
+                            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                                DjState.scrub(root.deck, "start", 0);
+                            }
+                            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) {
+                                DjState.scrub(root.deck, "end", 0);
+                            }
+                        }
+                        moved => {
+                            if (self.pressed) {
+                                DjState.scrub(root.deck, "move", (self.pressed-x - self.mouse-x) / self.width * 8.0);
+                            }
+                        }
+                    }
+                    // The style switch, in the corner.
+                    style-switch := Rectangle {
+                        x: parent.width - self.width - Theme.s2;
+                        y: Theme.s2;
+                        width: style-label.preferred-width + 3 * Theme.s2;
+                        height: style-label.preferred-height + Theme.s1;
+                        background: style-touch.has-hover ? Theme.bg : transparent;
+                        border-width: 1px;
+                        border-color: style-touch.has-hover ? Theme.border-strong : Theme.border;
+                        style-label := Text { x: Theme.s2; y: (parent.height - self.height) / 2; text: DjState.scope-style; color: style-touch.has-hover ? Theme.text-bright : Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+                        style-touch := TouchArea { mouse-cursor: pointer; clicked => { DjState.scope-style-next(); } }
+                    }
+                    if root.d.can-favourite: DeckFavourite {
+                        x: style-switch.x - self.width - Theme.s1;
+                        y: style-switch.y;
+                        width: self.height;
+                        height: style-switch.height;
+                        on: root.d.favourite;
+                        clicked => { DjState.deck-favourite(root.deck); }
+                    }
+                }
+                // 3 · Position
+                // Its row is kept while no session offers the timeline, so a
+                // session starting or ending never moves the waveform.
+                if !root.d.live: Rectangle {
+                    height: Theme.fs-tiny + Theme.s2;
+                    Text {
+                        visible: (root.deck == "a" || root.deck == "b") && DjState.mission-available; text: root.mission-view ? ((root.deck == "a" ? DjState.mission-a : DjState.mission-b)[0].preview ? "AI TIMELINE · PREVIEW ↔ WAVEFORM" : "AI TIMELINE ↔ WAVEFORM") : "WAVEFORM ↔ AI TIMELINE"; color: toggle.has-hover ? Theme.accent : Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+                    toggle := TouchArea { enabled: (root.deck == "a" || root.deck == "b") && DjState.mission-available; mouse-cursor: pointer; clicked => { if (root.deck == "a") { DjState.mission-view-a = !DjState.mission-view-a; } else { DjState.mission-view-b = !DjState.mission-view-b; } } }
+                }
+                // One slot for the overview and the AI timeline: the
+                // overview's tape is the timeline's height, both drawn from
+                // the top, so switching views (by hand, or when a session
+                // raises the timeline) moves and resizes nothing.
+                if !root.d.live: slot := Rectangle {
+                    vertical-stretch: 0;
+                    property <bool> mission: DjState.mission-available && root.mission-view;
+                    // A tall deck gives its spare height to the overview, modestly
+                    // (the scrolling strip keeps its own cap).
+                    property <length> mission-h: root.height < 340px ? 20px : root.short ? 56px : clamp(64px + (root.height - 760px) * 0.3, 64px, 120px);
+                    height: ruler.height;
+                    ruler := TapeRuler {
+                        visible: !slot.mission;
+                        y: 0;
+                        band: slot.mission-h;
+                        width: slot.width;
+                        has-wave: root.d.has-wave;
+                        wave-rest: root.d.wave-rest;
+                        wave-played: root.d.wave-played;
+                        phrases: root.d.phrases;
+                        has-map: root.d.has-map;
+                        map-lane: root.d.map-lane;
+                        parts: root.d.parts;
+                        bar-s: root.d.bar-s;
+                        cues: root.d.cues;
+                        loop-from: root.d.loop-from;
+                        loop-to: root.d.loop-to;
+                        loop-on: root.d.loop-on;
+                        progress: root.d.progress;
+                        duration-s: root.d.duration-s;
+                        labels: !root.short;
+                        seek(f) => { DjState.seek-to(root.deck, f); }
+                    }
+                    if slot.mission: MissionTape {
+                        y: 0;
+                        width: slot.width;
+                        compact: root.short;
+                        mini: root.height < 340px;
+                        deck: root.d;
+                        events: root.deck == "a" ? DjState.mission-a : DjState.mission-b;
+                        seek(f) => { DjState.seek-to(root.deck, f); }
+                    }
+                }
+                if root.d.live: Rectangle {
+                    height: Theme.row-h;
+                    background: Theme.bg-deeper;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    Label { text: "live stream · plays in real time, no cue or seek"; tone: "faint"; small: true; }
+                }
+                // 4 · Level: the deck's own stream, same meter as everywhere
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: Theme.s3;
+                    // Click the meters to switch their styling (Classic / Banded).
+                    Rectangle {
+                      horizontal-stretch: 1;
+                      VerticalLayout {
+                        spacing: Theme.s1;
+                        for ch in [{ n: "L", v: root.lv.level-l }, { n: "R", v: root.lv.level-r }]: HorizontalLayout {
+                            spacing: Theme.s3;
+                            height: Theme.fs-tiny + 2px;
+                            Text { text: ch.n; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; vertical-alignment: center; width: Theme.fs-tiny; }
+                            VerticalLayout { alignment: center; Meter { kind: MeterKind.System; vertical: false; height: 6px; value: ch.v; peak: root.lv.peak; avg: root.lv.vu; } }
+                        }
+                      }
+                      TouchArea { mouse-cursor: pointer; clicked => { MeterStyle.toggle(); } }
+                    }
+                    // Auto gain (both decks): its trim when on; click to switch.
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            text: DjState.auto-gain ? (root.d.gain-trim != "" ? root.d.gain-trim : "auto gain") : "auto gain off";
+                            compact: true;
+                            clicked => { DjState.toggle-auto-gain(); }
+                        }
+                    }
+                    Label { text: root.d.gain-db; tone: "dim"; small: true; vertical-alignment: center; horizontal-alignment: right; width: 64px; }
+                }
+                // Height beyond the waveform's cap stays here, above the
+                // pads (the waveform takes spare height first); the sample
+                // maker's panel takes it when open (x).
+                if !root.sample-open || root.compact-sample: Rectangle { min-height: 0; vertical-stretch: 1; }
+                if root.sample-open && !root.compact-sample: SamplePanel {
+                    deck: root.deck;
+                    deck-width: root.width;
+                    min-height: 250px;
+                    vertical-stretch: 1;
+                }
+            }
+            // 5b · Loops, beat jump, slip, quantize (engine decks)
+            if root.show-loops && root.fold: HorizontalLayout {
+                spacing: Theme.s2;
+                for b in [0.5, 1, 2, 4, 8, 16]: Button {
+                    horizontal-stretch: 1;
+                    compact: true;
+                    text: b < 1 ? "½" : b;
+                    lit: root.d.loop-on && abs(root.d.loop-beats - b) < 0.01;
+                    clicked => { DjState.loop(root.deck, b); }
+                }
+            }
+            if root.show-loops && root.fold: HorizontalLayout {
+                spacing: Theme.s2;
+                Button { horizontal-stretch: 1; compact: true; text: "÷2"; key: "-"; clicked => { DjState.loop-scale(root.deck, 0.5); } }
+                Button { horizontal-stretch: 1; compact: true; text: "×2"; key: "="; clicked => { DjState.loop-scale(root.deck, 2.0); } }
+                Button { horizontal-stretch: 1; compact: true; text: "SLIP"; key: "z"; lit: root.d.slip; clicked => { DjState.toggle-slip(root.deck); } }
+                Button { horizontal-stretch: 1; compact: true; text: "Q"; key: "q"; lit: root.d.quantize; clicked => { DjState.toggle-quantize(root.deck); } }
+            }
+            if root.show-loops && !root.fold: HorizontalLayout {
+                spacing: Theme.s2;
+                for b in [0.5, 1, 2, 4, 8, 16]: Button {
+                    horizontal-stretch: 1;
+                    compact: true;
+                    text: b < 1 ? "½" : b;
+                    lit: root.d.loop-on && abs(root.d.loop-beats - b) < 0.01;
+                    clicked => { DjState.loop(root.deck, b); }
+                }
+                Button { compact: true; text: "÷2"; key: "-"; clicked => { DjState.loop-scale(root.deck, 0.5); } }
+                Button { compact: true; text: "×2"; key: "="; clicked => { DjState.loop-scale(root.deck, 2.0); } }
+                // The 4-beat jumps repeat the transport pads below: under
+                // 720 px they give the row back its width.
+                if root.width >= 720px: Rectangle { width: Theme.s3; }
+                if root.width >= 720px: Button { compact: true; text: "◀ 4"; clicked => { DjState.jump(root.deck, -4); } }
+                if root.width >= 720px: Button { compact: true; text: "4 ▶"; clicked => { DjState.jump(root.deck, 4); } }
+                Rectangle { width: Theme.s3; }
+                Button { compact: true; text: "SLIP"; key: "z"; lit: root.d.slip; clicked => { DjState.toggle-slip(root.deck); } }
+                Button { compact: true; text: "Q"; key: "q"; lit: root.d.quantize; clicked => { DjState.toggle-quantize(root.deck); } }
+            }
+            // 5a · Hot cues
+            if root.show-cues && !root.fold: HorizontalLayout {
+                spacing: Theme.s2;
+                for c[i] in root.d.cues: Button {
+                    horizontal-stretch: 1;
+                    compact: true;
+                    key: i + 1;
+                    lit: c >= 0;
+                    // Eight "set cue" pads alone are 640 px wide: shorter under 760.
+                    text: c >= 0 ? root.d.cue-texts[i] : root.width >= 760px ? "set cue" : "set";
+                    clicked => { DjState.hot-cue(root.deck, i, false); }
+                }
+            }
+            // Folded: two rows of four.
+            for half in (root.show-cues && root.fold ? [0, 4] : []): HorizontalLayout {
+                spacing: Theme.s2;
+                for k in 4: Button {
+                    horizontal-stretch: 1;
+                    compact: true;
+                    key: half + k + 1;
+                    lit: root.d.cues[half + k] >= 0;
+                    text: root.d.cues[half + k] >= 0 ? root.d.cue-texts[half + k] : "set";
+                    clicked => { DjState.hot-cue(root.deck, half + k, false); }
+                }
+            }
+            // 5 · Transport: equal pads across the full width
+            HorizontalLayout {
+                spacing: Theme.s2;
+                Pad {
+                    height: root.pad-h;
+                    text: root.d.playing ? "Pause" : "Play";
+                    icon: root.d.playing ? "pause" : "play";
+                    key: "space";
+                    active: root.d.playing;
+                    show-label: !root.fold;
+                    horizontal-stretch: 2;
+                    clicked => { DjState.toggle(root.deck); }
+                }
+                // Hold on the cue point to preview; release returns (CDJ).
+                Pad { height: root.pad-h; text: "Cue"; icon: "cue"; key: "c"; enabled: !root.d.live; show-label: !root.fold; active: root.d.previewing; down => { DjState.cue(root.deck); } up => { DjState.cue-release(root.deck); } }
+                // Engine decks jump 4 beats (phase kept); streams seek 10 s.
+                Pad { height: root.pad-h; text: root.d.native ? "4 beats" : "10 s"; icon: "back"; key: "←"; enabled: !root.d.live; show-label: !root.fold; clicked => { DjState.jump(root.deck, -4); } }
+                Pad { height: root.pad-h; text: root.d.native ? "4 beats" : "10 s"; icon: "fwd"; key: "→"; enabled: !root.d.live; show-label: !root.fold; clicked => { DjState.jump(root.deck, 4); } }
+            }
+          }
+          // 6 · Tempo fader along the right edge, as on a deck
+          if !root.d.live: VerticalLayout {
+            padding-top: root.narrow ? Theme.s4 : Theme.s5;
+            padding-bottom: self.padding-top;
+            padding-right: Theme.s3;
+            spacing: Theme.s2;
+            TempoFader {
+                vertical-stretch: 1;
+                value: root.d.tempo;
+                range-text: root.d.range-text;
+                moved(v) => { DjState.set-tempo(root.deck, v); }
+                reset => { DjState.reset-tempo(root.deck); }
+            }
+            Text { text: root.d.range-text; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: center; width: 44px; }
+          }
+        }
+          }
+          if deck-fl.content-height > deck-fl.height + 1px
+              && deck-fl.content-y > deck-fl.height - deck-fl.content-height + 4px: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height - Theme.s2;
+            width: more-label.preferred-width + 2 * Theme.s3;
+            height: more-label.preferred-height + Theme.s2;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            border-radius: 4px;
+            more-label := Text { text: "▾ scroll for more · or enlarge the window"; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; }
+          }
+        }
+    }
+}
+
+// Beat FX in one row, for mixers short on height: effect and beat length
+// step through their lists; depth; on.
+component BeatFxRow inherits HorizontalLayout {
+    in property <bool> narrow;
+    spacing: Theme.s2;
+    property <[string]> kinds: ["echo", "reverb", "flanger", "trans", "crush"];
+    property <[float]> lengths: [0.25, 0.5, 0.75, 1, 2, 4, 8, 16];
+    pure function next-kind(k: string) -> string {
+        if (k == "echo") { return "pingpong"; }
+        if (k == "pingpong") { return "reverb"; }
+        if (k == "reverb") { return "flanger"; }
+        if (k == "flanger") { return "phaser"; }
+        if (k == "phaser") { return "trans"; }
+        if (k == "trans") { return "roll"; }
+        if (k == "roll") { return "brake"; }
+        if (k == "brake") { return "crush"; }
+        if (k == "crush") { return "noise"; }
+        if (k == "noise") { return "sweep"; }
+        if (k == "sweep") { return "tremolo"; }
+        if (k == "tremolo") { return "pan"; }
+        if (k == "pan") { return "drive"; }
+        return "echo";
+    }
+    pure function step-beats(b: float, up: bool) -> float {
+        return up ? (b < 0.125 ? 0.125 : b < 0.25 ? 0.25 : b < 0.5 ? 0.5 : b < 0.75 ? 0.75 : b < 1 ? 1 : b < 16 ? b * 2 : 16)
+                  : (b > 16 ? 16 : b > 1 ? b / 2 : b > 0.75 ? 0.75 : b > 0.5 ? 0.5 : b > 0.25 ? 0.25 : 0.125);
+    }
+    VerticalLayout { alignment: center; Label { text: "FX"; tone: "dim"; small: true; } }
+    Button { text: DjState.fx-label; compact: true; horizontal-stretch: 1; clicked => { DjState.fx-kind-set(root.next-kind(DjState.fx-kind)); } }
+    Button { text: "‹"; compact: true; clicked => { DjState.fx-beats-set(root.step-beats(DjState.fx-beats, false)); } }
+    VerticalLayout { alignment: center; Label { text: DjState.fx-beats == 0.25 ? "¼" : DjState.fx-beats == 0.5 ? "½" : DjState.fx-beats == 0.75 ? "¾" : DjState.fx-beats; small: true; horizontal-alignment: center; width: 24px; } }
+    Button { text: "›"; compact: true; clicked => { DjState.fx-beats-set(root.step-beats(DjState.fx-beats, true)); } }
+    Button { text: DjState.fx-deck.to-uppercase(); compact: true; clicked => { DjState.fx-deck-set(DjState.fx-deck == "a" ? "b" : DjState.fx-deck == "b" ? "c" : DjState.fx-deck == "c" ? "d" : "a"); } }
+    if !root.narrow: VerticalLayout { alignment: center; width: 70px; Slider { value: DjState.fx-depth; changed(v) => { DjState.fx-depth-set(v); } } }
+    Button { text: DjState.fx-on ? "ON" : "OFF"; key: "f"; compact: true; primary: DjState.fx-on; clicked => { DjState.fx-toggle(); } }
+    // Hold to roll ¼ beat (beat repeat) without leaving the compact row.
+    Pad { width: 64px; height: Theme.row-h; horizontal-stretch: 0; text: "Roll"; icon: ""; show-label: true; down => { DjState.fx-roll(0.25, true); } up => { DjState.fx-roll(0.25, false); } }
+}
+
+// Beat FX unit: effect (or a chain of up to three), target deck, beat
+// length, depth, on. With Chain lit, effect buttons add to the chain or take
+// out of it; otherwise one press picks one effect.
+component BeatFx inherits VerticalLayout {
+    in property <bool> narrow;
+    // Stacked, for the mixer's centre console: effect and ON, the deck, the
+    // beat lengths as a grid, depth, roll.
+    in property <bool> stacked;
+    // Stacked with room: every effect as a button, no picker.
+    in property <bool> inline;
+    property <bool> chaining;
+    pure function kind-name(k: string) -> string {
+        return k == "pingpong" ? "Ping-pong" : k == "trans" ? "Trans" : k == "echo" ? "Echo" : k == "reverb" ? "Reverb" : k == "flanger" ? "Flanger" : k == "phaser" ? "Phaser" : k == "roll" ? "Roll" : k == "brake" ? "Brake" : k == "crush" ? "Crush" : k == "noise" ? "Noise" : k == "sweep" ? "Sweep" : k == "tremolo" ? "Tremolo" : k == "pan" ? "Pan" : k == "drive" ? "Drive" : k;
+    }
+    pure function lit(k: string) -> bool {
+        return DjState.fx-kind == k || DjState.fx-kind-2 == k || DjState.fx-kind-3 == k;
+    }
+    function pick(k: string) {
+        if (root.chaining) { DjState.fx-chain-toggle(k); } else { DjState.fx-kind-set(k); picker.close(); }
+    }
+    pure function beat-text(b: float) -> string {
+        return b == 0.125 ? "⅛" : b == 0.25 ? "¼" : b == 0.5 ? "½" : b == 0.75 ? "¾" : b;
+    }
+    spacing: Theme.s2;
+    if root.stacked: VerticalLayout {
+        spacing: Theme.s3;
+        if !root.inline: HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: DjState.fx-label + "  ▾"; horizontal-stretch: 1; clicked => { picker.show(); } }
+            Button { text: DjState.fx-on ? "ON" : "OFF"; key: "f"; primary: DjState.fx-on; clicked => { DjState.fx-toggle(); } }
+        }
+        if root.inline: VerticalLayout {
+            spacing: Theme.s1;
+            for row in [["echo", "pingpong", "reverb", "flanger", "phaser"], ["trans", "roll", "brake", "crush", "noise"], ["sweep", "tremolo", "pan", "drive"]]: HorizontalLayout {
+                spacing: Theme.s1;
+                for k in row: Button {
+                    text: root.kind-name(k);
+                    compact: true;
+                    horizontal-stretch: 1;
+                    lit: root.lit(k);
+                    clicked => { root.pick(k); }
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.s2;
+                Button { text: root.chaining ? "Chain: adding" : "+ Chain"; compact: true; lit: root.chaining; clicked => { root.chaining = !root.chaining; } }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: DjState.fx-on ? "FX ON" : "FX OFF"; key: "f"; primary: DjState.fx-on; clicked => { DjState.fx-toggle(); } }
+            }
+        }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            VerticalLayout { alignment: center; Label { text: "DECK"; tone: "faint"; small: true; caps: true; width: 48px; } }
+            Button { text: "A"; compact: true; horizontal-stretch: 1; lit: DjState.fx-deck == "a"; clicked => { DjState.fx-deck-set("a"); } }
+            Button { text: "B"; compact: true; horizontal-stretch: 1; lit: DjState.fx-deck == "b"; clicked => { DjState.fx-deck-set("b"); } }
+            Button { text: "C"; compact: true; horizontal-stretch: 1; lit: DjState.fx-deck == "c"; clicked => { DjState.fx-deck-set("c"); } }
+            Button { text: "D"; compact: true; horizontal-stretch: 1; lit: DjState.fx-deck == "d"; clicked => { DjState.fx-deck-set("d"); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            VerticalLayout { alignment: start; Label { text: "BEATS"; tone: "faint"; small: true; caps: true; width: 48px; height: Theme.row-h; vertical-alignment: center; } }
+            VerticalLayout {
+                spacing: Theme.s1;
+                for row in [[0.125, 0.25, 0.5], [0.75, 1, 2], [4, 8, 16]]: HorizontalLayout {
+                    spacing: Theme.s1;
+                    for b in row: Button {
+                        text: root.beat-text(b);
+                        compact: true;
+                        horizontal-stretch: 1;
+                        enabled: DjState.fx-uses-beats;
+                        lit: abs(DjState.fx-beats - b) < 0.001;
+                        clicked => { DjState.fx-beats-set(b); }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            VerticalLayout { alignment: center; Label { text: "DEPTH"; tone: "faint"; small: true; caps: true; width: 48px; } }
+            VerticalLayout { alignment: center; horizontal-stretch: 1; Slider { value: DjState.fx-depth; changed(v) => { DjState.fx-depth-set(v); } } }
+            VerticalLayout { alignment: center; Label { text: Math.round(DjState.fx-depth * 100) + "%"; tone: "dim"; small: true; width: 40px; horizontal-alignment: right; } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s1;
+            VerticalLayout { alignment: center; Label { text: "ROLL"; tone: "faint"; small: true; caps: true; width: 48px + Theme.s1; } }
+            for b in [0.125, 0.25, 0.5, 1]: Pad {
+                height: Theme.row-h;
+                horizontal-stretch: 1;
+                text: root.beat-text(b);
+                icon: "";
+                show-label: true;
+                down => { DjState.fx-roll(b, true); }
+                up => { DjState.fx-roll(b, false); }
+            }
+        }
+        Label { text: DjState.fx-text; tone: "dim"; small: true; overflow: elide; }
+    }
+    // 1 · What, where, how much: the effect (a picker opens with all of
+    // them), the deck, depth, on.
+    if !root.stacked: HorizontalLayout {
+        spacing: Theme.s2;
+        VerticalLayout { alignment: center; Label { text: "FX"; tone: "dim"; small: true; } }
+        Button {
+            text: DjState.fx-label + "  ▾";
+            compact: true;
+            horizontal-stretch: 2;
+            clicked => { picker.show(); }
+        }
+        Button { text: "A"; compact: true; lit: DjState.fx-deck == "a"; clicked => { DjState.fx-deck-set("a"); } }
+        Button { text: "B"; compact: true; lit: DjState.fx-deck == "b"; clicked => { DjState.fx-deck-set("b"); } }
+        Button { text: "C"; compact: true; lit: DjState.fx-deck == "c"; clicked => { DjState.fx-deck-set("c"); } }
+        Button { text: "D"; compact: true; lit: DjState.fx-deck == "d"; clicked => { DjState.fx-deck-set("d"); } }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            min-width: 60px;
+            Slider { value: DjState.fx-depth; changed(v) => { DjState.fx-depth-set(v); } }
+        }
+        Button { text: DjState.fx-on ? "ON" : "OFF"; key: "f"; compact: true; primary: DjState.fx-on; clicked => { DjState.fx-toggle(); } }
+    }
+    // 2 · When: its length in beats, and hold-to-roll.
+    if !root.stacked: HorizontalLayout {
+        spacing: Theme.s1;
+        for b in [0.125, 0.25, 0.5, 0.75, 1, 2, 4, 8, 16]: Button {
+            text: root.beat-text(b);
+            compact: true;
+            horizontal-stretch: 1;
+            enabled: DjState.fx-uses-beats;
+            lit: abs(DjState.fx-beats - b) < 0.001;
+            clicked => { DjState.fx-beats-set(b); }
+        }
+        Rectangle { width: Theme.s3; }
+        VerticalLayout { alignment: center; Label { text: "ROLL"; tone: "dim"; small: true; } }
+        for b in [0.125, 0.25, 0.5, 1]: Pad {
+            width: 42px;
+            height: Theme.row-h;
+            horizontal-stretch: 0;
+            text: root.beat-text(b);
+            icon: "";
+            show-label: true;
+            down => { DjState.fx-roll(b, true); }
+            up => { DjState.fx-roll(b, false); }
+        }
+    }
+    // Every effect, only while choosing. Chain: up to three in series.
+    picker := PopupWindow {
+        x: 0;
+        y: Theme.row-h + Theme.s2;
+        width: Math.min(root.width, 460px);
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            VerticalLayout {
+                padding: Theme.s3;
+                spacing: Theme.s2;
+                for row in [["echo", "pingpong", "reverb", "flanger", "phaser"], ["trans", "roll", "brake", "crush", "noise"], ["sweep", "tremolo", "pan", "drive"]]: HorizontalLayout {
+                    spacing: Theme.s2;
+                    for k in row: Button {
+                        text: root.kind-name(k);
+                        compact: true;
+                        horizontal-stretch: 1;
+                        lit: root.lit(k);
+                        clicked => { root.pick(k); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s2;
+                    Button { text: root.chaining ? "Chain: adding" : "+ Chain"; compact: true; lit: root.chaining; clicked => { root.chaining = !root.chaining; } }
+                    VerticalLayout { alignment: center; horizontal-stretch: 1; Label { text: DjState.fx-text; tone: "dim"; small: true; overflow: elide; } }
+                    Button { text: "Done"; compact: true; clicked => { root.chaining = false; picker.close(); } }
+                }
+            }
+        }
+    }
+}
+
+// Long-throw channel fader: a recessed groove with unity (0 dB) marked, and
+// a cap with a centre line, like a console fader. Drag, or double-click for
+// unity.
+component FaderTrack inherits Rectangle {
+    in property <float> value;
+    callback moved(float);
+    width: 32px;
+    property <length> cap-h: 26px;
+    property <length> travel: self.height - cap-h;
+    // groove
+    Rectangle { x: (parent.width - 4px) / 2; width: 4px; background: Theme.bg-deeper; border-width: 1px; border-color: Theme.border; }
+    // unity mark
+    Rectangle { x: 0; y: root.cap-h / 2 + root.travel * (1 - 60 / 66); width: 6px; height: 1px; background: Theme.text-faint; }
+    Rectangle { x: parent.width - 6px; y: root.cap-h / 2 + root.travel * (1 - 60 / 66); width: 6px; height: 1px; background: Theme.text-faint; }
+    // cap: a jump slides (under the hand it follows at once)
+    Rectangle {
+        y: root.travel * (1 - clamp(root.value, 0, 1));
+        animate y { duration: ta.pressed ? 0ms : 90ms; easing: ease-out; }
+        height: root.cap-h;
+        // Grip: two solid bars either side of the centre.
+        property <color> grip: ta.pressed ? Theme.accent : ta.has-hover ? Theme.text-bright : Theme.text;
+        Rectangle { y: (parent.height - 18px) / 2; height: 8px; background: parent.grip; }
+        Rectangle { y: (parent.height + 2px) / 2; height: 8px; background: parent.grip; }
+    }
+    ta := TouchArea {
+        mouse-cursor: ns-resize;
+        moved => { if (self.pressed) { root.moved(clamp(1 - (self.mouse-y - root.cap-h / 2) / root.travel, 0, 1)); } }
+        double-clicked => { root.moved(60 / 66); }
+    }
+}
+
+// One deck's position in the bar: four beat cells, the current one lit,
+// and a marker moving through it. Two lanes, one above the other, show at
+// a glance whether the decks are in phase.
+component PhaseLane inherits HorizontalLayout {
+    in property <string> letter;
+    in property <float> phase; // beats; −1 = no grid
+    spacing: Theme.s2;
+    height: 10px;
+    Text { text: root.letter; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; width: 12px; vertical-alignment: center; }
+    Rectangle {
+        horizontal-stretch: 1;
+        property <int> beat: root.phase < 0 ? -1 : Math.mod(Math.floor(root.phase), 4);
+        property <float> frac: root.phase < 0 ? 0 : root.phase - Math.floor(root.phase);
+        for i in 4: Rectangle {
+            x: parent.width * i / 4 + 1px;
+            width: parent.width / 4 - 2px;
+            height: parent.height;
+            background: i == parent.beat ? (i == 0 ? Theme.accent : Theme.text-dim) : Theme.bg-deeper;
+            border-width: 1px;
+            border-color: Theme.border;
+        }
+        if root.phase >= 0: Rectangle {
+            x: parent.width * (parent.beat + parent.frac) / 4 - 1px;
+            width: 2px;
+            height: parent.height;
+            background: Theme.text-bright;
+        }
+    }
+}
+
+// Rotary knob: drag up/down, double-click resets. Bipolar: the arc runs from
+// 12 o'clock to the pointer, lit when away from the centre.
+// The deck's EQ column: HIGH, MID, LOW and the filter.
+// The deck's input trim (the GAIN knob of a club mixer): ±24 dB before
+// the EQ, the same control as the Club Booth's. Double-click: 0 dB.
+component TrimKnob inherits Knob {
+    in property <string> deck;
+    property <float> db: DjState.input-trims[DjState.index(root.deck)];
+    label: "TRIM";
+    value: root.db / 24;
+    readout: (round(root.db * 10) > 0 ? "+" : "") + (round(root.db * 10) / 10 + 0) + " dB";
+    moved(v) => { DjState.set-input-trim(root.deck, v); }
+}
+
+component EqColumn inherits VerticalLayout {
+    in property <string> deck;
+    in property <DeckItem> d;
+    property <EqKnobs> k: !DjState.eq-live ? { high: root.d.eq-high, mid: root.d.eq-mid, low: root.d.eq-low, filter: root.d.filter, high-text: root.d.eq-high-text, mid-text: root.d.eq-mid-text, low-text: root.d.eq-low-text, filter-text: root.d.filter-text } : DjState.knobs(root.deck);
+    spacing: Theme.s2;
+    alignment: space-between;
+    TrimKnob { deck: root.deck; }
+    Knob { label: "HIGH"; value: root.k.high; readout: root.k.high-text; moved(v) => { DjState.set-eq(root.deck, "high", v); } }
+    Knob { label: "MID"; value: root.k.mid; readout: root.k.mid-text; moved(v) => { DjState.set-eq(root.deck, "mid", v); } }
+    Knob { label: "LOW"; value: root.k.low; readout: root.k.low-text; moved(v) => { DjState.set-eq(root.deck, "low", v); } }
+    Knob { label: "FILTER"; filter: true; value: root.k.filter; readout: root.k.filter-text; moved(v) => { DjState.set-deck-filter(root.deck, v); } }
+}
+
+// One mixer channel: deck letter, meters with scale, fader, and the gain
+// the deck is heard at (fader and crossfader together).
+component Channel inherits VerticalLayout {
+    in property <string> deck;
+    in property <DeckItem> d;
+    in property <DeckLevels> lv;
+    in property <float> gain;
+    spacing: Theme.s3;
+    HorizontalLayout {
+        alignment: center;
+        spacing: Theme.s3;
+        DeckBadge { letter: root.deck.to-uppercase(); lit: root.d.playing; }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "CUE";
+                compact: true;
+                lit: DjState.pfl(root.deck);
+                clicked => { DjState.toggle-pfl(root.deck); }
+            }
+        }
+    }
+    // Symmetrical: each deck's fader on its outer edge (C and A on the
+    // left, B and D on the right), the EQ towards the middle.
+    property <bool> left: root.deck == "a" || root.deck == "c";
+    if root.left: HorizontalLayout {
+        vertical-stretch: 1;
+        alignment: center;
+        spacing: Theme.s2;
+        FaderTrack { value: root.gain; moved(v) => { DjState.set-gain(root.deck, v); } }
+        Rectangle { width: Theme.s3; }
+        Meter { kind: MeterKind.System; width: 6px; value: root.lv.level-l; peak: root.lv.peak; avg: root.lv.vu; }
+        Meter { kind: MeterKind.System; width: 6px; value: root.lv.level-r; peak: root.lv.peak; avg: root.lv.vu; }
+        DeckMeterScale { width: 26px; }
+        Rectangle { width: Theme.s3; }
+        EqColumn { deck: root.deck; d: root.d; }
+    }
+    if !root.left: HorizontalLayout {
+        vertical-stretch: 1;
+        alignment: center;
+        spacing: Theme.s2;
+        EqColumn { deck: root.deck; d: root.d; }
+        Rectangle { width: Theme.s3; }
+        DeckMeterScale { width: 26px; }
+        Meter { kind: MeterKind.System; width: 6px; value: root.lv.level-l; peak: root.lv.peak; avg: root.lv.vu; }
+        Meter { kind: MeterKind.System; width: 6px; value: root.lv.level-r; peak: root.lv.peak; avg: root.lv.vu; }
+        Rectangle { width: Theme.s3; }
+        FaderTrack { value: root.gain; moved(v) => { DjState.set-gain(root.deck, v); } }
+    }
+    Text {
+        text: root.d.gain-db;
+        color: Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        horizontal-alignment: center;
+    }
+}
+
+// A channel as one compact row, for short surfaces.
+component ChannelRow inherits HorizontalLayout {
+    in property <string> deck;
+    in property <DeckItem> d;
+    in property <DeckLevels> lv;
+    in property <float> gain;
+    spacing: Theme.s4;
+    height: Theme.row-h + Theme.s3;
+    DeckBadge { letter: root.deck.to-uppercase(); lit: root.d.playing; }
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.s1;
+        horizontal-stretch: 2;
+        Meter { kind: MeterKind.System; vertical: false; height: 5px; value: root.lv.level-l; peak: root.lv.peak; avg: root.lv.vu; }
+        Meter { kind: MeterKind.System; vertical: false; height: 5px; value: root.lv.level-r; peak: root.lv.peak; avg: root.lv.vu; }
+    }
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        Slider { value: root.gain; changed(v) => { DjState.set-gain(root.deck, v); } }
+    }
+    Text {
+        text: root.d.gain-db;
+        color: Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        width: 64px;
+    }
+}
+
+// The crossfader law, drawn: deck A's gain (falling) and deck B's (rising)
+// across the throw, with the current position and the two gains it gives.
+component LawView inherits Rectangle {
+    in property <float> pos;
+    background: Theme.bg-deep;
+    border-width: 1px;
+    border-color: Theme.border;
+    // The plot is inset so the A and B labels sit clear of the curves.
+    property <length> inset: Theme.s5;
+    property <length> plot-w: self.width - 2 * inset;
+    property <length> px: inset + plot-w * clamp(pos, 0, 1);
+    // Curves and the −3 dB line: an anti-aliased image of the engine's law.
+    init => { DjState.law-w = self.width; DjState.law-h = self.height; }
+    changed width => { DjState.law-w = self.width; }
+    changed height => { DjState.law-h = self.height; }
+    Image { source: DjState.law; width: parent.width; height: parent.height; image-fit: fill; }
+    // Position and the two gains are drawn in the image (law.rs).
+    Text { x: (root.inset - self.width) / 2; y: (parent.height - self.height) / 2; text: "A"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+    Text { x: parent.width - (root.inset + self.width) / 2; y: (parent.height - self.height) / 2; text: "B"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; }
+}
+
+// Hardware-style crossfader: a wide slot with a centre detent and a tall cap.
+// Click or drag to move, double-click to centre.
+component XFader inherits Rectangle {
+    in property <float> value;
+    // The throw starts and ends this far in (the law's plot inset: the cap
+    // centre then sits on the law's position line).
+    in property <length> inset: self.cap-w / 2;
+    callback moved(float);
+    height: Theme.row-h + Theme.s3;
+    in property <length> cap-w: 14px;
+    // Over the law: a hairline slot within the plot, the curve showing.
+    in property <bool> light;
+    property <length> travel: self.width - 2 * inset;
+    // Under the hand the cap follows the mouse at once, not the engine's
+    // echo of it.
+    property <float> drag;
+    property <float> shown: ta.pressed ? root.drag : root.value;
+    // slot
+    Rectangle {
+        x: root.light ? root.inset : 0;
+        width: root.light ? root.travel : parent.width;
+        y: (parent.height - self.height) / 2;
+        height: root.light ? 2px : 6px;
+        background: root.light ? Theme.border-strong : Theme.bg-deeper;
+        border-width: root.light ? 0 : 1px;
+        border-color: Theme.border;
+    }
+    // centre detent
+    Rectangle { x: (parent.width - 1px) / 2; width: 1px; y: 0; height: parent.height; background: Theme.border-strong; }
+    // cap
+    Rectangle {
+        x: root.inset + root.travel * clamp(root.shown, 0, 1) - root.cap-w / 2;
+        // A jump slides, quick enough that a tease's stabs still read.
+        animate x { duration: ta.pressed ? 0ms : 60ms; easing: ease-out; }
+        width: root.cap-w;
+        background: ta.pressed ? Theme.accent : ta.has-hover ? Theme.text-bright : Theme.text;
+        Rectangle { x: (parent.width - 2px) / 2; width: 2px; y: 5px; height: parent.height - 10px; background: Theme.bg-deeper; }
+    }
+    ta := TouchArea {
+        mouse-cursor: ew-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.drag = clamp((self.mouse-x - root.inset) / root.travel, 0, 1);
+                root.moved(root.drag);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.drag = clamp((self.mouse-x - root.inset) / root.travel, 0, 1);
+                root.moved(root.drag);
+            }
+        }
+        double-clicked => { root.moved(0.5); }
+    }
+}
+
+// ── The console: a two-channel club mixer ─────────────────────────────
+// Mirrored channels around a centre spine (row names once, each deck's
+// value beside them; the meter bridge, master and phones between the
+// faders), the crossfader with its law behind the slot, Beat FX as one
+// strip.
+
+// A segmented meter (LED ladder): lit up to the level, the hot top in
+// accent, the peak held as one bright segment.
+component LedMeter inherits Rectangle {
+    in property <float> value;
+    in property <float> peak: -1;
+    in property <MeterKind> kind: MeterKind.Performance;
+    /// Classic style: where the accent segments start (−1 dBFS).
+    in property <float> hot: 0.9;
+    in property <bool> vertical: true;
+    property <length> span: root.vertical ? self.height : self.width;
+    // LED style: whole-pixel segments, 5 px lit and 5 px dark — 8 and 16 device
+    // pixels at a 1.6 display scale, which is what makes the ladder even (3 px
+    // on a 6 px pitch was 4.8 and 9.6, so one segment in five covered four rows
+    // and the blocks looked like different heights). Same unit as the shared
+    // Meter, so the deck and crossfader ladders match; the others keep their
+    // ladder.
+    // Classic and Banded: the same 10 px pitch, on whole physical pixels
+    // with a 2 px gap (a fractional pitch with a 1 px gap blurred every
+    // edge, and the ladder shimmered as it moved).
+    property <int> n: Math.max(4, Math.floor(self.span / 10px));
+    property <length> seg: MeterStyle.led ? 10px : Math.floor(self.span / self.n / 1phx) * 1phx;
+    property <length> gap: Math.max(1, Math.round(2px / 1phx)) * 1phx;
+    // No hold segment for silence.
+    property <int> peak-i: root.peak <= 0.02 ? -1 : Math.min(root.n - 1, Math.floor(root.peak * root.n));
+    // Classic, upright: two images Rust renders once per size and colour
+    // (unlit, lit), the lit one clipped to the level, and the held peak as
+    // one bright segment. A few items a meter, not one bound rectangle a segment
+    // (those cost the shared UI thread most of a core).
+    property <bool> imaged: !MeterStyle.led && !MeterStyle.banded && root.vertical;
+    property <int> lit-n: Math.max(0, Math.min(root.n, Math.floor(root.value * root.n + 0.5)));
+    property <int> wp: Math.max(1, Math.round(root.width / 1phx));
+    property <int> hp: Math.max(1, Math.floor(root.height / 1phx));
+    property <int> pp: Math.round(root.seg / 1phx);
+    property <int> gp: Math.round(root.gap / 1phx);
+    property <length> base: Math.floor(root.height / 1phx) * 1phx;
+    if root.imaged: Image {
+        width: root.wp * 1phx;
+        height: root.hp * 1phx;
+        image-fit: fill;
+        image-rendering: pixelated;
+        source: MeterStyle.ladder(root.wp, root.hp, root.n, root.pp, root.gp, root.hot, Theme.raised, Theme.accent.with-alpha(0.12));
+    }
+    if root.imaged: Rectangle {
+        y: root.base - root.lit-n * root.seg;
+        width: root.width;
+        height: root.lit-n * root.seg;
+        clip: true;
+        Image {
+            y: -parent.y;
+            width: root.wp * 1phx;
+            height: root.hp * 1phx;
+            image-fit: fill;
+            image-rendering: pixelated;
+            source: MeterStyle.ladder(root.wp, root.hp, root.n, root.pp, root.gp, root.hot, Theme.text-dim, Theme.accent);
+        }
+    }
+    if root.imaged && root.peak-i >= 0: Rectangle {
+        y: root.base - (root.peak-i + 1) * root.seg;
+        width: root.width;
+        height: root.seg - root.gap;
+        background: Theme.text-bright;
+    }
+    if !root.imaged: Rectangle {
+      width: root.width;
+      height: root.height;
+      for i in root.n: Rectangle {
+        property <bool> on: (i + 0.5) / root.n <= root.value;
+        property <float> p: (i + 0.5) / root.n;
+        property <bool> hot-seg: self.p > root.hot;
+        property <float> b1: root.kind == MeterKind.Performance ? 0.4 : 0.44;
+        property <float> b2: root.kind == MeterKind.Performance ? 0.7 : 0.68;
+        property <float> b3: root.kind == MeterKind.Performance ? 0.8 : 0.95;
+        property <float> b4: root.kind == MeterKind.Performance ? 0.9 : 1.0;
+        x: root.vertical ? 0 : i * root.seg;
+        y: root.vertical ? Math.floor(root.height / 1phx) * 1phx - (i + 1) * root.seg : 0;
+        height: root.vertical ? (MeterStyle.led ? 5px : Math.max(1phx, root.seg - root.gap)) : root.height;
+        width: root.vertical ? root.width : (MeterStyle.led ? 5px : Math.max(1phx, root.seg - root.gap));
+        background: i == root.peak-i ? Theme.text-bright
+            : MeterStyle.led ? (self.p >= (root.kind == MeterKind.Performance ? 0.9 : 0.95) ? MeterStyle.led-red : self.p >= self.b2 ? MeterStyle.led-amber : MeterStyle.led-green).with-alpha(self.on ? 1.0 : 0.13)
+            : !MeterStyle.banded ? (self.on ? (self.hot-seg ? Theme.accent : Theme.text-dim) : (self.hot-seg ? Theme.accent.with-alpha(0.12) : Theme.raised))
+            : self.on ? (self.p < self.b1 ? Theme.text-faint : self.p < self.b2 ? Theme.text-dim : self.p < self.b3 ? (root.kind == MeterKind.Performance ? Theme.text : Theme.warn) : self.p < self.b4 ? (root.kind == MeterKind.Performance ? Theme.warn : Theme.error) : Theme.error)
+            : Theme.raised;
+      }
+    }
+    Rectangle { visible: MeterStyle.banded && root.kind == MeterKind.Performance; x: 0; y: root.height * 0.2; width: root.width; height: 1px; background: Theme.text-bright.with-alpha(0.75); }
+}
+
+// One deck's channel: deck and CUE, the EQ and filter knobs, the fader
+// with its meters on the inside, the gain it's heard at.
+component Strip inherits VerticalLayout {
+    in property <string> deck;
+    in property <DeckItem> d;
+    in property <DeckLevels> lv;
+    in property <float> gain;
+    in property <length> top-h;
+    in property <length> knob-h;
+    in property <length> foot-h;
+    in property <length> knob: 32px;
+    // The fader on the outer edge: C and A on the left, B and D on the right.
+    property <bool> a: root.deck == "a" || root.deck == "c";
+    property <EqKnobs> k: !DjState.eq-live ? { high: root.d.eq-high, mid: root.d.eq-mid, low: root.d.eq-low, filter: root.d.filter, high-text: root.d.eq-high-text, mid-text: root.d.eq-mid-text, low-text: root.d.eq-low-text, filter-text: root.d.filter-text } : DjState.knobs(root.deck);
+    spacing: Theme.s2;
+    HorizontalLayout {
+        height: root.top-h;
+        alignment: center;
+        spacing: Theme.s2;
+        DeckBadge { letter: root.deck.to-uppercase(); lit: root.d.playing; }
+        // The input selector (DECK / LINE), while an app could be taken.
+        VerticalLayout { alignment: center; SourceChip { deck: root.deck; } }
+    }
+    TrimKnob { height: root.knob-h; size: root.knob; deck: root.deck; }
+    Knob { height: root.knob-h; size: root.knob; label: "HI"; value: root.k.high; readout: root.k.high-text; moved(v) => { DjState.set-eq(root.deck, "high", v); } }
+    Knob { height: root.knob-h; size: root.knob; label: "MID"; value: root.k.mid; readout: root.k.mid-text; moved(v) => { DjState.set-eq(root.deck, "mid", v); } }
+    Knob { height: root.knob-h; size: root.knob; label: "LOW"; value: root.k.low; readout: root.k.low-text; moved(v) => { DjState.set-eq(root.deck, "low", v); } }
+    Knob { height: root.knob-h; size: root.knob; label: "FILTER"; filter: true; value: root.k.filter; readout: root.k.filter-text; moved(v) => { DjState.set-deck-filter(root.deck, v); } }
+    // CUE (PFL) right above the fader, where the hand is.
+    Button {
+        text: "CUE";
+        lit: DjState.pfl(root.deck);
+        clicked => { DjState.toggle-pfl(root.deck); }
+    }
+    HorizontalLayout {
+        vertical-stretch: 1;
+        alignment: center;
+        spacing: Theme.s3;
+        if root.a: FaderTrack { value: root.gain; moved(v) => { DjState.set-gain(root.deck, v); } }
+        LedMeter { kind: MeterStyle.banded ? MeterKind.System : MeterKind.Performance; width: 7px; value: root.lv.level-l; peak: root.lv.peak; }
+        LedMeter { kind: MeterStyle.banded ? MeterKind.System : MeterKind.Performance; width: 7px; value: root.lv.level-r; peak: root.lv.peak; }
+        if !root.a: FaderTrack { value: root.gain; moved(v) => { DjState.set-gain(root.deck, v); } }
+    }
+    Text {
+        height: root.foot-h;
+        text: root.d.gain-db;
+        color: Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component MixerDeckMode inherits Button {
+    text: DjState.mixer-four ? "4 decks" : "2 decks";
+    key: "4";
+    compact: true;
+    clicked => { DjState.mixer-decks-toggle(); }
+}
+
+// The crossfader: its law drawn above it (each deck's curve lit by its
+// level, pulsing on its beats), the fader under it on the same throw, so
+// the cap sits on the law's position line.
+component Xfade inherits VerticalLayout {
+    in property <length> law-h: 36px;
+    spacing: Theme.s2;
+    alignment: end;
+    HorizontalLayout {
+        spacing: Theme.s2;
+        MixerDeckMode { }
+        XfCurveButton { }
+        Text { text: DjState.xfader-text; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: right; horizontal-stretch: 1; min-width: 0px; overflow: elide; }
+    }
+    LawView { height: root.law-h; pos: DjState.xfader; }
+    // The cap: a deck fader's cap (32 × 26), turned.
+    XFader { height: 32px; cap-w: 26px; inset: Theme.s5; value: DjState.xfader; moved(v) => { DjState.set-xfader(v); } }
+}
+
+// A small caps section label, with a hairline after it.
+component Caption inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> detail;
+    spacing: Theme.s3;
+    Text { text: root.text; color: Theme.text-bright; font-family: Theme.font; font-size: Theme.fs-small; font-weight: 700; letter-spacing: 2px; vertical-alignment: center; }
+    VerticalLayout { alignment: center; horizontal-stretch: 1; Rectangle { height: 1px; background: Theme.border; } }
+    if root.detail != "": Text { text: root.detail; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; vertical-alignment: center; }
+}
+
+// One figure of NEXT MIX: a number (accent when the blend is near) over
+// its unit.
+component MixFigure inherits VerticalLayout {
+    in property <string> value;
+    in property <string> label;
+    in property <bool> hot;
+    in property <bool> small;
+    alignment: center;
+    width: 52px;
+    spacing: 2px;
+    Text { text: root.value; color: root.hot ? Theme.accent : Theme.text-bright; font-family: Theme.font; font-size: root.small ? Theme.fs-small : Theme.fs-small * 1.6; font-weight: 700; horizontal-alignment: right; }
+    Text { text: root.label; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: right; }
+}
+
+// The next transition, shared by the roomy and compact centre layouts.
+component NextMix inherits VerticalLayout {
+    Rectangle { height: Theme.s3; }
+    Caption { text: "NEXT MIX"; }
+    HorizontalLayout {
+        height: 36px;
+        spacing: Theme.s4;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text { text: DjState.mix-next != "" ? DjState.mix-next : "choosing the next track"; color: DjState.mix-next != "" ? Theme.text-bright : Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-small; overflow: elide; }
+            Text { text: DjState.mix-technique; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; overflow: elide; }
+        }
+        // Bars and beats to the blend; while it runs, the bar it's in.
+        if DjState.mix-bar != "": MixFigure { value: "MIXING"; label: DjState.mix-bar; hot: true; small: true; width: 118px; }
+        if DjState.mix-bar == "": MixFigure { value: DjState.mix-beats >= 0 ? Math.ceil(DjState.mix-beats / 4) : "—"; label: "BARS"; hot: DjState.mix-beats >= 0 && DjState.mix-beats <= 16; }
+        if DjState.mix-bar == "": MixFigure { value: DjState.mix-beats >= 0 ? DjState.mix-beats : "—"; label: "BEATS"; hot: DjState.mix-beats >= 0 && DjState.mix-beats <= 16; }
+    }
+}
+
+// The centre of the mixer, between the channels: Beat FX, then PFL and
+// both decks' beat phase.
+component Centre inherits VerticalLayout {
+    property <bool> chaining;
+    pure function lit(k: string) -> bool {
+        return DjState.fx-kind == k || DjState.fx-kind-2 == k || DjState.fx-kind-3 == k;
+    }
+    function pick(k: string) {
+        if (root.chaining) { DjState.fx-chain-toggle(k); } else { DjState.fx-kind-set(k); picker.close(); }
+    }
+    pure function beat-text(b: float) -> string {
+        return b == 0.125 ? "⅛" : b == 0.25 ? "¼" : b == 0.5 ? "½" : b == 0.75 ? "¾" : b;
+    }
+    pure function step-beats(b: float, up: bool) -> float {
+        return up ? (b < 0.125 ? 0.125 : b < 0.25 ? 0.25 : b < 0.5 ? 0.5 : b < 0.75 ? 0.75 : b < 1 ? 1 : b < 16 ? b * 2 : 16)
+                  : (b > 16 ? 16 : b > 1 ? b / 2 : b > 0.75 ? 0.75 : b > 0.5 ? 0.5 : b > 0.25 ? 0.25 : 0.125);
+    }
+    pure function kind-name(k: string) -> string {
+        return k == "pingpong" ? "Ping-pong" : k == "trans" ? "Trans" : k == "echo" ? "Echo" : k == "reverb" ? "Reverb" : k == "flanger" ? "Flanger" : k == "phaser" ? "Phaser" : k == "roll" ? "Roll" : k == "brake" ? "Brake" : k == "crush" ? "Crush" : k == "noise" ? "Noise" : k == "sweep" ? "Sweep" : k == "tremolo" ? "Tremolo" : k == "pan" ? "Pan" : k == "drive" ? "Drive" : k;
+    }
+    in property <length> top-h;
+    in property <length> foot-h;
+    // Room for every effect and length as keys (else a display and steppers).
+    in property <bool> roomy;
+    in property <bool> compact;
+    property <length> control-size: root.compact ? 26px : 30px;
+    // The crossfader's law grows a little in a tall console.
+    in property <length> law-h: 36px;
+    // Where the strips' CUE buttons start: Beat FX fills the EQ band above
+    // it (its header level with the deck letters), PFL starts level with CUE.
+    in property <length> cue-y: 252px;
+    spacing: root.compact ? Theme.s2 : Theme.s3;
+
+    // ── Beat FX ──
+    VerticalLayout {
+    height: root.cue-y - (root.compact ? Theme.s2 : Theme.s3);
+    spacing: root.compact ? Theme.s3 : Theme.s4;
+    // The full grid ends level with the last EQ row; the compact display
+    // keeps its rows together under the heading.
+    alignment: root.roomy ? space-between : start;
+    HorizontalLayout {
+        height: root.top-h;
+        spacing: Theme.s3;
+        Caption { horizontal-stretch: 1; text: "BEAT FX"; detail: root.roomy && DjState.fx-label != DjState.fx-kind ? DjState.fx-label : ""; }
+        if root.roomy: VerticalLayout { alignment: center; Button { text: root.chaining ? "Chain: adding" : "+ Chain"; compact: true; lit: root.chaining; clicked => { root.chaining = !root.chaining; } } }
+    }
+    if root.roomy: VerticalLayout {
+        spacing: Theme.s1;
+        for row in [["echo", "pingpong", "reverb"], ["flanger", "phaser", "trans"], ["roll", "brake", "crush"], ["noise", "sweep", "tremolo"], ["pan", "drive", ""]]: HorizontalLayout {
+            spacing: Theme.s1;
+            for k in row: Rectangle {
+                horizontal-stretch: 1;
+                height: Theme.row-h;
+                if k != "": Button { width: parent.width; height: parent.height; text: root.kind-name(k); compact: true; lit: root.lit(k); clicked => { root.pick(k); } }
+            }
+        }
+    }
+    if root.roomy: HorizontalLayout {
+        spacing: Theme.s1;
+        for b in [0.125, 0.25, 0.5, 0.75, 1, 2, 4, 8, 16]: Button {
+            text: root.beat-text(b);
+            compact: true;
+            horizontal-stretch: 1;
+            enabled: DjState.fx-uses-beats;
+            lit: abs(DjState.fx-beats - b) < 0.001;
+            clicked => { DjState.fx-beats-set(b); }
+        }
+    }
+    // The display: the effect (click for every one), its length, its deck.
+    if !root.roomy: display := Rectangle {
+        height: root.compact ? 40px : 48px;
+        background: Theme.bg-deeper;
+        border-width: 1px;
+        border-color: DjState.fx-on ? Theme.accent : (disp-ta.has-hover ? Theme.border-strong : Theme.border);
+        HorizontalLayout {
+            padding-left: Theme.s4;
+            padding-right: Theme.s4;
+            spacing: Theme.s3;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text { text: DjState.fx-label; color: DjState.fx-on ? Theme.accent : Theme.text-bright; font-family: Theme.font; font-size: Theme.fs-large; font-weight: 700; overflow: elide; }
+                Text { text: (DjState.fx-uses-beats ? root.beat-text(DjState.fx-beats) + " beat · " : "") + "deck " + DjState.fx-deck.to-uppercase(); color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; overflow: elide; }
+            }
+            Text { text: "▾"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-small; vertical-alignment: center; }
+        }
+        disp-ta := TouchArea { mouse-cursor: pointer; clicked => { picker.show(); } }
+    }
+    // Length and deck.
+    if !root.roomy: HorizontalLayout {
+        spacing: Theme.s2;
+        Button { text: "‹"; compact: true; enabled: DjState.fx-uses-beats; clicked => { DjState.fx-beats-set(root.step-beats(DjState.fx-beats, false)); } }
+        Text { text: root.beat-text(DjState.fx-beats); color: DjState.fx-uses-beats ? Theme.text-bright : Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-large; horizontal-stretch: 1; horizontal-alignment: center; vertical-alignment: center; }
+        Button { text: "›"; compact: true; enabled: DjState.fx-uses-beats; clicked => { DjState.fx-beats-set(root.step-beats(DjState.fx-beats, true)); } }
+        Rectangle { width: Theme.s4; }
+        Button { text: "A"; compact: true; lit: DjState.fx-deck == "a"; clicked => { DjState.fx-deck-set("a"); } }
+        Button { text: "B"; compact: true; lit: DjState.fx-deck == "b"; clicked => { DjState.fx-deck-set("b"); } }
+        Button { text: "C"; compact: true; lit: DjState.fx-deck == "c"; clicked => { DjState.fx-deck-set("c"); } }
+        Button { text: "D"; compact: true; lit: DjState.fx-deck == "d"; clicked => { DjState.fx-deck-set("d"); } }
+    }
+    // Depth, hold-to-roll, on (and the deck, with the keys).
+    HorizontalLayout {
+        spacing: Theme.s3;
+        if root.roomy: VerticalLayout {
+            alignment: center;
+            spacing: Theme.s1;
+            Text { text: "DECK"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; horizontal-alignment: center; }
+            HorizontalLayout {
+                spacing: Theme.s1;
+                Button { text: "A"; compact: true; lit: DjState.fx-deck == "a"; clicked => { DjState.fx-deck-set("a"); } }
+                Button { text: "B"; compact: true; lit: DjState.fx-deck == "b"; clicked => { DjState.fx-deck-set("b"); } }
+                Button { text: "C"; compact: true; lit: DjState.fx-deck == "c"; clicked => { DjState.fx-deck-set("c"); } }
+                Button { text: "D"; compact: true; lit: DjState.fx-deck == "d"; clicked => { DjState.fx-deck-set("d"); } }
+            }
+        }
+        Knob { size: root.control-size; label-w: root.compact ? 48px : 64px; unipolar: true; label: "DEPTH"; value: DjState.fx-depth * 2 - 1; readout: Math.round(DjState.fx-depth * 100) + "%"; moved(v) => { DjState.fx-depth-set((v + 1) / 2); } }
+        Pad {
+            width: 72px;
+            horizontal-stretch: 0;
+            height: root.compact ? 36px : 44px;
+            text: "Roll";
+            icon: "";
+            show-label: true;
+            down => { DjState.fx-roll(DjState.fx-beats, true); }
+            up => { DjState.fx-roll(DjState.fx-beats, false); }
+        }
+        Pad {
+            horizontal-stretch: 1;
+            min-width: 84px;
+            height: root.compact ? 36px : 44px;
+            text: DjState.fx-on ? "ON" : "OFF";
+            icon: "";
+            show-label: true;
+            key: "f";
+            active: DjState.fx-on;
+            clicked => { DjState.fx-toggle(); }
+        }
+    }
+
+    if DjState.set-on && root.compact: NextMix { }
+    }
+
+    // ── PFL (headphones) and BOOTH OUT (the DJ Booth's volume on the
+    // Patch Mix, the Mixer's DJ Booth strip) on one line, level with CUE ──
+    HorizontalLayout {
+        vertical-stretch: 0;
+        spacing: root.compact ? Theme.s3 : Theme.s5;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Theme.s2;
+            Caption { text: "PFL"; }
+            HorizontalLayout {
+                spacing: Theme.s4;
+                Knob { size: root.control-size; label-w: root.compact ? 48px : 64px; label: "CUE/MIX"; live: DjState.phones-on; value: DjState.cue-mix; readout: DjState.cue-mix-text; moved(v) => { DjState.set-cue-mix(v); } }
+                Knob { size: root.control-size; label-w: root.compact ? 48px : 64px; label: "LEVEL"; value: DjState.cue-level; readout: DjState.cue-level-text; moved(v) => { DjState.set-cue-level(v); } }
+                // Where the headphones play: a click picks the next output.
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+                        phones-btn := Rectangle {
+                            width: root.control-size;
+                            height: root.control-size;
+                            border-radius: root.control-size / 2;
+                            border-width: 1px;
+                            border-color: phones-ta.has-hover ? Theme.text-dim : Theme.border-strong;
+                            background: phones-ta.pressed ? Theme.border : transparent;
+                            Icon { name: "phones"; size: 14px; ink: DjState.phones-on ? Theme.accent : (phones-ta.has-hover ? Theme.text-bright : Theme.text-dim); }
+                            phones-ta := TouchArea { mouse-cursor: pointer; clicked => { DjState.cycle-phones(); } }
+                        }
+                    }
+                    Text {
+                        text: DjState.phones;
+                        color: phones-ta.has-hover ? Theme.text-bright : Theme.text-dim;
+                        font-family: Theme.font;
+                        font-size: Theme.fs-tiny;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: Theme.s2;
+            Caption { text: "BOOTH OUT"; }
+            HorizontalLayout {
+                alignment: center;
+                Knob { size: root.control-size; label-w: root.compact ? 48px : 64px; label: "VOLUME"; unipolar: true; reset-value: 2 * (60 / 66) - 1; value: DjState.master * 2 - 1; readout: DjState.master-text; moved(v) => { DjState.set-master((v + 1) / 2); } }
+            }
+        }
+    }
+
+    // ── NEXT MIX: only while an AI DJ set plays. The next track and how it
+    // comes in, and a live count of the beats to the blend. One height
+    // whatever it shows (nothing below moves). ──
+    if DjState.set-on && !root.compact: NextMix { }
+    // ── MASTER: the program's level over the faders' height, as on a
+    // club mixer's centre ──
+    VerticalLayout {
+        vertical-stretch: 1;
+        padding-top: root.compact ? Theme.s2 : Theme.s4;
+        padding-bottom: root.compact ? Theme.s2 : Theme.s4;
+        spacing: Theme.s2;
+        HorizontalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: Theme.s3;
+            LedMeter { kind: MeterStyle.banded ? MeterKind.System : MeterKind.Performance; width: 7px; value: DjState.program-l; }
+            LedMeter { kind: MeterStyle.banded ? MeterKind.System : MeterKind.Performance; width: 7px; value: DjState.program-r; }
+        }
+        Text { text: "MASTER"; color: Theme.text-faint; font-family: Theme.font; font-size: Theme.fs-tiny; letter-spacing: 1px; horizontal-alignment: center; }
+    }
+    // ── Beat: each deck's place in the bar, bar.beat and tempo ──
+    Caption { text: "BEAT"; }
+    VerticalLayout {
+        vertical-stretch: 0;
+        padding-bottom: root.compact ? Theme.s2 : Theme.s3;
+        spacing: Theme.s2;
+        for row in [
+            { letter: "A", phase: DjState.phase-a, beat: DjState.beat-a, bpm: DjState.deck-a.bpm, synced: DjState.deck-a.synced },
+            { letter: "B", phase: DjState.phase-b, beat: DjState.beat-b, bpm: DjState.deck-b.bpm, synced: DjState.deck-b.synced },
+        ]: HorizontalLayout {
+            spacing: Theme.s3;
+            height: 14px;
+            PhaseLane { horizontal-stretch: 1; letter: row.letter; phase: row.phase; }
+            Text { text: row.beat; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; width: 34px; horizontal-alignment: right; vertical-alignment: center; }
+            Text { text: row.bpm == "" ? "—" : row.bpm; color: row.synced ? Theme.accent : Theme.text-bright; font-family: Theme.font; font-size: Theme.fs-small; width: 52px; horizontal-alignment: right; vertical-alignment: center; }
+        }
+    }
+    // The crossfader closes the centre, level with the channel faders' foot.
+    Xfade { vertical-stretch: 0; law-h: root.law-h; }
+
+    picker := PopupWindow {
+        x: 0;
+        y: root.top-h + 48px + 2 * Theme.s4;
+        width: Math.max(root.width, 360px);
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            VerticalLayout {
+                padding: Theme.s3;
+                spacing: Theme.s2;
+                for row in [["echo", "pingpong", "reverb"], ["flanger", "phaser", "trans"], ["roll", "brake", "crush"], ["noise", "sweep", "tremolo"], ["pan", "drive"]]: HorizontalLayout {
+                    spacing: Theme.s2;
+                    for k in row: Button { text: root.kind-name(k); compact: true; horizontal-stretch: 1; lit: root.lit(k); clicked => { root.pick(k); } }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s2;
+                    Button { text: root.chaining ? "Chain: adding" : "+ Chain"; compact: true; lit: root.chaining; clicked => { root.chaining = !root.chaining; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Done"; compact: true; clicked => { root.chaining = false; picker.close(); } }
+                }
+            }
+        }
+    }
+}
+
+export component DjMixerClassic inherits Rectangle {
+    property <bool> narrow: self.width < 480px;
+    // Layout is chosen from the height the channel strips would get, so
+    // full-height strips are used whenever they have a usable throw and
+    // nothing is ever clipped:
+    //   full + law   strips >= strip-min with the law drawn
+    //   full         strips >= strip-min without it
+    //   rows (+ law) compact channel rows; the law takes the spare height
+    //                when it fits, else spare height goes between blocks
+    //   tight        rows, and the engine pad docks beside the crossfader
+    // Four EQ knobs stand beside each strip's meters and fader.
+    // Four knobs above each other beside the meters and fader.
+    property <length> strip-min: 200px;
+    // Headphone row under the strips.
+    // (Measured: the knobs with label and readout, 70 px; budgeted at 52,
+    // the unit picked layouts that clipped its crossfader.)
+    property <length> phones-h: 72px;
+    // Both decks' beat phase lanes.
+    property <length> phase-h: 2 * 10px + 3px;
+    property <length> pad: root.narrow ? Theme.s3 : Theme.s4;
+    // Between blocks: tight, so everything shows at booth tile sizes.
+    property <length> gap: Theme.s3;
+    property <length> ctl-h: Theme.row-h + Theme.s3;
+    property <length> law-h: 56px;
+    property <length> law-min: 48px;
+    // Channel strip chrome: badge, gain readout and the gaps between them.
+    property <length> strip-chrome: root.ctl-h + 2 * Theme.s3 + Theme.fs-small + Theme.s2;
+    // Crossfader block without the law: heading, gap, fader.
+    property <length> xf-h: Theme.row-h + Theme.s3 + root.ctl-h;
+    // Beat FX: the full panel (heading, two button rows) when there is
+    // room beside full strips, else one compact row: strips and EQ first.
+    property <length> fx-h: 2 * (Theme.row-h + Theme.s1) + Theme.s2;
+    property <length> fx-row-h: Theme.row-h + Theme.s1;
+    // (Headphones sit between the strips, the engine pad beside the
+    // crossfader: neither takes a row.)
+    property <length> full-fixed: 2 * root.pad + root.strip-chrome + root.xf-h + root.phase-h + root.fx-row-h + 3 * root.gap;
+    // Either C/D load selects four decks; a manual toggle stays until the next load.
+    property <bool> four: DjState.mixer-four;
+    property <bool> show-c: root.four;
+    property <bool> show-d: root.four;
+    property <length> rows-h: (root.four ? 4 : 2) * (root.ctl-h + Theme.s2) - Theme.s2;
+    property <length> rows-fixed: 2 * root.pad + root.rows-h + root.xf-h + root.phase-h + root.fx-row-h + 3 * root.gap;
+    property <bool> fx-panel: self.height - root.full-fixed - (root.fx-h - root.fx-row-h) >= (root.full ? root.strip-min : root.law-min + (root.rows-fixed - root.full-fixed));
+    property <bool> full: (!root.four || self.width >= 760px) && self.height - root.full-fixed >= root.strip-min;
+    property <bool> full-law: self.height - root.full-fixed - root.law-h - Theme.s3 >= root.strip-min;
+    property <bool> tight: !root.full && self.height < root.rows-fixed;
+    // Tight: no phase lanes (their height goes to the crossfader).
+    property <bool> rows-law: !root.full && self.height >= root.rows-fixed + root.law-min + Theme.s3;
+    // The console: channel columns either side of the centre console
+    // (Beat FX, phase, headphones, engine), the crossfader under them.
+    // Needs the columns' height (deck, four knobs, a usable fader) and
+    // the stacked console's when narrower than wide.
+    // The console: deck row, four knob rows, a usable fader, the foot;
+    // under it the crossfader and the FX strip.
+    property <length> top-h: Theme.row-h + Theme.s3;
+    property <length> knob-h: root.compact-console ? Math.max(42px, 28px + Theme.fs-tiny + 2px) : 50px;
+    property <length> foot-h: 2 * 10px + 3px;
+    property <length> console-under: 0px;
+    // (The centre needs ~470 px: Beat FX, PFL, phase, the crossfader.)
+    property <length> console-min: Math.max(root.compact-console ? 400px : 470px, root.top-h + 5 * root.knob-h + (root.compact-console ? 80px : 110px) + root.foot-h + 7 * Theme.s2, root.centre-need);
+    // The centre's own stack: Beat FX to CUE, PFL (72), the master meter's
+    // least (40), BEAT (caption + two lanes, 60), the crossfader (heading,
+    // law, fader) and the gaps between them.
+    property <length> law-c: root.compact-console ? 24px : self.height >= 1100px ? 96px : self.height >= 900px ? 64px : self.height >= 760px ? 48px : 36px;
+    property <length> centre-need: root.cue-y + (root.compact-console ? 60px + 24px + 52px : 72px + 40px + 60px) + Theme.row-h + root.law-c + 32px + 2 * Theme.s2 + 5 * (root.compact-console ? Theme.s2 : Theme.s3);
+    property <bool> console: root.console-fits && self.height - 2 * root.pad - root.console-under >= root.console-min;
+    // The console fills the window: faders use the full height (as in the
+    // Mixer), strips widen with the window (larger knobs), and the centre
+    // takes what is left up to a comfortable reading width. It is chosen
+    // only when its narrowest form fits, so nothing is ever cut off.
+    property <int> n-strips: 2 + (root.show-c ? 1 : 0) + (root.show-d ? 1 : 0);
+    property <length> avail-w: self.width - 2 * root.pad;
+    // The centre gets the room for every effect as a key first (430 px);
+    // the strips widen with what is left, then the gaps, then it centres.
+    // High display scales leave fewer logical pixels. Keep real vertical
+    // strips by compacting their chrome before falling back to short rows.
+    property <bool> compact-console: self.height - 2 * root.pad < 640px
+        || root.avail-w < root.n-strips * (84px + Theme.s3) + 340px;
+    property <length> strip-min-w: root.compact-console ? 64px : 84px;
+    property <length> centre-full: root.compact-console ? 300px : 430px;
+    property <length> centre-min: root.compact-console ? 280px : 340px;
+    property <length> strip-w: clamp((root.avail-w - root.centre-full - root.n-strips * Theme.s3) / root.n-strips, root.strip-min-w, 150px);
+    property <length> centre-w: clamp(root.avail-w - root.n-strips * (root.strip-w + Theme.s3), root.centre-min, 720px);
+    property <length> console-gap: clamp((root.avail-w - root.centre-w - root.n-strips * root.strip-w) / root.n-strips, Theme.s3, 96px);
+    property <bool> console-fits: root.avail-w >= root.n-strips * (root.strip-min-w + Theme.s3) + root.centre-min;
+    property <length> knob: root.compact-console ? 28px : root.strip-w >= 124px ? 38px : 32px;
+    // Beat FX above PFL needs this much; the strips' four knob rows spread
+    // to the same height so CUE and PFL share one line.
+    property <bool> centre-roomy: !root.compact-console && self.height - 2 * root.pad >= 600px && root.centre-w >= root.centre-full;
+    property <length> fx-need: root.compact-console
+        ? root.top-h + 3 * Theme.s3 + 40px + Theme.row-h + 40px + (DjState.set-on ? 64px : 0px)
+        : root.centre-roomy
+        ? root.top-h + 3 * Theme.s4 + 6 * Theme.row-h + 5 * Theme.s1 + 60px + Theme.s3
+        : root.top-h + 3 * Theme.s4 + 48px + Theme.row-h + 60px + Theme.s3;
+    property <length> strip-knob-h: Math.max(root.compact-console ? root.knob-h : root.knob-h + root.knob - 32px, (root.fx-need - root.top-h - 6 * Theme.s2) / 5);
+    property <length> cue-y: root.top-h + 5 * root.strip-knob-h + 6 * Theme.s2;
+    // Rows: the law grows into spare height only so far; past that the
+    // rows, FX and crossfader sit together in the middle.
+    property <length> law-max: 200px;
+    property <bool> rows-roomy: root.rows-law && self.height >= root.rows-fixed + root.law-max + Theme.s3;
+    // Short: the FX row gives way before the crossfader would be cut off.
+    property <bool> fx-row-fits: self.height >= root.rows-fixed - root.phase-h - root.gap;
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (!DjState.key-guard(e.text)) { return reject; }
+            if (e.text == "4" && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.shift) { DjState.mixer-decks-toggle(); return accept; }
+            if (e.text == "f") { DjState.fx-toggle(); return accept; }
+            if (DjState.key("dj-mixer", DjState.key-name(e.text), e.modifiers.shift, e.modifiers.control, e.modifiers.alt, true)) { return accept; }
+            return reject;
+        }
+        VerticalLayout {
+            padding-left: root.pad;
+            padding-right: root.pad;
+            padding-top: root.pad;
+            padding-bottom: root.pad;
+            spacing: root.gap;
+            // Without a stretching part, spare height goes between the
+            // blocks; the console is one block, centred.
+            alignment: root.console || root.full ? stretch : root.rows-roomy ? center : root.rows-law ? stretch : space-between;
+            if root.console: HorizontalLayout {
+                vertical-stretch: 1;
+                spacing: root.console-gap;
+                // Channel strips stand beside the centre, as on a mixer,
+                // not out at the window's edges.
+                alignment: center;
+                if root.show-c: Strip { width: root.strip-w; deck: "c"; d: DjState.deck-c; lv: DjState.levels-c; gain: DjState.gain-c; top-h: root.top-h; knob: root.knob; knob-h: root.strip-knob-h; foot-h: root.foot-h; }
+                Strip { width: root.strip-w; deck: "a"; d: DjState.deck-a; lv: DjState.levels-a; gain: DjState.gain-a; top-h: root.top-h; knob: root.knob; knob-h: root.strip-knob-h; foot-h: root.foot-h; }
+                Centre {
+                    width: root.centre-w;
+                    top-h: root.top-h;
+                    foot-h: root.foot-h;
+                    roomy: root.centre-roomy;
+                    compact: root.compact-console;
+                    cue-y: root.cue-y;
+                    law-h: root.law-c;
+                }
+                Strip { width: root.strip-w; deck: "b"; d: DjState.deck-b; lv: DjState.levels-b; gain: DjState.gain-b; top-h: root.top-h; knob: root.knob; knob-h: root.strip-knob-h; foot-h: root.foot-h; }
+                if root.show-d: Strip { width: root.strip-w; deck: "d"; d: DjState.deck-d; lv: DjState.levels-d; gain: DjState.gain-d; top-h: root.top-h; knob: root.knob; knob-h: root.strip-knob-h; foot-h: root.foot-h; }
+            }
+            // Channels: full-height strips, or compact rows
+            if !root.console && root.full: HorizontalLayout {
+                vertical-stretch: 1;
+                alignment: space-around;
+                if root.show-c: Channel { deck: "c"; d: DjState.deck-c; lv: DjState.levels-c; gain: DjState.gain-c; }
+                Channel { deck: "a"; d: DjState.deck-a; lv: DjState.levels-a; gain: DjState.gain-a; }
+                // Headphones between the strips: where they go (click for
+                // the next output), cue ↔ master, level.
+                VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.s3;
+                    width: Math.min(150px, root.width * 0.22);
+                    Label { text: "PFL"; tone: "faint"; small: true; horizontal-alignment: center; }
+                    Rectangle {
+                        height: phones-text.preferred-height + Theme.s2;
+                        HorizontalLayout {
+                            spacing: Theme.s2;
+                            alignment: center;
+                            VerticalLayout { alignment: center; Rectangle { width: 6px; height: 6px; border-radius: 3px; background: DjState.phones-on ? Theme.accent : Theme.border-strong; } }
+                            phones-text := Text {
+                                text: DjState.phones + " ›";
+                                color: phones-touch.has-hover ? Theme.text-bright : Theme.text-dim;
+                                font-family: Theme.font;
+                                font-size: Theme.fs-tiny;
+                                overflow: elide;
+                                vertical-alignment: center;
+                            }
+                        }
+                        phones-touch := TouchArea { mouse-cursor: pointer; clicked => { DjState.cycle-phones(); } }
+                    }
+                    if root.narrow: VerticalLayout {
+                        alignment: center;
+                        spacing: Theme.s2;
+                        Knob { titled: true; size: 26px; label: "CUE/MIX"; live: DjState.phones-on; value: DjState.cue-mix; readout: DjState.cue-mix-text; moved(v) => { DjState.set-cue-mix(v); } }
+                        Knob { titled: true; size: 26px; label: "LEVEL"; value: DjState.cue-level; readout: DjState.cue-level-text; moved(v) => { DjState.set-cue-level(v); } }
+                    }
+                    if !root.narrow: HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.s4;
+                        Knob { label: "CUE/MIX"; live: DjState.phones-on; value: DjState.cue-mix; readout: DjState.cue-mix-text; moved(v) => { DjState.set-cue-mix(v); } }
+                        Knob { label: "LEVEL"; value: DjState.cue-level; readout: DjState.cue-level-text; moved(v) => { DjState.set-cue-level(v); } }
+                    }
+                }
+                Channel { deck: "b"; d: DjState.deck-b; lv: DjState.levels-b; gain: DjState.gain-b; }
+                if root.show-d: Channel { deck: "d"; d: DjState.deck-d; lv: DjState.levels-d; gain: DjState.gain-d; }
+            }
+            if !root.console && !root.full: VerticalLayout {
+                spacing: Theme.s2;
+                if root.show-c: ChannelRow { deck: "c"; d: DjState.deck-c; lv: DjState.levels-c; gain: DjState.gain-c; }
+                ChannelRow { deck: "a"; d: DjState.deck-a; lv: DjState.levels-a; gain: DjState.gain-a; }
+                ChannelRow { deck: "b"; d: DjState.deck-b; lv: DjState.levels-b; gain: DjState.gain-b; }
+                if root.show-d: ChannelRow { deck: "d"; d: DjState.deck-d; lv: DjState.levels-d; gain: DjState.gain-d; }
+            }
+            // Beat phase: both decks' bars; aligned decks move together.
+            // (Not in the tightest layout: the crossfader comes first.)
+            if !root.console && !root.tight && (DjState.phase-a >= 0 || DjState.phase-b >= 0): VerticalLayout {
+                spacing: 3px;
+                PhaseLane { letter: "A"; phase: DjState.phase-a; }
+                PhaseLane { letter: "B"; phase: DjState.phase-b; }
+            }
+            // Headphones: device, cue ↔ master, level
+            if !root.console && root.fx-panel: BeatFx { narrow: root.narrow; }
+            if !root.console && !root.fx-panel && (root.full || root.fx-row-fits): BeatFxRow { narrow: root.narrow; }
+            // Crossfader; with rows, the law grows into the spare height
+            if !root.console: VerticalLayout {
+                vertical-stretch: root.rows-law ? 1 : 0;
+                spacing: Theme.s3;
+                HorizontalLayout {
+                    spacing: Theme.s2;
+                    SectionHeading { text: "Crossfader"; detail: DjState.xfader-text; pad: 0px; horizontal-stretch: 1; }
+                    MixerDeckMode { }
+                    XfCurveButton { }
+                }
+                if !root.console && root.full && root.full-law: LawView { pos: DjState.xfader; height: root.law-h; }
+                if !root.console && root.rows-law: LawView { pos: DjState.xfader; min-height: root.law-min; max-height: root.law-max; vertical-stretch: 1; }
+                if !root.console: HorizontalLayout {
+                    spacing: Theme.s4;
+                    XFader { horizontal-stretch: 1; value: DjState.xfader; moved(v) => { DjState.set-xfader(v); } }
+                }
+            }
+        }
+    }
+}
+
+// A row's own action: quiet until its row is chosen, so a list of
+// hundreds reads as tracks, not as hundreds of buttons.

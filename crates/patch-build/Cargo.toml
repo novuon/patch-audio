@@ -1,0 +1,13 @@
+[package]
+name = "patch-build"
+description = "build.rs helper: compiles a Unit's .slint entry with the patch-ui design system on the library path"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+slint-build.workspace = true
+
+[lints]
+workspace = true

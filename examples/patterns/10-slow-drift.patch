@@ -1,0 +1,11 @@
+// Slow Drift — one stable nebula field with clearly visible, gentle
+// parameter changes. Hue completes a long sweep; the scene changes every
+// 8 bars (about 15 seconds at 128 BPM). Visuals only.
+cycle 4
+scene("<nebula cells>/8")
+visual.motion("<0.24 0.34 0.28 0.4>/4")
+visual.intensity("<0.48 0.68 0.54 0.72>/4")
+visual.density("<0.38 0.56 0.44 0.62>/4")
+visual.feedback("<0.18 0.3 0.22 0.34>/4")
+visual.symmetry("<0.2 0.36 0.26 0.42>/4")
+visual.hue(saw.slow(16).segment(4))

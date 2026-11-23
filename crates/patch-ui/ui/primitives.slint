@@ -1,0 +1,209 @@
+import { Theme } from "theme.slint";
+
+// Text with theme defaults. `tone`: normal, bright, dim, faint, accent, warn, error.
+export component Label inherits Text {
+    in property <string> tone: "normal";
+    in property <bool> small;
+    in property <bool> caps;
+    color: tone == "bright" ? Theme.text-bright
+        : tone == "dim" ? Theme.text-dim
+        : tone == "faint" ? Theme.text-faint
+        : tone == "accent" ? Theme.accent
+        : tone == "warn" ? Theme.warn
+        : tone == "error" ? Theme.error
+        : Theme.text;
+    font-size: small ? Theme.fs-small : Theme.fs;
+    font-family: Theme.font;
+    letter-spacing: caps ? 1px : 0px;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+// A track's full file path, revealed by clicking its title. The state lives in
+// a global so a title anywhere can trigger it by calling `Peek.show`, and the
+// overlay is declared last in a surface so it lies over whatever is beneath:
+// nothing on the desk moves while it is up.
+export global Peek {
+    in-out property <string> file: "";
+    // Bumped on every click. The timer runs while it is non-zero and clears it
+    // when it fires, so the path goes five seconds after the last click.
+    in-out property <int> held: 0;
+
+    public function show(path: string) {
+        if (path == "") { return; }
+        self.file = path;
+        self.held += 1;
+    }
+}
+
+export component PathPeek inherits Rectangle {
+    height: Theme.fs + Theme.s5;
+    visible: Peek.held > 0 && Peek.file != "";
+    background: Theme.raised;
+    border-color: Theme.border;
+    border-width: 1px;
+
+    Timer {
+        interval: 5s;
+        running: Peek.held > 0;
+        triggered => { Peek.held = 0; }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.s4;
+        padding-right: Theme.s4;
+        Label { text: Peek.file; tone: "dim"; small: true; }
+    }
+}
+
+// The status stamp. Exceptions (MOCK, PLANNED, NO ENGINE…) are filled, so
+// they read as a system-level warning; LIVE is the normal case and only
+// outlined. Deliberately always the same shape.
+export component MockBadge inherits Rectangle {
+    in property <string> text: "MOCK";
+    in property <bool> subtle: false;
+    // Only the window header says LIVE; inside a surface it is the normal
+    // case and draws nothing.
+    in property <bool> show-live: false;
+    property <bool> shown: text != "" && (text != "LIVE" || show-live);
+    property <bool> live: text == "LIVE" || text == "REC" || text == "PLAYING";
+    visible: shown;
+    border-radius: 3px;
+    height: shown ? Theme.fs-small + 10px : 0px;
+    width: shown ? lbl.preferred-width + 20px : 0px;
+    border-width: 1px;
+    border-color: subtle ? Theme.border-strong : Theme.mock;
+    background: subtle || live ? transparent : Theme.mock.with-alpha(0.12);
+    lbl := Text {
+        text: root.text;
+        color: subtle ? Theme.text-dim : Theme.mock;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        font-weight: 700;
+        letter-spacing: 2px;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+// Neutral metadata chip: "8 ch", "RAF", "user".
+export component Tag inherits Rectangle {
+    in property <string> text;
+    in property <bool> strong;
+    height: Theme.fs-tiny + 6px;
+    width: t.preferred-width + 8px;
+    border-width: 1px;
+    border-color: strong ? Theme.text-faint : Theme.border-strong;
+    t := Text {
+        text: root.text;
+        color: strong ? Theme.text : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+export component KeyCap inherits Rectangle {
+    in property <string> key;
+    in property <bool> active;
+    height: Theme.fs-small + 6px;
+    width: max(self.height + 2px, t.preferred-width + 10px);
+    border-radius: 3px;
+    background: active ? Theme.accent-ink.with-alpha(0.18) : Theme.bg-deeper;
+    border-width: 1px;
+    border-color: active ? Theme.accent-ink.with-alpha(0.35) : Theme.border-strong;
+    t := Text {
+        text: root.key;
+        color: active ? Theme.accent-ink : Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        font-weight: 700;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+// Tiny square status mark. Square, not round: matches the zero-rounding tiler.
+export component Dot inherits Rectangle {
+    in property <string> state: "on"; // on, off, accent, warn, error
+    width: 6px;
+    height: 6px;
+    background: state == "on" ? Theme.text
+        : state == "accent" ? Theme.accent
+        : state == "warn" ? Theme.warn
+        : state == "error" ? Theme.error
+        : transparent;
+    border-width: state == "off" ? 1px : 0px;
+    border-color: Theme.text-faint;
+}
+
+// The Module, Patch's mark (docs/patch-style.md, Logo): a socket Unit and
+// a red Unit plugged into it. Built on x = height / 23: the socket Unit
+// 23x square, a 2x gap, the plug-in Unit 15x square on the same centre;
+// the socket 7x deep and 8x tall, the plug 8x long and 6x tall with 1x of
+// air on its three sides. Every edge lands on a whole pixel and the air
+// never drops under one, as the guide's pixel masters do below 48 px.
+// `ground` is what it stands on: the socket is cut in that colour.
+export component Module inherits Rectangle {
+    in property <length> size: 12px;
+    in property <color> ground: Theme.bg-deep;
+    // The socket Unit: Paper on Ink, Ink on Paper.
+    in property <color> unit: Theme.text-bright;
+    // The plug-in Unit: always Patch Red.
+    in property <color> plug: Theme.logo-accent ? Theme.accent : Theme.brand;
+    property <length> h: Math.round(root.size / 1px) * 1px;
+    property <float> u: root.h / 1px / 23;
+    property <length> gap: Math.max(1, Math.round(2 * root.u)) * 1px;
+    property <length> air: Math.max(1, Math.round(root.u)) * 1px;
+    property <length> side: Math.round(15 * root.u) * 1px;
+    property <length> depth: Math.max(2, Math.round(7 * root.u)) * 1px;
+    property <length> plug-h: Math.max(1, Math.round(6 * root.u)) * 1px;
+    property <length> socket-h: root.plug-h + 2 * root.air;
+    property <length> socket-y: Math.floor((root.h - root.socket-h) / 2 / 1px) * 1px;
+    property <length> outer: 1.2 * root.u * 1px;
+    property <length> inner: 0.4 * root.u * 1px;
+    width: root.h + root.gap + root.side;
+    height: root.h;
+    // The socket Unit, then the socket cut into its right edge.
+    Rectangle { x: 0px; y: 0px; width: root.h; height: root.h; border-radius: root.outer; background: root.unit; }
+    // (It runs on into the gap, so only its inner corners are rounded.)
+    Rectangle { x: root.h - root.depth; y: root.socket-y; width: root.depth + root.gap; height: root.socket-h; border-radius: root.inner; background: root.ground; }
+    // The plug, across the gap and into the socket, then its Unit.
+    Rectangle { x: root.h - root.depth + root.air; y: root.socket-y + root.air; width: root.depth - root.air + root.gap + root.inner; height: root.plug-h; border-radius: root.inner; background: root.plug; }
+    Rectangle { x: root.h + root.gap; y: Math.floor((root.h - root.side) / 2 / 1px) * 1px; width: root.side; height: root.side; border-radius: root.outer; background: root.plug; }
+}
+
+// A unit's section or a channel's strip (Patch style: Graphite 900 on the
+// Ink ground, controls on Graphite 800 inside it). `focused` is the one red
+// edge a unit may carry: the selected strip.
+export component Panel inherits Rectangle {
+    in property <bool> focused;
+    background: Theme.panel;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: root.focused ? Theme.accent : Theme.border;
+}
+
+// A section caption, as the Patch style's labels: JetBrains Mono 600 in
+// small caps, tracked +14 %, quiet ("CHANNELS", "TRIM", "BEAT FX").
+export component Caption inherits Text {
+    in property <bool> strong;
+    color: root.strong ? Theme.text-bright : Theme.text-faint;
+    font-family: Theme.font-ui;
+    font-size: Theme.fs-tiny;
+    font-weight: 600;
+    letter-spacing: Theme.caps-track;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+export component HLine inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+}
+
+export component VLine inherits Rectangle {
+    width: 1px;
+    background: Theme.border;
+}

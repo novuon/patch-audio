@@ -1,0 +1,13 @@
+[package]
+name = "patch-meter"
+description = "Patch VU metering unit: peak, energy and VU ballistics kernels in x86-64 assembly, with a bit-exact Rust reference"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+patch-dsp.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+// Tidal Glass — spacious cells and prism forms with long hue drift,
+// subtle trails, and an asymmetric movement swell. Visuals only.
+cycle 4
+scene("<cells nebula cells prism nebula tunnel prism nebula>/8")
+visual.intensity(sine.range(0.24, 0.82).slow(16).segment(8))
+visual.motion(tri.range(0.12, 0.68).slow(8).segment(8))
+visual.density("<0.32 0.46 0.68 0.54 0.34 0.58 0.8 0.48>/8")
+visual.feedback(sine.range(0.16, 0.62).slow(8).segment(8))
+visual.symmetry("<0.2 0.36 0.58 0.78 0.46 0.24 0.64 0.4>/8")
+visual.hue(saw.slow(64).segment(4))

@@ -1,0 +1,131 @@
+@import url('/palette.css');
+*{box-sizing:border-box}
+html{font:13px "JetBrains Mono","JetBrainsMono Nerd Font",ui-monospace,monospace;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+body{margin:0}
+a{color:inherit;text-decoration:none}
+main{max-width:1120px;padding:26px 32px 104px;margin:auto}
+.session-line{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;font-size:10px;text-transform:uppercase;letter-spacing:.11em;color:var(--dim)}
+#connection.online:before{content:"";display:inline-block;width:5px;height:5px;background:var(--green);margin-right:9px;border-radius:50%}
+#phase{color:var(--bright)}
+.eyebrow,.fine{font-size:9px;letter-spacing:.12em;color:var(--dim)}
+/* The two turntables. Paired on a wide screen, stacked on a phone. */
+.decks{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.deck{min-width:0;padding:22px 22px 20px;background:var(--panel);border:1px solid var(--border);border-top:2px solid var(--dim)}
+.deck.leading{border-top-color:var(--accent)}
+.deck.incoming{border-top-color:var(--violet)}
+.deck-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:18px}
+.deck-mark{font-size:10px;letter-spacing:.14em;color:var(--dim)}
+.deck.leading .deck-mark{color:var(--accent)}
+.deck.incoming .deck-mark{color:var(--violet)}
+.deck-state{font-size:9px;letter-spacing:.08em;color:var(--dim)}
+.deck.leading .deck-state{color:var(--bright)}
+/* The platter itself: one rotating group, one fixed frame. */
+.platter{position:relative;width:100%;max-width:268px;margin:0 auto;aspect-ratio:1}
+.platter-ring{position:absolute;inset:0;border:1px solid var(--border);border-radius:50%;background:radial-gradient(circle at 50% 42%,#1b1f1d 0%,#121514 62%,#0c0e0d 100%)}
+/* Each tick is a full-height hairline rotated about the platter's centre, with
+   its visible mark at the top: 48 marks, every fourth one longer. */
+.platter-ticks{position:absolute;inset:0;animation:spin var(--spin,1.8s) linear infinite;animation-play-state:paused}
+.platter-ticks i{position:absolute;top:0;left:50%;width:1px;height:100%;margin-left:-.5px;transform-origin:50% 50%}
+.platter-ticks i:before{content:"";position:absolute;top:5px;left:0;width:1px;height:8px;background:var(--border)}
+.platter-ticks i:nth-child(4n+1):before{background:var(--dim);height:13px}
+.platter-label{position:absolute;inset:31%;border:1px solid var(--border);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:var(--raised);text-align:center}
+.platter-label b{font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--bright)}
+.platter-label span{font-size:8px;letter-spacing:.1em;color:var(--dim)}
+.platter-spindle{position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px;border-radius:50%;background:var(--bright)}
+.platter-wobble{position:absolute;inset:12%;border:1px dashed var(--border);border-radius:50%;opacity:.5}
+/* The bright index mark: the single element that makes rotation legible.
+   It sits inside the rotating group, so it turns with the record. */
+.platter-ticks .platter-index{position:absolute;top:7%;left:50%;width:3px;height:16px;margin-left:-1.5px;background:var(--accent);box-shadow:0 0 6px var(--accent-soft)}
+/* The tonearm: a fixed pivot at the platter's upper right, an arm that swings
+   onto the record only while the deck plays. */
+.tonearm{position:absolute;top:6%;right:6%;width:46%;height:46%;transform-origin:92% 8%;transform:rotate(-26deg);transition:transform .5s cubic-bezier(.4,0,.2,1)}
+.deck.playing .tonearm{transform:rotate(4deg)}
+.tonearm-shaft{position:absolute;left:92%;top:8%;width:2px;height:88%;background:linear-gradient(180deg,var(--dim),var(--border));transform-origin:top center;transform:translateX(-50%) rotate(-45deg)}
+.tonearm-head{position:absolute;bottom:-4px;left:50%;width:12px;height:7px;background:var(--bright);transform:translateX(-50%)}
+.tonearm-pivot{position:absolute;left:92%;top:8%;width:14px;height:14px;margin:-7px;border:1px solid var(--dim);border-radius:50%;background:var(--raised)}
+.tonearm-pivot:after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--dim)}
+.tonearm-weight{position:absolute;left:92%;top:8%;width:17px;height:9px;background:var(--text);transform:translate(7px,-14px)}
+.deck-meta{margin:18px 0 0;min-height:34px}
+.deck-title{font-size:clamp(15px,2.6vw,21px);font-weight:500;letter-spacing:-.03em;line-height:1.25;color:var(--bright);margin:0;overflow-wrap:anywhere}
+.deck-sub{font-size:10px;line-height:1.8;color:var(--dim);margin:7px 0 0}
+.deck-clock{display:flex;justify-content:space-between;gap:12px;margin-top:12px;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}
+.deck-clock b{font-weight:400;color:var(--text)}
+progress{appearance:none;width:100%;height:2px;margin-top:12px;background:var(--border);border:0;display:block}
+progress::-webkit-progress-bar{background:var(--border)}
+progress::-webkit-progress-value{background:var(--accent)}
+progress::-moz-progress-bar{background:var(--accent)}
+.deck.incoming progress::-webkit-progress-value{background:var(--violet)}
+.deck.incoming progress::-moz-progress-bar{background:var(--violet)}
+.deck-cue{margin-top:12px;display:flex;gap:6px}
+.deck-cue button{flex:1;min-height:44px}
+/* Crossfader, drawn from the engine's own position. */
+.fader{margin:20px 0 0;padding:16px 18px 14px;background:var(--panel);border:1px solid var(--border)}
+.fader-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.fader-head output{font-size:10px;color:var(--bright);font-variant-numeric:tabular-nums}
+.fader-track{position:relative;height:3px;background:var(--border)}
+.fader-knob{position:absolute;top:50%;left:50%;width:15px;height:26px;margin:-13px;border:1px solid var(--accent);background:var(--raised);transition:left .18s linear}
+.fader-ends{display:flex;justify-content:space-between;margin-top:12px;font-size:9px;letter-spacing:.12em;color:var(--dim)}
+/* Transition, set and autonomy. */
+.transition{position:relative;margin:20px 0 0;padding:22px 0 20px;border-bottom:1px solid var(--border)}
+.transition:before{content:"";position:absolute;top:0;width:32px;height:1px;background:var(--accent)}
+.transition-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.transition-values{display:flex;gap:34px;margin:18px 0 0}
+.transition-values output{font-size:26px;font-weight:400;letter-spacing:-.04em;color:var(--bright);font-variant-numeric:tabular-nums}
+.transition-values span{font-size:9px;letter-spacing:.12em;color:var(--dim)}
+.transition h2{font-size:19px;font-weight:400;line-height:1.35;letter-spacing:-.03em;color:var(--bright);margin:18px 0 8px}
+.transition p{font-size:11px;line-height:1.7;color:var(--dim);margin:0}
+.transition progress{margin-top:14px}
+.evidence-line{display:flex;justify-content:space-between;gap:16px;margin-top:12px;font-size:10px;color:var(--dim)}
+.evidence-line span:last-child{color:var(--cyan)}
+.actions{display:flex;gap:8px;margin:20px 0 0}
+.actions button{flex:1}
+.set{margin:20px 0 0;padding:16px 18px;background:var(--panel);border:1px solid var(--border)}
+.set>div:first-child{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+#set-status{font-size:10px;color:var(--dim)}
+.set-buttons{display:flex;gap:8px;margin-top:14px}
+.set-buttons button{flex:1}
+button{font:inherit;font-size:11px;min-height:48px;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:10px 12px;cursor:pointer;border-radius:2px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.directions button[aria-pressed=true]{background:var(--raised);color:var(--bright);border-color:var(--dim)}
+button:disabled{opacity:.4;cursor:default}
+button:active{filter:brightness(1.2)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.control{margin:26px 0 0}
+.section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.control h2{font-size:15px;font-weight:400;margin:0;color:var(--bright)}
+.direction-heading{margin-top:18px}
+.direction-heading h3{font-size:11px;font-weight:400;color:var(--bright);margin:0}
+.segmented{display:flex;gap:5px;margin-top:14px}
+.segmented button{flex:1;text-transform:capitalize}
+.hint{font-size:10px;color:var(--dim);line-height:1.7;min-height:34px;margin:12px 0 0}
+.note{font-size:10px;color:var(--dim);line-height:1.7;margin:14px 0 0}
+.candidate-panel{margin:26px 0 0;border-top:1px solid var(--border)}
+.candidate-panel>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:44px;cursor:pointer;color:var(--bright);font-size:13px}
+.candidate-panel>summary::-webkit-details-marker{display:none}
+.candidate-panel>summary>span:first-child:after{content:" +";color:var(--dim)}
+.candidate-panel[open]>summary>span:first-child:after{content:" −";color:var(--dim)}
+.candidate{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--border)}
+.candidate>div{min-width:0}
+.candidate strong{font-size:12px;font-weight:400;color:var(--bright)}
+.candidate.selected strong{color:var(--violet)}
+.candidate.selected strong:before{content:"↗ ";color:var(--violet)}
+.candidate p{font-size:10px;color:var(--dim);line-height:1.8;margin:7px 0 0;overflow-wrap:anywhere}
+.score{font-size:11px;color:var(--dim);white-space:nowrap}
+.candidate details{margin-top:6px;font-size:10px;color:var(--dim)}
+.candidate details summary{min-height:36px;display:flex;align-items:center;cursor:pointer}
+.candidate-list{font-size:11px;color:var(--dim);line-height:1.7}
+.muted{font-size:10px;color:var(--dim);line-height:1.7;margin:22px 0 0}
+footer{position:fixed;bottom:0;left:0;right:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:20px;background:var(--bg);border-top:1px solid var(--border);padding:12px max(20px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));min-height:46px;font-size:10px}
+#ack{color:var(--text);overflow-wrap:anywhere}
+#access{font-size:8px;color:var(--dim);letter-spacing:.08em;text-align:right;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.platter-ticks{animation:none}.tonearm{transition:none}.fader-knob{transition:none}}
+@media(max-width:760px){
+  main{padding:16px 14px 92px}
+  .decks{grid-template-columns:1fr;gap:14px}
+  .deck{padding:16px 14px}
+  .platter{max-width:230px}
+  .transition-values{gap:26px}
+  .actions,.set-buttons{flex-direction:column}
+}

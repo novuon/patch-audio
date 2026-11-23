@@ -1,0 +1,9 @@
+// Dub filter on deck A — MOVES YOUR LIVE DECK. A slow low-pass sweep
+// that opens over four bars and slams shut on the fifth, and the vocal
+// stem dropped out on random bars (dub style). Stop the pattern to
+// leave the deck where it is; set the filter back by hand.
+cycle 4
+deck(a).filter("<-0.6 -0.4 -0.2 0 -0.8>")
+stem("vocals", "<unmute unmute mute unmute>").sometimesBy(0.2, set("mute"))
+visual.intensity("<0.3 0.5 0.7 1 0.2>")
+scene("nebula")

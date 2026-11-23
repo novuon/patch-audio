@@ -1,0 +1,338 @@
+// Network Unit: Patch's sound to other machines on the local network, and
+// theirs into Patch. Sends and receives run as their own services, so they
+// keep going when this window closes or Patch updates.
+import { Theme, Label, Button, SearchField, SectionHeading, Dot, Scroll, HLine } from "@patch-ui/patch-ui.slint";
+
+// A send, or a stream Patch listens to.
+export struct NetLink {
+    id: string,
+    name: string,
+    // "Program → everyone on this network · RTP 239.69.83.80:5004".
+    detail: string,
+    // off · starting · sending · listening · waiting · restarting
+    state: string,
+    note: string,
+    on: bool,
+}
+
+// A stream another machine announces.
+export struct NetStream {
+    id: string,
+    name: string,
+    // "from 192.168.68.20 · L24 · 48 kHz · 2 ch".
+    detail: string,
+    listening: bool,
+    supported: bool,
+    selected: bool,
+}
+
+export global NetworkState {
+    in property <bool> online;
+    // "192.168.68.63 · wlp130s0f0".
+    in property <string> address: "—";
+    in property <string> hostname;
+    // off · open · blocked
+    in property <string> firewall: "off";
+    in property <string> subnet;
+    in property <string> firewall-command;
+    in property <[NetLink]> sends;
+    in property <[NetLink]> saved;
+    in property <[NetStream]> streams;
+    in property <int> cursor;
+    in property <int> listening-for;
+    in property <string> discovery-error;
+    in property <bool> vban-on;
+    in property <string> vban-state: "off";
+    in property <int> latency: 100;
+    in property <string> message;
+    in property <bool> busy;
+
+    // The new send (the user edits these).
+    in-out property <string> feed: "program";
+    in-out property <string> proto: "rtp";
+    in-out property <string> to;
+    in-out property <string> name;
+
+    callback add-send();
+    // A send or a saved receive: on ↔ off.
+    callback toggle(string);
+    callback remove(string);
+    // An announced stream: listen ↔ stop.
+    callback listen(string);
+    callback move(int);
+    callback set-feed(string);
+    callback set-proto(string);
+    callback edit(string, string);
+    callback set-vban(bool);
+    callback set-latency(int);
+    callback allow();
+
+    // A link's dot: working (accent), off, failing (error), else on its way.
+    public pure function dot(state: string) -> string {
+        return state == "sending" || state == "listening" ? "accent"
+            : state == "restarting" ? "error"
+            : state == "off" ? "off" : "warn";
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: Theme.row-h;
+    width: t.preferred-width + 20px;
+    background: on ? Theme.accent-soft : ta.has-hover ? Theme.hover : transparent;
+    border-width: 1px;
+    border-color: on ? Theme.accent : Theme.border-strong;
+    t := Text {
+        text: root.text;
+        color: !root.enabled ? Theme.text-faint : root.on ? Theme.accent : Theme.text;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> value;
+    callback edited(string);
+    spacing: Theme.s3;
+    Label { text: root.label; tone: "faint"; small: true; caps: true; width: 72px; vertical-alignment: center; }
+    SearchField {
+        horizontal-stretch: 1;
+        prompt: "";
+        placeholder: root.placeholder;
+        text <=> root.value;
+        edited(t) => { root.edited(t); }
+    }
+}
+
+// One send or saved receive.
+component LinkRow inherits Rectangle {
+    in property <NetLink> link;
+    callback toggle();
+    callback remove();
+    height: Theme.row-h * 2 + 4px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s4;
+        VerticalLayout { alignment: center; Dot { state: NetworkState.dot(root.link.state); } }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 1px;
+            Label { text: root.link.name; tone: root.link.on ? "bright" : "dim"; overflow: elide; }
+            Label {
+                text: root.link.detail + (root.link.note != "" ? " · " + root.link.note : "");
+                tone: root.link.state == "restarting" ? "warn" : "faint";
+                small: true;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Label { text: root.link.state == "off" ? "off" : root.link.state; tone: root.link.state == "sending" || root.link.state == "listening" ? "normal" : "dim"; small: true; caps: true; horizontal-stretch: 0; }
+        }
+        VerticalLayout { alignment: center; Button { text: root.link.state != "off" ? "Stop" : "Start"; compact: true; lit: root.link.state != "off"; clicked => { root.toggle(); } } }
+        VerticalLayout { alignment: center; Button { text: "✕"; compact: true; clicked => { root.remove(); } } }
+    }
+}
+
+// One announced stream.
+component StreamRow inherits Rectangle {
+    in property <NetStream> stream;
+    callback listen();
+    height: Theme.row-h * 2 + 4px;
+    background: root.stream.selected ? Theme.selection : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { clicked => { if root.stream.supported { root.listen(); } } }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s4;
+        VerticalLayout { alignment: center; Dot { state: root.stream.listening ? "accent" : "off"; } }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 1px;
+            Label { text: root.stream.name; tone: root.stream.listening ? "bright" : "normal"; overflow: elide; }
+            Label { text: root.stream.detail; tone: "faint"; small: true; overflow: elide; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: !root.stream.supported ? "Not playable" : root.stream.listening ? "Stop" : "Listen";
+                enabled: root.stream.supported;
+                lit: root.stream.listening;
+                compact: true;
+                clicked => { root.listen(); }
+            }
+        }
+    }
+}
+
+export component NetworkSurface inherits Rectangle {
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.DownArrow) { NetworkState.move(1); return accept; }
+            if (e.text == Key.UpArrow) { NetworkState.move(-1); return accept; }
+            if (e.text == Key.Return && NetworkState.streams.length > 0) {
+                NetworkState.listen(NetworkState.streams[NetworkState.cursor].id);
+                return accept;
+            }
+            return reject;
+        }
+        Scroll {
+            VerticalLayout {
+                padding: Theme.s5;
+                spacing: Theme.s4;
+                // This machine.
+                HorizontalLayout {
+                    spacing: Theme.s4;
+                    VerticalLayout { alignment: center; Dot { state: NetworkState.online ? "accent" : "off"; } }
+                    Label {
+                        text: NetworkState.online ? "ONLINE" : "OFFLINE";
+                        tone: NetworkState.online ? "bright" : "dim";
+                        font-size: Theme.fs-title * 1.2;
+                        font-weight: 300;
+                        horizontal-stretch: 0;
+                    }
+                    Rectangle { }
+                    VerticalLayout {
+                        alignment: center;
+                        Label { text: NetworkState.address; tone: "bright"; horizontal-alignment: right; }
+                        Label { text: NetworkState.hostname; tone: "faint"; small: true; horizontal-alignment: right; }
+                    }
+                }
+                if NetworkState.firewall == "blocked": Rectangle {
+                    background: Theme.raised;
+                    border-width: 1px;
+                    border-color: Theme.warn;
+                    height: fw.preferred-height;
+                    fw := VerticalLayout {
+                        padding: Theme.s4;
+                        spacing: Theme.s3;
+                        Label {
+                            text: "The firewall drops network audio coming in: sends go out, but Patch can't hear other machines or their announcements.";
+                            tone: "warn";
+                            small: true;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.s3;
+                            Button { text: "Let it in from " + NetworkState.subnet + "…"; compact: true; clicked => { NetworkState.allow(); } }
+                            Label { text: "opens a terminal for your password; only this network, only Patch's ports"; tone: "faint"; small: true; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                        }
+                    }
+                }
+                if NetworkState.message != "": Label { text: NetworkState.message; tone: "dim"; small: true; wrap: word-wrap; }
+                HLine { }
+
+                // Send.
+                SectionHeading { text: "Send"; detail: "Patch to the network"; }
+                for l in NetworkState.sends: LinkRow {
+                    link: l;
+                    toggle => { NetworkState.toggle(l.id); }
+                    remove => { NetworkState.remove(l.id); }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "Feed"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 72px; vertical-alignment: center; }
+                    Chip { text: "Program"; on: NetworkState.feed == "program"; clicked => { NetworkState.set-feed("program"); } }
+                    Chip { text: "AUX 1"; on: NetworkState.feed == "aux1"; clicked => { NetworkState.set-feed("aux1"); } }
+                    Chip { text: "AUX 2"; on: NetworkState.feed == "aux2"; clicked => { NetworkState.set-feed("aux2"); } }
+                    Rectangle { }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "As"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 72px; vertical-alignment: center; }
+                    Chip { text: "RTP · AES67 L24"; on: NetworkState.proto == "rtp"; clicked => { NetworkState.set-proto("rtp"); } }
+                    Chip { text: "VBAN"; on: NetworkState.proto == "vban"; clicked => { NetworkState.set-proto("vban"); } }
+                    Rectangle { }
+                }
+                Field {
+                    label: "To";
+                    placeholder: NetworkState.proto == "vban" ? "the machine's address, like 192.168.1.20" : "everyone on this network · or one address";
+                    value <=> NetworkState.to;
+                    edited(t) => { NetworkState.edit("to", t); }
+                }
+                Field {
+                    label: "Name";
+                    placeholder: "Patch · " + NetworkState.hostname;
+                    value <=> NetworkState.name;
+                    edited(t) => { NetworkState.edit("name", t); }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Rectangle { width: 72px; }
+                    Button {
+                        text: NetworkState.proto == "vban" || NetworkState.to != "" ? "Send to " + (NetworkState.to != "" ? NetworkState.to : "…") : "Send to everyone";
+                        primary: true;
+                        enabled: !NetworkState.busy && NetworkState.online && (NetworkState.proto != "vban" || NetworkState.to != "");
+                        clicked => { NetworkState.add-send(); }
+                    }
+                    Rectangle { }
+                }
+                HLine { }
+
+                // Receive.
+                SectionHeading {
+                    text: "Receive";
+                    detail: NetworkState.streams.length == 0 ? "the network into Patch" : NetworkState.streams.length + (NetworkState.streams.length == 1 ? " stream announced" : " streams announced");
+                }
+                if NetworkState.streams.length == 0: Label {
+                    text: NetworkState.discovery-error != "" ? "Can't listen for announcements: " + NetworkState.discovery-error
+                        : !NetworkState.online ? "Not on a network."
+                        : NetworkState.firewall == "blocked" ? "Nothing heard: the firewall drops announcements."
+                        : NetworkState.listening-for < 6 ? "Listening for streams on this network…"
+                        : "No other machine announces a stream. Another Patch, a PipeWire machine with RTP, or an AES67 device shows up here.";
+                    tone: "faint";
+                    small: true;
+                    wrap: word-wrap;
+                }
+                for s in NetworkState.streams: StreamRow {
+                    stream: s;
+                    listen => { NetworkState.listen(s.id); }
+                }
+                if NetworkState.saved.length > 0: Label { text: "Saved, not announced now"; tone: "faint"; small: true; caps: true; }
+                for l in NetworkState.saved: LinkRow {
+                    link: l;
+                    toggle => { NetworkState.toggle(l.id); }
+                    remove => { NetworkState.remove(l.id); }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "VBAN"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 72px; vertical-alignment: center; }
+                    Chip { text: "Off"; on: !NetworkState.vban-on; clicked => { NetworkState.set-vban(false); } }
+                    Chip { text: "Take streams sent here · port 6980"; on: NetworkState.vban-on; clicked => { NetworkState.set-vban(true); } }
+                    if NetworkState.vban-on: VerticalLayout { alignment: center; Dot { state: NetworkState.dot(NetworkState.vban-state); } }
+                    Rectangle { }
+                }
+                HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { text: "Latency"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 72px; vertical-alignment: center; }
+                    Chip { text: "20 ms · wired"; on: NetworkState.latency == 20; clicked => { NetworkState.set-latency(20); } }
+                    Chip { text: "50 ms"; on: NetworkState.latency == 50; clicked => { NetworkState.set-latency(50); } }
+                    Chip { text: "100 ms · Wi-Fi"; on: NetworkState.latency == 100; clicked => { NetworkState.set-latency(100); } }
+                    Chip { text: "250 ms"; on: NetworkState.latency == 250; clicked => { NetworkState.set-latency(250); } }
+                    Rectangle { }
+                }
+                Label {
+                    text: "A stream Patch listens to plays in the Mixer like an app. Sends and receives keep running when this window closes and start again with Patch's audio service. ↑↓ choose a stream · Enter listen / stop.";
+                    tone: "faint";
+                    small: true;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

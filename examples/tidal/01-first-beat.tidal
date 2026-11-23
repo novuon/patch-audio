@@ -1,0 +1,11 @@
+-- A first beat. Put the cursor in a block, Ctrl+Enter.
+setcps (124/60/4)
+
+d1 $ s "bd*4"
+
+d2 $ s "~ cp ~ cp" # room 0.2
+
+d3 $ s "hh*8" # gain "1 0.7"
+
+-- Then change one thing at a time and run it again:
+-- d3 $ s "hh*16?" # gain "1 0.7" # pan sine

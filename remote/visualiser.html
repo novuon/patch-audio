@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f1210">
+<title>Patch · Visualiser</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/visual.css">
+<script src="/pairing.js" defer></script><script src="/navigation.js" defer></script><script src="/visual-preview.js" defer></script><script src="/visual.js" defer></script>
+</head><body data-page="visual"><patch-navigation page="visual"></patch-navigation><main>
+<div class="remote-session"><span id="connection" role="status">Connecting…</span></div>
+<div class="headline"><h1>Visualiser</h1><span id="visual-status">Waiting for Patch</span></div>
+<section class="preview" id="preview-panel" aria-label="Visual preview">
+<canvas id="preview" aria-label="Generative visual intent preview"></canvas>
+<div class="preview-caption"><span id="preview-label">LIVE INTENT / PREVIEW</span><span id="beat-label">—</span></div>
+</section>
+<div class="preview-toolbar"><button id="demo" aria-pressed="false">Demo mode</button><button id="freeze" aria-pressed="false">Pause preview</button><button id="fullscreen">Full screen</button></div>
+<p id="output-status" class="muted">Desktop output status unavailable.</p>
+<p class="muted">A lightweight interpretation of visual intent, not a stream of the desktop output. Demo mode stays on this device.</p>
+<section class="cue-panel" aria-labelledby="cue-title"><div class="cue-heading"><div><span class="eyebrow">PLAYING CHOREOGRAPHY</span><h2 id="cue-title">Scenes for this track</h2></div><button id="return-director" class="primary">Return to planned choreography</button></div><div id="cues" class="cues"></div><p class="muted">Choose a named scene from this track’s arrangement. It starts on a safe bar, then the Director continues its plan.</p></section>
+<div class="lower"><section><h2>Expression</h2><div id="parameters"></div></section>
+<section><h2>Direction</h2><div id="choices"></div><h3>Quick looks</h3><div class="looks" id="looks"></div><p class="muted" id="intent-note">Changes shape the desktop visualiser when it is open. Opening this page does not start a desktop output.</p></section></div>
+</main><footer><span id="ack" role="status" aria-live="polite">Waiting for Patch…</span><span id="access">PRIVATE REMOTE</span></footer></body></html>

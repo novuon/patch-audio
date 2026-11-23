@@ -1,0 +1,340 @@
+// EQ Unit (docs/eq): the master EQ — eight parametric bands on the program,
+// after the mix and before Tune. The response is drawn in Rust (eq_view.rs)
+// only when something changes; Slint adds the labels and touch targets.
+import { Theme, Label, SectionHeading, Tag, Button, MockBadge } from "@patch-ui/patch-ui.slint";
+
+export struct EqRow {
+    n: string,
+    kind: string,
+    freq: string,
+    gain: string,
+    q: string,
+    on: bool,
+    // Node position in the plot, 0…1 (x: 20 Hz … 20 kHz, y: +24 … −24 dB).
+    x: float,
+    y: float,
+}
+
+export struct EqTarget {
+    id: string,
+    label: string,
+    // Something is on (a dot on the tab).
+    busy: bool,
+    // An application's own EQ (removable).
+    app: bool,
+}
+
+export struct EqMark {
+    text: string,
+    pos: float,
+}
+
+export global EqState {
+    in property <image> plot;
+    // The program spectrum, a layer of its own behind the response.
+    in property <image> spectrum-img;
+    // Where the plot goes (logical); Rust renders at physical size.
+    in-out property <length> plot-w: 600px;
+    in-out property <length> plot-h: 260px;
+    in property <[EqRow]> bands;
+    in property <[EqMark]> freq-marks;
+    in property <[EqMark]> db-marks;
+    in-out property <int> selected: 3;
+    in property <bool> bypass;
+    in property <bool> live;
+    in property <string> status;
+    in property <bool> spectrum;
+    // What the image shows (a hash): Rust redraws only when it changes.
+    in-out property <int> drawn-key: -1;
+    // Which EQ this window edits: "master", "bus", "deck-a", "deck-b".
+    in-out property <string> target: "master";
+    // The EQs: master, apps, decks, and applications with their own.
+    in property <[EqTarget]> targets;
+    // Applications playing now that could get their own EQ.
+    in property <[string]> candidates;
+    in-out property <bool> adding;
+    callback add-app(string);
+    callback remove-app(string);
+    // The preset loaded ("" none), shown with * when edited since.
+    in property <string> preset;
+    callback next-preset(int);
+    callback save-preset();
+    callback select(int);
+    // Drag band `i` to plot position (x, y), 0…1.
+    callback drag(int, float, float);
+    // Scroll on band `i`: Q up (+) or down (−).
+    callback wheel(int, float);
+    callback toggle(int);
+    callback cycle-kind(int);
+    callback set-bypass(bool);
+    // The input gain before the bands (dB): a correction's preamp.
+    in property <float> gain;
+    callback set-gain(float);
+    callback toggle-spectrum();
+    callback reset();
+    // Keys the surface doesn't handle itself: text, shift.
+    callback key(string, bool) -> bool;
+    // Typing a value for the selected band: "freq", "gain", "q" ("" none),
+    // what's typed so far, and the line that says so.
+    in-out property <string> entry;
+    in-out property <string> entry-text;
+    in-out property <string> entry-prompt;
+    callback begin-entry(string);
+    // A key that means nothing here: a short flash.
+    in-out property <bool> invalid;
+}
+
+component Plot inherits Rectangle {
+    init => { EqState.plot-w = self.width; EqState.plot-h = self.height; }
+    changed width => { EqState.plot-w = self.width; }
+    changed height => { EqState.plot-h = self.height; }
+    background: Theme.bg-deeper;
+    border-width: 1px;
+    border-color: Theme.border;
+    // Grid: static items (decades and 0 dB stronger).
+    for m in EqState.freq-marks: Rectangle {
+        x: parent.width * m.pos;
+        width: 1px;
+        height: parent.height;
+        background: m.text == "100" || m.text == "1k" || m.text == "10k" ? Theme.border-strong : Theme.border;
+    }
+    for m in EqState.db-marks: Rectangle {
+        y: parent.height * m.pos;
+        height: 1px;
+        width: parent.width;
+        background: m.text == "0" ? Theme.border-strong : Theme.border;
+    }
+    if EqState.spectrum: Image { source: EqState.spectrum-img; width: parent.width; height: parent.height; image-fit: fill; }
+    Image { source: EqState.plot; width: parent.width; height: parent.height; image-fit: fill; }
+    for m in EqState.freq-marks: Text {
+        x: parent.width * m.pos - self.width / 2;
+        y: parent.height - self.height - 2px;
+        text: m.text;
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+    }
+    for m in EqState.db-marks: Text {
+        x: 3px;
+        y: parent.height * m.pos - self.height / 2;
+        text: m.text;
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+    }
+    // Touch targets on the band nodes: drag for frequency and gain,
+    // scroll for Q, double-click to switch the band on or off.
+    for b[i] in EqState.bands: TouchArea {
+        property <length> px: parent.width * b.x;
+        property <length> py: parent.height * b.y;
+        x: self.px - 12px;
+        y: self.py - 12px;
+        width: 24px;
+        height: 24px;
+        mouse-cursor: self.pressed ? grabbing : grab;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { EqState.select(i); }
+        }
+        moved => {
+            if (self.pressed) {
+                EqState.drag(i, (self.px + self.mouse-x - self.pressed-x) / parent.width, (self.py + self.mouse-y - self.pressed-y) / parent.height);
+            }
+        }
+        scroll-event(e) => {
+            EqState.select(i);
+            EqState.wheel(i, e.delta-y > 0 ? 1 : -1);
+            accept
+        }
+        double-clicked => { EqState.toggle(i); }
+        Text {
+            x: (parent.width - self.width) / 2;
+            y: -self.height + 4px;
+            text: b.n;
+            color: i == EqState.selected ? Theme.accent : Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+        }
+    }
+}
+
+component BandRow inherits Rectangle {
+    in property <EqRow> b;
+    in property <int> i;
+    height: Theme.row-h - 4px;
+    background: i == EqState.selected ? Theme.selection : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { clicked => { EqState.select(root.i); } }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s3;
+        Label { text: root.b.n; tone: root.i == EqState.selected ? "accent" : "faint"; small: true; width: 14px; }
+        Rectangle {
+            width: 70px;
+            Label { text: root.b.kind; tone: root.b.on ? "bright" : "faint"; small: true; width: parent.width; }
+            TouchArea { clicked => { EqState.select(root.i); EqState.cycle-kind(root.i); } }
+        }
+        // A click on a value types a new one (f g Q from the keys).
+        Rectangle {
+            width: 70px;
+            property <bool> typing: EqState.entry == "freq" && root.i == EqState.selected;
+            Label { text: parent.typing ? EqState.entry-text + "▏" : root.b.freq; tone: parent.typing ? "accent" : root.b.on ? "normal" : "faint"; small: true; width: parent.width; horizontal-alignment: right; }
+            TouchArea { mouse-cursor: text; clicked => { EqState.select(root.i); EqState.begin-entry("freq"); } }
+        }
+        Rectangle {
+            width: 64px;
+            property <bool> typing: EqState.entry == "gain" && root.i == EqState.selected;
+            Label { text: parent.typing ? EqState.entry-text + "▏" : root.b.gain; tone: parent.typing ? "accent" : root.b.on ? "normal" : "faint"; small: true; width: parent.width; horizontal-alignment: right; }
+            TouchArea { mouse-cursor: text; clicked => { EqState.select(root.i); EqState.begin-entry("gain"); } }
+        }
+        Rectangle {
+            width: 52px;
+            property <bool> typing: EqState.entry == "q" && root.i == EqState.selected;
+            Label { text: parent.typing ? "Q " + EqState.entry-text + "▏" : "Q " + root.b.q; tone: parent.typing ? "accent" : root.b.on ? "dim" : "faint"; small: true; width: parent.width; horizontal-alignment: right; }
+            TouchArea { mouse-cursor: text; clicked => { EqState.select(root.i); EqState.begin-entry("q"); } }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Rectangle {
+            width: 28px;
+            Label { text: root.b.on ? "ON" : "OFF"; tone: root.b.on ? "accent" : "faint"; small: true; width: parent.width; horizontal-alignment: right; }
+            TouchArea { clicked => { EqState.select(root.i); EqState.toggle(root.i); } }
+        }
+    }
+}
+
+// The EQ's own controls: on the tabs' row, or on their own when the tabs need it.
+component EqControls inherits HorizontalLayout {
+    spacing: Theme.s3;
+    height: Theme.row-h;
+    // The input gain: wheel or - = to move it, a double click back to 0.
+    Rectangle {
+        width: gl.preferred-width + 18px;
+        border-width: 1px;
+        border-color: gta.has-hover ? Theme.text-dim : Theme.border;
+        background: gta.has-hover ? Theme.hover : transparent;
+        gl := Text {
+            text: "IN " + (round(EqState.gain * 10) > 0 ? "+" : "") + (round(EqState.gain * 10) / 10 + 0) + " dB";
+            color: abs(EqState.gain) >= 0.05 ? Theme.text-bright : Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-small;
+            letter-spacing: 1px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+        gta := TouchArea {
+            double-clicked => { EqState.set-gain(0); }
+            scroll-event(ev) => {
+                if (ev.delta-y > 0) { EqState.set-gain(EqState.gain + 0.5); return accept; }
+                if (ev.delta-y < 0) { EqState.set-gain(EqState.gain - 0.5); return accept; }
+                return reject;
+            }
+        }
+    }
+    Button { text: EqState.preset == "" ? "Preset…" : EqState.preset; key: "p"; compact: true; clicked => { EqState.next-preset(1); } }
+    Button { text: "Save"; compact: true; clicked => { EqState.save-preset(); } }
+    Button { text: EqState.spectrum ? "Spectrum on" : "Spectrum off"; key: "s"; compact: true; clicked => { EqState.toggle-spectrum(); } }
+    Button { text: EqState.bypass ? "Bypassed" : "Bypass"; key: "b"; compact: true; lit: EqState.bypass; clicked => { EqState.set-bypass(!EqState.bypass); } }
+    Button { text: "Flat"; compact: true; clicked => { EqState.reset(); } }
+    VerticalLayout { alignment: center; MockBadge { text: EqState.live ? "" : "NO ENGINE"; } }
+}
+
+export component EqSurface inherits Rectangle {
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            // Typing a value: every key goes there first (digits too).
+            if (EqState.entry != "") { return EqState.key(e.text, e.modifiers.shift) ? accept : reject; }
+            // The EQ's keys are plain letters: Ctrl+S, Ctrl+B, Ctrl+M (or
+            // Ctrl+= zoom) must not turn the spectrum off, bypass, switch
+            // the EQ or raise the gain. The window's own shortcuts get them.
+            if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) { return reject; }
+            if (e.text >= "1" && e.text <= "8" && e.text.character-count == 1) {
+                EqState.select(e.text.to-float() - 1);
+                return accept;
+            }
+            if (e.text == " ") { EqState.toggle(EqState.selected); return accept; }
+            if (e.text == "t") { EqState.cycle-kind(EqState.selected); return accept; }
+            if (e.text == "b") { EqState.set-bypass(!EqState.bypass); return accept; }
+            if (e.text == "-") { EqState.set-gain(EqState.gain - 0.5); return accept; }
+            if (e.text == "=" || e.text == "+") { EqState.set-gain(EqState.gain + 0.5); return accept; }
+            if (e.text == "s") { EqState.toggle-spectrum(); return accept; }
+            if (e.text == "p") { EqState.next-preset(1); return accept; }
+            if (e.text == "P") { EqState.next-preset(-1); return accept; }
+            // m: the next EQ target (Rust knows the list).
+            if (e.text == "m") { return EqState.key("m", false) ? accept : reject; }
+            return EqState.key(e.text, e.modifiers.shift) ? accept : reject;
+        }
+    }
+    property <bool> tall: self.height >= 330px;
+    // The controls take about 510 px and a tab about 110: when they can't share
+    // a row, the controls get their own and no button runs off the window.
+    property <bool> two-rows: self.width < 510px + EqState.targets.length * 110px;
+    VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            height: Theme.row-h;
+            // Which EQ: the program, a channel, or one application.
+            for t in EqState.targets: Rectangle {
+                width: Math.min(tl.preferred-width + (t.app ? 34px : 18px), 190px);
+                border-width: 1px;
+                border-color: t.id == EqState.target ? Theme.text-dim : Theme.border;
+                background: t.id == EqState.target ? Theme.selection : tta.has-hover ? Theme.hover : transparent;
+                tta := TouchArea { clicked => { EqState.target = t.id; EqState.adding = false; } }
+                tl := Text {
+                    x: 9px;
+                    width: parent.width - (t.app ? 34px : 18px);
+                    overflow: elide;
+                    text: t.label + (t.busy ? " ·" : "");
+                    color: t.id == EqState.target ? Theme.text-bright : t.busy ? Theme.accent : Theme.text-dim;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-small;
+                    letter-spacing: 1px;
+                    vertical-alignment: center;
+                }
+                if t.app: Text {
+                    x: parent.width - 16px;
+                    text: "×";
+                    color: xta.has-hover ? Theme.text-bright : Theme.text-faint;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-small;
+                    vertical-alignment: center;
+                    xta := TouchArea { clicked => { EqState.remove-app(t.id); } }
+                }
+            }
+            Rectangle {
+                width: al.preferred-width + 18px;
+                border-width: 1px;
+                border-color: EqState.adding ? Theme.text-dim : Theme.border;
+                background: ata.has-hover ? Theme.hover : transparent;
+                al := Text { text: "+ APP"; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-small; letter-spacing: 1px; vertical-alignment: center; horizontal-alignment: center; }
+                ata := TouchArea { clicked => { EqState.adding = !EqState.adding; } }
+            }
+            Label { text: EqState.entry != "" ? EqState.entry-prompt : EqState.status; tone: EqState.entry != "" ? "accent" : "dim"; small: true; horizontal-stretch: 1; }
+            if !root.two-rows: EqControls { }
+        }
+        if root.two-rows: HorizontalLayout {
+            EqControls { }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        // Adding an application: the ones playing now.
+        if EqState.adding: HorizontalLayout {
+            spacing: Theme.s2;
+            height: Theme.row-h;
+            Label { text: EqState.candidates.length == 0 ? "no application is playing: start one, then add it" : "its own EQ for:"; tone: "dim"; small: true; horizontal-stretch: 0; }
+            for c in EqState.candidates: Button { text: c; compact: true; clicked => { EqState.add-app(c); EqState.adding = false; } }
+            Rectangle { }
+        }
+        Plot { vertical-stretch: 1; min-height: 120px; }
+        if root.tall: VerticalLayout {
+            spacing: 0px;
+            for b[i] in EqState.bands: BandRow { b: b; i: i; }
+        }
+    }
+    // The flash for a key that means nothing here.
+    Rectangle {
+        background: Theme.accent.with-alpha(EqState.invalid ? 0.14 : 0);
+        animate background { duration: 120ms; }
+    }
+}

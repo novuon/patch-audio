@@ -1,0 +1,343 @@
+// Shared Audio session state as seen by one window. The Rust session keeps
+// every window's copy in sync (models are shared, scalars broadcast).
+import { MeterKind } from "@patch-ui/patch-ui.slint";
+
+export struct GNode {
+    id: string,
+    name: string,
+    col: int,
+    row: int,
+    channels: int,
+    detail: string,
+    targets: string,
+    selected: bool,
+    related: bool,
+    muted: bool,
+    hardware: bool,
+    routeable: bool,
+    // A channel drawn under its device. The name is only the channel.
+    nest: bool,
+    // First row of a device block. A rule sits above it when it is not on top.
+    head: bool,
+}
+
+export struct GEdge {
+    a-col: int,
+    a-row: int,
+    b-col: int,
+    b-row: int,
+    channels: int,
+    selected: bool,
+    muted: bool,
+}
+
+export struct StripItem {
+    id: string,
+    name: string,
+    application: bool,
+    available: bool,
+    persistent: bool,
+    channels: int,
+    gain: float,
+    db: string,
+    mute: bool,
+    solo: bool,
+    master: bool,
+    level: float,
+    peak: float,
+    // Left and right, on the same meter law as `level` / `peak`.
+    // Without a stereo reading both sides repeat the combined peak.
+    level-l: float,
+    level-r: float,
+    peak-l: float,
+    peak-r: float,
+    vu: float,
+    clip: bool,
+    selected: bool,
+    // The fader reaches +6 dB (unity at 0.909). Otherwise unity is the top.
+    headroom: bool,
+    // Console knobs (Patch selected in the bar), each −1 … 1 (centre 0):
+    // whether the strip has them, whether GAIN works (the engine can
+    // trim), whether it has EQ and pan (not the DJ Booth), and where they are.
+    knobs: bool,
+    gain-live: bool,
+    tone: bool,
+    k-gain: float,
+    k-high: float,
+    k-mid: float,
+    k-low: float,
+    k-pan: float,
+    // Sends to AUX 1, AUX 2, FX 1, FX 2: their knobs (−1 off … 1) and
+    // whether each is pre-fader.
+    sends: bool,
+    // Why the sends do nothing ("" when they work): shown in place of the
+    // SENDS heading, the knobs greyed (a Remote voice's mix-minus, or a
+    // stream whose sound a Remote lane took).
+    send-note: string,
+    send-hint: string,
+    s1: float,
+    s2: float,
+    s3: float,
+    s4: float,
+    p1: bool,
+    p2: bool,
+    p3: bool,
+    p4: bool,
+}
+
+// A console bus: AUX 1, AUX 2 (own mixes) or FX 1, FX 2 (returns).
+export struct BusItem {
+    id: string,
+    name: string,
+    // Where it goes ("Scarlett · 3 + 4", "into Main").
+    output: string,
+    // AUX: its output can be chosen.
+    routable: bool,
+    gain: float,
+    db: string,
+    mute: bool,
+    level: float,
+    peak: float,
+    // FX: its effect's one control (SIZE, TIME), 0 … 1.
+    param-label: string,
+    param: float,
+}
+
+export struct PortItem {
+    short: string,
+    name: string,
+    used: bool,
+}
+
+export struct PortGroupItem {
+    name: string,
+    count: int,
+    ports: [PortItem],
+}
+
+export struct DeviceItem {
+    id: string,
+    name: string,
+    bus: string,
+    rate: string,
+    clock: string,
+    ins: int,
+    outs: int,
+    inputs: [PortGroupItem],
+    outputs: [PortGroupItem],
+    expanded: bool,
+    selected: bool,
+    clock-master: bool,
+    mock: bool,
+}
+
+export struct InspRow {
+    kind: string, // kv, live-meter, gain, chain, route, rule, toggle, note
+    label: string,
+    value: string,
+    amount: float,
+    active: bool,
+}
+
+export struct InspSection {
+    title: string,
+    rows: [InspRow],
+}
+
+// A device the main output can play to (the Mixer's output picker).
+export struct OutputItem {
+    id: string,
+    name: string,
+    kind: string,
+    detail: string,
+    current: bool,
+}
+
+export struct TargetItem {
+    id: string,
+    name: string,
+    current: bool,
+}
+
+export struct PresetItem {
+    id: string,
+    name: string,
+    summary: string,
+    active: bool,
+    plugin: string,
+    changes: [string],
+}
+
+// One channel of a multichannel meter; positions on the meter law.
+export struct ChannelLevel {
+    label: string,
+    level: float,
+    vu: float,
+}
+
+export global AudioState {
+    in property <bool> professional-routing;
+    in property <bool> plugins-enabled;
+    // MAIN's INSERT row: the rack's plugins on the master ("GRAILLON 3 +1").
+    in property <string> plugins-insert: "—";
+    // Graph
+    in property <[GNode]> nodes;
+    in property <[GEdge]> edges;
+    in property <[int]> col-rows: [6, 4, 5];
+    // Mixer
+    in property <[StripItem]> strips;
+    // How the console spends the surface and where it pins its returns.
+    // Rust owns the numbers; the view only places them. Defaults are the
+    // fader strip: pan, solo, mute, the dB, a fader and the name. The tone
+    // and send bank opens row by row once the window can spare the room.
+    in property <float> console-header: 68;
+    in property <float> console-knob-scale: 0;
+    in property <float> console-knob-view: 0;
+    in property <float> console-knob-body: 118;
+    in property <float> console-fader: 96;
+    in property <float> console-foot: 26;
+    // The desk the channels scroll in, the group pinned to the right edge
+    // (0: none), and which of RETURNS / MAIN that group holds.
+    in property <float> console-scroll-w: 0;
+    in property <float> console-pinned: 0;
+    in property <bool> console-pin-buses: false;
+    in property <bool> console-pin-main: false;
+    // Height and width; true for the Patch-style Mixer (its bands are taller).
+    callback fit-console(float, float, bool);
+    in property <[string]> dests;
+    in property <[string]> dest-ids;
+    // The MAIN column's PLAYS TO rows, in `dests` order: whether the
+    // program mix reaches that destination.
+    in property <[bool]> main-dests;
+    // Devices
+    in property <[DeviceItem]> devices;
+    // Selection (shared across surfaces)
+    in property <string> selected;
+    in property <string> sel-name;
+    in property <string> sel-kind;
+    in property <string> mic-loop-warning;
+    in property <string> sel-detail;
+    in property <bool> sel-hardware;
+    in property <int> sel-strip: -1;
+    in property <float> sel-level;
+    in property <float> sel-vu;
+    in property <MeterKind> sel-meter-kind: MeterKind.System;
+    in property <[InspSection]> sections;
+    // Where the selection can be sent (Inspector "Send to", Graph drops).
+    in property <[TargetItem]> targets;
+    in property <[OutputItem]> outputs;
+    // The device the main output plays to now (its name).
+    in property <string> main-output;
+    // Play the main output on `outputs[i]`.
+    callback pick-output(int);
+    // Turn a strip's knob: "gain", "high", "mid", "low", "pan",
+    // "send1" … "send4" to −1 … 1, or "pre1" … "pre4" to 0 / 1.
+    callback set-knob(string, string, float);
+    // The console's buses (Patch selected), their faders, mutes and
+    // effect controls, and where an AUX goes.
+    in property <[BusItem]> buses;
+    callback set-bus-gain(string, float);
+    callback toggle-bus-mute(string);
+    callback set-bus-param(string, float);
+    in property <[TargetItem]> bus-targets;
+    callback open-bus-targets(string);
+    // Presets
+    in property <[PresetItem]> presets;
+    in property <int> preset-cursor;
+    in property <string> toast;
+    // Engine
+    in property <bool> live;
+    in property <string> backend: "MOCK ENGINE";
+    in property <string> rate: "96 kHz";
+    in property <string> buffer: "128 samples";
+    in property <string> latency: "1.33 ms";
+    in property <int> xruns;
+    in property <bool> xruns-known;
+    in property <float> dsp;
+    // Meters: one ChannelLevel per channel of the measured signal's layout.
+    in property <[ChannelLevel]> in-channels;
+    in property <[ChannelLevel]> out-channels;
+    in property <string> in-layout: "stereo";
+    in property <string> out-layout: "stereo";
+    in property <float> in-peak;
+    in property <float> out-peak;
+    in property <string> lufs-m: "−18.0";
+    in property <string> lufs-i: "−16.4";
+    in property <string> true-peak: "−1.3";
+    in property <string> lufs-s: "—";
+    in property <string> lra: "—";
+    in property <bool> loudness-measured;
+    in property <string> in-peak-text: "−∞";
+    in property <string> in-label: "Mic";
+    // The sources the input sums when there are several ("3 sources"):
+    // shown in place of the label while the pointer is on the heading.
+    in property <string> in-sources;
+    // VU (IEC 60268-17 ballistics; 0 VU = −18 dBFS sine), positions on the meter law.
+    in property <string> in-vu-text: "−∞";
+    in property <string> out-vu-text: "−∞";
+    in property <bool> vu-measured;
+    in property <bool> in-clip;
+    in property <bool> out-clip;
+    in property <string> out-label: "Master";
+    in property <bool> has-spectrum: true;
+    in property <string> out-peak-text: "−∞";
+    in property <[float]> spectrum;
+    in property <[float]> lufs-history;
+    // 0…1 of the way to the next history step: the history scrolls
+    // smoothly instead of jumping a bar every 250 ms.
+    in property <float> lufs-scroll;
+    // The history as one outline (path commands, a column a unit, 0 top …
+    // 1 bottom): the filled area and its top line, drawn as single shapes.
+    in property <string> lufs-area;
+    in property <string> lufs-line;
+    in property <int> device-cursor;
+
+    callback select(string);
+    callback move-selection(int, int);
+    callback set-gain(string, float);
+    callback configure-application-strip(string, string, bool);
+    callback nudge-gain(string, float);
+    callback toggle-mute(string);
+    callback toggle-solo(string);
+    callback toggle-device(string);
+    callback move-device(int);
+    callback move-preset(int);
+    callback apply-preset(string);
+    callback toggle-through-patch(string);
+    callback connect(string, string);
+    // Microphones: add one (the default input, on the first free mic
+    // channel), choose its input, take it off; a voice stage on/off and
+    // its amount (0…1), by the row's label.
+    in property <bool> can-add-mic;
+    // Where the Patch Mix goes ("→ Focusrite"), under its strip's name.
+    in property <string> mix-out;
+    callback add-mic();
+    /// An application's voice on a mic lane: role "far_end" (a call's or an
+    /// X Space's far end, mix-minus) or "voice" (a voice source, sendable).
+    callback add-remote(string);
+    callback mic-source(string, string);
+    callback mic-remove(string);
+    callback mic-profile(string, string, string);
+    in property <string> mic-analysis;
+    in property <[float]> mic-history;
+    in property <string> mic-history-span;
+    callback mic-analyze(string);
+    callback mic-apply-calibration();
+    in property <bool> mic-calibration-ready;
+    in property <string> mic-comparison;
+    callback mic-compare(string);
+    callback mic-listen(string);
+    callback mic-step(int);
+    callback mic-record(bool);
+    callback mic-stop-record();
+    callback voice-set(string, string, bool, float);
+    // Graph drop: source id, column and row under the pointer.
+    callback drop-at(string, int, int);
+    callback restore-routing();
+    callback reset-loudness();
+    // Meter timing: "OUTPUT · 221 ms · REPORTED · trim +0 ms".
+    in property <string> timing-text;
+    in property <bool> timing-output: true;
+    callback toggle-reference();
+    callback trim-sync(float);
+}

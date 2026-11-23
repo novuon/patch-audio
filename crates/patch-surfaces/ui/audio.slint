@@ -1,0 +1,197 @@
+import { BroadcastDjSurface, BroadcastDjState } from "broadcast-dj.slint";
+export { BroadcastDjState } from "broadcast-dj.slint";
+import { SequencerSurface, SeqState } from "sequencer.slint";
+export { SeqState, SeqTrack } from "sequencer.slint";
+import { Theme, MeterStyle, Host, SurfaceFrame, SurfaceKeys, ControllerView, SectionHeading, Label, MockBadge, EmptyState, Button } from "@patch-ui/patch-ui.slint";
+import { AudioState } from "state.slint";
+import { GraphSurface } from "graph.slint";
+import { MixerSurface } from "mixer.slint";
+import { MixerClassic } from "mixer-classic.slint";
+import { DevicesSurface } from "devices.slint";
+import { InspectorSurface } from "inspector.slint";
+import { MetersSurface } from "meters.slint";
+import { MetersClassic } from "meters-classic.slint";
+import { PresetsSurface } from "presets.slint";
+import { PlayerState, PlayerSurface } from "player.slint";
+export { PlayerState } from "player.slint";
+import { RecState, RecorderSurface } from "recorder.slint";
+import { BroadcastState, BroadcastSurface } from "broadcast.slint";
+import { NetworkState, NetworkSurface } from "network.slint";
+export { BroadcastState, BcSource } from "broadcast.slint";
+import { PatternState, PatternSurface } from "pattern.slint";
+export { PatternState, PatEvent, PatError } from "pattern.slint";
+import { TidalState, TidalSurface } from "tidal.slint";
+export { TidalState, TidalChannel, TidalHelp, TidalError } from "tidal.slint";
+import { DjState, DeckSurface, DjMixerSurface, LibrarySurface, LightDjSurface } from "dj.slint";
+import { DeckClassic, DjMixerClassic } from "dj-classic.slint";
+import { ClubBoothSurface, BoothSkin } from "booth.slint";
+import { MiniBoothSurface } from "dj-mini.slint";
+export { BoothSkin, BoothControls, BoothPanel, BoothRow } from "booth.slint";
+import { DiagState, DiagSurface } from "diag.slint";
+import { AnalyzerState, AnalyzerSurface } from "analyzer.slint";
+import { VisualState, VisualSurface, VisualControlsSurface } from "visual.slint";
+import { ControllerState, ControllersSurface } from "controllers.slint";
+import { MicSurface } from "mic.slint";
+import { TuneSurface } from "tune.slint";
+import { DjWorkspaceState, DjWorkspaceSurface } from "dj-workspace.slint";
+import { AiDjState } from "aidj.slint";
+import { EqState, EqSurface } from "eq.slint";
+import { PerfState, PerfSurface } from "perf.slint";
+import { PluginsSurface, PluginFace, PluginState, RackSlot, InstalledPlugin, PluginControl, PluginGroup, RouteStep, RouteLine, PlaceOption } from "plugins.slint";
+export { PluginState, RackSlot, InstalledPlugin, PluginControl, PluginGroup, RouteStep, RouteLine, PlaceOption } from "plugins.slint";
+
+export { DjWorkspaceState, WorkspaceItem } from "dj-workspace.slint";
+export { NetworkState, NetLink, NetStream } from "network.slint";
+export { RecState, RecSource, TakeItem } from "recorder.slint";
+export { Theme, MeterStyle, Host, AudioState, DjState }
+export { DeckItem, DeckLevels, EqKnobs, LibItem, QueueItem, LibSource, LibOffer } from "dj.slint";
+export { DiagRow, DiagState } from "diag.slint";
+export { AnStat, AnLabel, AnalyzerState } from "analyzer.slint";
+export { VisualState } from "visual.slint";
+export { CtlDevice, CtlEvent, ControllerState } from "controllers.slint";
+export { AiCand, AiDjState } from "aidj.slint";
+export { EqRow, EqMark, EqState } from "eq.slint";
+export { PerfTile, PerfProc, PerfNode, PerfState } from "perf.slint";
+export { SurfaceItem, UnitItem, LayoutItem, TileItem, KeyHint, SettingItem } from "@patch-ui/patch-ui.slint";
+export { GNode, GEdge, StripItem, PortItem, PortGroupItem, DeviceItem, InspRow, InspSection, PresetItem, ChannelLevel } from "state.slint";
+
+component EngineSummary inherits VerticalLayout {
+    spacing: 2px;
+    SectionHeading { text: "Engine"; detail: ""; pad: 0px; }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: AudioState.backend; tone: "bright"; horizontal-stretch: 0; }
+        VerticalLayout { alignment: center; MockBadge { text: AudioState.live ? "LIVE" : "SIMULATED"; } }
+        Rectangle { }
+    }
+    Label { text: AudioState.rate + " · " + AudioState.buffer; }
+    Label { text: AudioState.latency + " · DSP " + Math.round(AudioState.dsp * 100) + "%"; tone: "dim"; small: true; }
+    if !AudioState.live: Label { text: "XRUN " + AudioState.xruns; tone: AudioState.xruns > 0 ? "warn" : "dim"; small: true; }
+    if AudioState.live: HorizontalLayout {
+        padding-top: Theme.s3;
+        alignment: start;
+        Button {
+            text: "Restore routing";
+            compact: true;
+            clicked => { AudioState.restore-routing(); }
+        }
+    }
+    if AudioState.toast != "": Label { text: AudioState.toast; tone: "faint"; small: true; wrap: word-wrap; }
+}
+
+export component PatchWindow inherits Window {
+    in property <string> surface;
+    title: Host.window-title;
+    no-frame: false;
+    background: Theme.bg;
+    default-font-family: Theme.font;
+    default-font-size: Theme.fs;
+    preferred-width: surface == "performer" || surface == "dj-club" ? 1280px : surface == "dj-mini" ? 1130px : surface == "controller" ? 700px : 900px;
+    preferred-height: surface == "performer" || surface == "dj-club" ? 720px : surface == "dj-mini" ? 240px : surface == "controller" ? 480px : 600px;
+    min-width: 220px;
+    min-height: 120px;
+    forward-focus: keys;
+
+    keys := SurfaceKeys {
+        if root.surface == "controller": ControllerView {
+            EngineSummary { }
+        }
+        if root.surface == "graph": SurfaceFrame {
+            status: AudioState.rate + " · " + AudioState.nodes.length + " nodes · " + AudioState.edges.length + " routes";
+            GraphSurface { }
+        }
+        if root.surface == "mixer": SurfaceFrame {
+            status: AudioState.strips.length + " strips · post-fader dBFS meters";
+            // The unit's layout: Pro gear's, else Patch's own (Classic and
+            // Patch style share it; Patch style changes only the look).
+            if Theme.pro: MixerSurface { }
+            if !Theme.pro: MixerClassic { }
+        }
+        if root.surface == "devices": SurfaceFrame {
+            status: AudioState.devices.length + (AudioState.live ? " devices" : " mock devices · clock: Scarlett");
+            DevicesSurface { }
+        }
+        if root.surface == "inspector": SurfaceFrame {
+            status: AudioState.sel-name;
+            InspectorSurface { }
+        }
+        if root.surface == "meters": SurfaceFrame {
+            status: "LUFS " + AudioState.lufs-m + (AudioState.xruns-known ? (AudioState.live ? " · PipeWire XRUN " : " · simulated XRUN ") + AudioState.xruns : " · PipeWire XRUN unavailable");
+            if Theme.pro: MetersSurface { }
+            if !Theme.pro: MetersClassic { }
+        }
+        if root.surface == "sequencer": SurfaceFrame { status: SeqState.playing ? "playing · native audio" : "ready · native audio"; SequencerSurface { } }
+        if root.surface == "player": SurfaceFrame { status: PlayerState.status; PlayerSurface { } }
+        if root.surface == "recorder": SurfaceFrame {
+            status: RecState.busy ? "working" : RecState.paused ? "paused · " + RecState.timecode : RecState.recording ? "recording · " + RecState.timecode : "standby";
+            RecorderSurface { }
+        }
+        if root.surface == "performer": BroadcastDjSurface { }
+        if root.surface == "broadcast": SurfaceFrame {
+            status: BroadcastState.live ? "on air · " + BroadcastState.uptime : BroadcastState.state == "reconnecting" ? "reconnecting" : BroadcastState.active ? "connecting" : "offline";
+            BroadcastSurface { }
+        }
+        if root.surface == "network": SurfaceFrame {
+            status: NetworkState.sends.length == 0 && NetworkState.streams.length == 0 ? (NetworkState.online ? "local network · " + NetworkState.address : "offline") : NetworkState.sends.length + (NetworkState.sends.length == 1 ? " send · " : " sends · ") + NetworkState.streams.length + " announced";
+            NetworkSurface { }
+        }
+        if root.surface == "pattern": SurfaceFrame {
+            status: PatternState.playing ? "playing · cycle " + PatternState.cycle + " · " + PatternState.engine : "stopped · " + PatternState.engine;
+            PatternSurface { }
+        }
+        if root.surface == "tidal": SurfaceFrame {
+            status: TidalState.playing ? "playing · cycle " + TidalState.cycle + " · " + TidalState.tempo : "stopped · " + TidalState.tempo;
+            see-through: TidalState.backdrop > 0 && VisualState.gpu;
+            TidalSurface { }
+        }
+        if root.surface == "presets": SurfaceFrame {
+            status: "session presets";
+            PresetsSurface { }
+        }
+        // DJ booth unit
+        if root.surface == "deck-a": SurfaceFrame { status: DjState.deck-a.playing ? "playing" : "ready"; if Theme.pro: DeckSurface { deck: "a"; } if !Theme.pro: DeckClassic { deck: "a"; } }
+        if root.surface == "deck-c": SurfaceFrame { status: DjState.deck-c.playing ? "playing" : "ready"; if Theme.pro: DeckSurface { deck: "c"; } if !Theme.pro: DeckClassic { deck: "c"; } }
+        if root.surface == "deck-d": SurfaceFrame { status: DjState.deck-d.playing ? "playing" : "ready"; if Theme.pro: DeckSurface { deck: "d"; } if !Theme.pro: DeckClassic { deck: "d"; } }
+        if root.surface == "deck-b": SurfaceFrame { status: DjState.deck-b.playing ? "playing" : "ready"; if Theme.pro: DeckSurface { deck: "b"; } if !Theme.pro: DeckClassic { deck: "b"; } }
+        if root.surface == "dj-mixer": SurfaceFrame { status: "crossfader · " + DjState.xf-curve-label().to-lowercase() + " curve"; if Theme.pro: DjMixerSurface { } if !Theme.pro: DjMixerClassic { } }
+        if root.surface == "dj-club": SurfaceFrame { status: "4 decks · 2 players · channels 1–4"; ClubBoothSurface { } }
+        if root.surface == "dj-mini": SurfaceFrame { slim: true; status: !DjState.set-on ? "decks A · B" : DjWorkspaceState.paused ? "Auto Mix set · paused" : "Auto Mix set · playing"; MiniBoothSurface { } }
+        if root.surface == "library": SurfaceFrame { status: DjState.lib-count + " items"; LibrarySurface { } }
+        if root.surface == "dj": SurfaceFrame { status: DjWorkspaceState.busy ? "working" : AiDjState.mode + " · " + AiDjState.phase.to-lowercase(); DjWorkspaceSurface { } }
+        if root.surface == "diagnostics": SurfaceFrame { status: "engine timing · live"; DiagSurface { } }
+        if root.surface == "analyzer": SurfaceFrame { status: AnalyzerState.status; AnalyzerSurface { } }
+        if root.surface == "visualiser" && !VisualState.bare: SurfaceFrame { status: VisualState.caption; see-through: VisualState.gpu; VisualSurface { } }
+        // True fullscreen: the animation alone, edge to edge.
+        if root.surface == "visualiser" && VisualState.bare: VisualSurface { width: root.width; height: root.height; }
+        if root.surface == "visualiser-controls": SurfaceFrame { status: VisualState.current-family + " · " + VisualState.current-scene; VisualControlsSurface { } }
+        if root.surface == "mic": SurfaceFrame { status: "native input processing · virtual output: Patch Input"; MicSurface { } }
+        if root.surface == "tune": SurfaceFrame { status: "output optimization · coming soon"; TuneSurface { } }
+        if root.surface == "controllers": SurfaceFrame { status: ControllerState.status; ControllersSurface { } }
+        if root.surface == "eq": SurfaceFrame { status: EqState.bypass ? "master EQ · bypassed" : "master EQ"; EqSurface { } }
+        if root.surface == "perf": SurfaceFrame { status: "Patch against the native audio layer · live"; PerfSurface { } }
+        if root.surface == "plugins": SurfaceFrame {
+            status: PluginState.slots.length == 0 ? "VST3 rack · empty" : "VST3 rack · on the master, a channel, AUX or FX";
+            PluginsSurface { }
+        }
+        if root.surface == "plugin": SurfaceFrame {
+            status: PluginState.load;
+            PluginFace { }
+        }
+        // Planned Units (and planned plugin surfaces): a clearly marked
+        // placeholder that holds the Unit's place in the workspace.
+        if root.surface != "sequencer" && root.surface != "player" && root.surface != "controller" && root.surface != "graph" && root.surface != "mixer" && root.surface != "devices" && root.surface != "inspector" && root.surface != "visualiser-controls" && root.surface != "meters" && root.surface != "presets" && root.surface != "recorder" && root.surface != "broadcast" && root.surface != "performer" && root.surface != "pattern" && root.surface != "tidal"
+            && root.surface != "deck-c" && root.surface != "deck-d" && root.surface != "deck-a" && root.surface != "deck-b" && root.surface != "dj-mixer" && root.surface != "dj-club" && root.surface != "dj-mini" && root.surface != "library" && root.surface != "diagnostics" && root.surface != "analyzer" && root.surface != "controllers" && root.surface != "tune" && root.surface != "mic"
+            && root.surface != "dj" && root.surface != "eq" && root.surface != "perf" && root.surface != "visualiser" && root.surface != "plugins" && root.surface != "plugin" && root.surface != "network": SurfaceFrame {
+            badge: "PLANNED";
+            status: "not built yet";
+            EmptyState {
+                title: Host.unit-name + (Host.surface-title == Host.unit-name ? "" : " · " + Host.surface-title) + " · planned";
+                detail: (Host.unit-scope != "" ? "Will gather " + Host.unit-scope + ". " : "")
+                    + "This window holds the Unit's place in the workspace until it is built. No audio runs through it.";
+                badge: "PLANNED";
+            }
+        }
+    }
+}
+
+export { StemState, StemDeck, StemItem } from "stems.slint";

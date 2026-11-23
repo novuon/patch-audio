@@ -1,0 +1,32 @@
+[package]
+name = "patch-engine"
+description = "Patch engine: the shared real-time engine, an in-graph PipeWire filter node with assembly DSP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+links = "pipewire-0.3"
+
+[dependencies]
+patch-dsp.workspace = true
+patch-tune.workspace = true
+patch-core.workspace = true
+patch-controller.workspace = true
+patch-stems.workspace = true
+patch-meter.workspace = true
+patch-model.workspace = true
+serde.workspace = true
+libc = "0.2"
+patch-analysis.workspace = true
+patch-ai.workspace = true
+patch-library.workspace = true
+patch-pattern.workspace = true
+patch-material.workspace = true
+patch-plugin.workspace = true
+serde_json = "1"
+
+[build-dependencies]
+cc = "1"
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Patch
+GenericName=Audio environment
+Comment=The Patch controller: every Unit, the layouts and the setup (Ctrl+K in any Patch window)
+Exec=omarchy-patch
+Icon=omarchy-patch
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
+Keywords=audio;mixer;router;meter;eq;dj;pipewire;

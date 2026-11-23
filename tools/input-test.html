@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Input test · Patch</title>
+<meta name="description" content="Check what a browser hears from a microphone, interface or Patch AUX: level, clipping, silence and a test recording. Nothing leaves the page.">
+<meta name="theme-color" content="#141114"><link rel="canonical" href="https://patchaudio.app/input-test">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" type="image/svg+xml" href="/brand/favicon.svg"><link rel="apple-touch-icon" href="/brand/icon-180.png">
+<meta property="og:type" content="website"><meta property="og:url" content="https://patchaudio.app/input-test"><meta property="og:title" content="Input test · Patch"><meta property="og:description" content="Check what a browser hears from an input. Nothing leaves the page."><meta property="og:image" content="https://patchaudio.app/brand/og.png">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('patch-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch{}</script>
+<style>
+@font-face{font-family:'JetBrains Mono';src:url(/fonts/jetbrains-mono.woff2) format('woff2');font-weight:100 800;font-display:swap}
+:root {
+  --bg: #141114;
+  --panel: #1e1b1f;
+  --line: #2a262b;
+  --text: #f7f4ee;
+  --dim: #8b868b;
+  --faint: #4a454b;
+  --accent: #f0243b;
+  --meter-bg: #0d0b0d;
+  --rms: #8b868b;
+  --mono: "JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, "DejaVu Sans Mono", monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f7f4ee; --panel: #fffdf9; --line: #d2cdc8; --text: #141114; --dim: #5e595e;
+    --faint: #b9b3b8; --accent: #bd0020; --meter-bg: #ece7df; --rms: #8b868b; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f7f4ee; --panel: #fffdf9; --line: #d2cdc8; --text: #141114; --dim: #5e595e;
+  --faint: #b9b3b8; --accent: #bd0020; --meter-bg: #ece7df; --rms: #8b868b; color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--mono); }
+button, select { font: inherit; color: var(--text); }
+
+header {
+  display: flex; align-items: center; gap: 14px; padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.mark { display: block; position: relative; width: 30px; height: 18px; }
+.mark i { position: absolute; top: 0; bottom: 0; }
+.mark i:first-child { left: 0; width: 16px; background: var(--text); border-radius: 2px; }
+.mark i:last-child { left: 13px; width: 17px; top: 4px; bottom: 4px; background: var(--accent); border-radius: 1px; }
+a.home { display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; }
+a.home:hover .brand { color: var(--text); }
+footer a { color: var(--dim); }
+footer a:hover { color: var(--text); }
+.brand { letter-spacing: .25em; font-size: 12px; color: var(--dim); }
+h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+.sub { color: var(--dim); }
+.live { margin-left: auto; letter-spacing: .15em; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.live.on { color: var(--text); }
+.live.on::before { content: "● "; color: var(--accent); }
+.live:not(.on)::before { content: "○ "; }
+
+main { padding: 6px 24px 64px; max-width: 1400px; }
+section { margin-top: 22px; }
+.head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 12px;
+}
+h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.head span { color: var(--dim); font-size: 13px; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+select {
+  flex: 1 1 360px; min-width: 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; padding: 6px 10px;
+}
+.btn {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+  padding: 6px 16px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--faint); }
+.btn.primary { border-color: var(--accent); }
+.btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:disabled { opacity: .4; cursor: default; }
+
+.toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 8px; margin-top: 10px; }
+.toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 6px 12px; cursor: pointer;
+  user-select: none;
+}
+.toggle b { font-weight: 400; color: var(--dim); }
+.sw { width: 34px; height: 16px; border: 1px solid var(--faint); border-radius: 2px; position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 4px; width: 10px; height: 8px; background: var(--faint); }
+.toggle.on .sw { border-color: var(--accent); }
+.toggle.on .sw::after { left: 18px; background: var(--accent); }
+.toggle.on b { color: var(--text); }
+.note { color: var(--dim); margin: 10px 0 0; font-size: 13px; }
+.note strong { color: var(--text); font-weight: 400; }
+
+.verdict { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
+.verdict .big { font-size: 34px; font-weight: 600; letter-spacing: .02em; }
+.verdict .big.sig { color: var(--text); }
+.verdict .big.silent { color: var(--accent); }
+.verdict .big.idle { color: var(--faint); }
+.verdict .why { color: var(--dim); }
+
+.meters { display: grid; gap: 10px; }
+.meter { display: grid; grid-template-columns: 22px 1fr 196px; align-items: center; gap: 12px; }
+.meter .ch { color: var(--dim); }
+.meter canvas { width: 100%; height: 26px; display: block; }
+.meter .val { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meter .val small { color: var(--dim); font-size: 12px; }
+.scale { display: grid; grid-template-columns: 22px 1fr 196px; gap: 12px; }
+.scale canvas { width: 100%; height: 16px; display: block; }
+
+.lufs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 8px; }
+.lufs div { display: grid; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 8px 12px; }
+.lufs span { color: var(--dim); font-size: 13px; }
+.lufs b { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lufs b small { font-size: 13px; font-weight: 400; color: var(--dim); margin-left: 6px; }
+.lufs i { font-style: normal; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+#lbar { width: 100%; height: 44px; display: block; margin-top: 12px; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--dim); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.linkbtn:hover { color: var(--text); }
+#history { width: 100%; height: 64px; display: block; }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 8px 48px; }
+dl { margin: 0; }
+dl div { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+dt { color: var(--dim); }
+dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+dd.bad { color: var(--accent); }
+
+audio { width: 100%; max-width: 520px; height: 36px; margin-top: 10px; display: block; }
+a.dl { color: var(--text); align-self: center; padding: 0 8px; }
+
+footer {
+  position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 22px; align-items: center;
+  padding: 8px 24px; background: var(--bg); border-top: 1px solid var(--line); color: var(--dim); font-size: 13px;
+}
+kbd {
+  border: 1px solid var(--faint); border-radius: 3px; padding: 0 6px; margin-right: 6px; color: var(--text);
+  font: inherit; font-size: 12px;
+}
+footer .ver { margin-left: auto; letter-spacing: .1em; }
+@media (max-width: 640px) {
+  header, main, footer { padding-left: 16px; padding-right: 16px; }
+  .sub { display: none; }
+  .meter, .scale { grid-template-columns: 18px 1fr 92px; }
+  .meter .val { white-space: normal; font-size: 12px; line-height: 1.3; }
+  footer .ver, footer .opt { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <a class="home" href="/" aria-label="Patch home"><span class="mark" aria-hidden="true"><i></i><i></i></span>
+  <span class="brand">PATCH</span></a>
+  <h1>Input test</h1>
+  <span class="sub">what a browser hears from a source · nothing leaves this page</span>
+  <span class="live" id="live">IDLE</span>
+</header>
+
+<main>
+  <section>
+    <div class="head"><h2>Input</h2><span id="devcount"></span></div>
+    <div class="row">
+      <select id="device" aria-label="Input device"><option value="">Default input</option></select>
+      <button class="btn primary" id="start">Start</button>
+      <button class="btn" id="refresh" title="Ask for the microphone and list every input by name">Show inputs</button>
+    </div>
+    <div class="toggles">
+      <div class="toggle" data-k="echoCancellation" role="switch" tabindex="0"><b>Echo cancellation</b><span class="sw"></span></div>
+      <div class="toggle" data-k="noiseSuppression" role="switch" tabindex="0"><b>Noise suppression</b><span class="sw"></span></div>
+      <div class="toggle" data-k="autoGainControl" role="switch" tabindex="0"><b>Auto gain</b><span class="sw"></span></div>
+      <div class="toggle" data-k="stereo" role="switch" tabindex="0"><b>Stereo</b><span class="sw"></span></div>
+    </div>
+    <p class="note">Browser processing is <strong>off</strong> by default, so you see what the source really carries.
+      Echo cancellation removes sound the browser itself plays: with a stream playing in Chromium and
+      Patch AUX 1 as the input, it cancels that stream. Turn it on only to hear what a call app would get.</p>
+  </section>
+
+  <section>
+    <div class="head"><h2>Signal</h2><span id="track">no input open</span></div>
+    <div class="verdict">
+      <span class="big idle" id="verdict">—</span>
+      <span class="why" id="why">Press Start and allow the microphone.</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><h2>Level</h2><span>dBFS · peak and RMS · click a meter to clear its clip</span></div>
+    <div class="meters" id="meters"></div>
+    <div class="scale"><span></span><canvas id="scale"></canvas><span></span></div>
+  </section>
+
+  <section>
+    <div class="head"><h2>Loudness</h2><span>LUFS · EBU R128 · <button class="linkbtn" id="lreset">reset</button></span></div>
+    <div class="lufs">
+      <div><span>Momentary</span><b id="lm">—</b><i id="lmx">400 ms</i></div>
+      <div><span>Short-term</span><b id="ls">—</b><i id="lsx">3 s</i></div>
+      <div><span>Integrated</span><b id="li">—</b><i id="lix">the whole take</i></div>
+      <div><span>Loudness range</span><b id="lr">—</b><i>LRA</i></div>
+    </div>
+    <canvas id="lbar"></canvas>
+    <p class="note" id="lnote">Loudness is how loud it sounds, not how high the peaks go: the measure broadcasters and
+      streaming services use. Talk for 20–30 s and read <strong>Integrated</strong>. For reference: <strong>−23</strong> broadcast (EBU R128),
+      <strong>−16</strong> podcasts and spoken word, <strong>−14</strong> music streaming. A raw microphone usually reads lower;
+      a call app's auto gain levels it. A mono input counts as heard on both speakers.</p>
+  </section>
+
+  <section>
+    <div class="head"><h2>Peak history</h2><span>last 12 s</span></div>
+    <canvas id="history"></canvas>
+  </section>
+
+  <section>
+    <div class="head"><h2>Record</h2><span id="rectime">play it back to hear the source</span></div>
+    <div class="row">
+      <button class="btn" id="rec" disabled>Record</button>
+      <button class="btn" id="listen" disabled title="Play the input live through this browser">Listen live</button>
+      <a class="dl" id="download" hidden>Download</a>
+    </div>
+    <audio id="playback" controls hidden></audio>
+    <p class="note" id="loopnote">Playback and Listen live play into Chromium's own channel in Patch. If that channel
+      sends to the AUX you are testing, the sound loops back into the input: stop recording before you play it back.</p>
+  </section>
+
+  <section>
+    <div class="head"><h2>Details</h2><span>what the browser opened, from the track's settings</span></div>
+    <div class="grid2">
+      <dl id="details1"></dl>
+      <dl id="details2"></dl>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span><kbd>space</kbd>start / stop</span>
+  <span><kbd>r</kbd>record</span>
+  <span class="opt"><kbd>l</kbd>listen</span>
+  <span class="ver"><a href="/docs/microphone">Microphone setup</a></span>
+</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const FLOOR = -60;           // meter floor, as in the Mixer
+const SILENT_DB = -80;       // below this: no usable signal
+const HOLD_MS = 1500, FALL_DB_S = 20;
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("patch-input-test:" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("patch-input-test:" + k, JSON.stringify(v)); } catch {} },
+};
+
+const opts = {
+  echoCancellation: store.get("echoCancellation", false),
+  noiseSuppression: store.get("noiseSuppression", false),
+  autoGainControl: store.get("autoGainControl", false),
+  stereo: store.get("stereo", true),
+};
+
+let stream = null, ctx = null, source = null, analysers = [], buf = null, raf = 0;
+let monitorGain = null, recorder = null, recChunks = [], recStart = 0, recTimer = 0, lastUrl = null;
+let chans = [];              // per channel: {peakHold, holdAt, clip, el, canvas}
+let history = [];            // peak dBFS per 100 ms
+let lastHistAt = 0, histMax = -Infinity, lastSignalAt = 0, maxPeak = -Infinity, clips = 0, startedAt = 0;
+
+// ---- devices --------------------------------------------------------------
+async function listDevices() {
+  const sel = $("device");
+  const want = sel.value || store.get("deviceLabel", "");
+  let devices = [];
+  try { devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput"); } catch {}
+  const labelled = devices.some(d => d.label);
+  sel.innerHTML = "";
+  const def = new Option("Default input (the system's default source)", "");
+  sel.add(def);
+  // The input in use: named even when the browser hides the others (a
+  // permission given for one device in Chromium's own prompt).
+  const live = stream && stream.getAudioTracks()[0];
+  const liveId = live ? live.getSettings().deviceId : null;
+  let hidden = 0;
+  for (const d of devices) {
+    if (d.deviceId === "default" || d.deviceId === "communications") continue;
+    const label = d.label || (d.deviceId && d.deviceId === liveId ? live.label : "");
+    if (!d.deviceId) continue; // no permission yet: nothing to pick
+    if (!label) hidden++;
+    sel.add(new Option(label || `Input ${sel.options.length} (name hidden by the browser)`, d.deviceId));
+    continue;
+  }
+  // Keep the choice: by id, else by name (ids change across sessions).
+  const byId = [...sel.options].find(o => o.value && o.value === (liveId || want));
+  const byLabel = [...sel.options].find(o => o.value && o.text === want);
+  sel.value = (byId || byLabel || def).value;
+  const n = sel.options.length - 1;
+  $("devcount").textContent = !n ? "allow the microphone to see the inputs"
+    : hidden ? `${n} inputs · ${hidden} unnamed: allow the microphone for all inputs (site settings)`
+    : `${n} input${n === 1 ? "" : "s"}`;
+  $("refresh").textContent = labelled ? "Refresh" : "Show inputs";
+  return labelled;
+}
+
+// The browser names its inputs only once the page may use the microphone:
+// ask (opening the default input for a moment), then list them all.
+async function unlock() {
+  if (await listDevices()) return;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach(t => t.stop());
+  } catch (e) {
+    $("devcount").textContent = "microphone not allowed: site settings, then Show inputs";
+    return;
+  }
+  await listDevices();
+}
+
+// ---- capture --------------------------------------------------------------
+async function start() {
+  await stop(false);
+  const id = $("device").value;
+  const audio = {
+    echoCancellation: opts.echoCancellation,
+    noiseSuppression: opts.noiseSuppression,
+    autoGainControl: opts.autoGainControl,
+    channelCount: { ideal: opts.stereo ? 2 : 1 },
+    sampleRate: { ideal: 48000 },
+  };
+  if (id) audio.deviceId = { exact: id };
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio });
+  } catch (e) {
+    setVerdict("idle", "No input", e.name === "NotAllowedError"
+      ? "The browser was not allowed to use the microphone (site settings)."
+      : `${e.name}: ${e.message}`);
+    return;
+  }
+  const track = stream.getAudioTracks()[0];
+  track.addEventListener("ended", () => { setVerdict("silent", "Ended", "The input went away (unplugged or closed)."); stop(false); });
+  const s = track.getSettings();
+  const n = Math.max(1, Math.min(2, s.channelCount || 1));
+
+  ctx = new AudioContext({ latencyHint: "interactive" });
+  source = ctx.createMediaStreamSource(stream);
+  const split = ctx.createChannelSplitter(n);
+  source.connect(split);
+  analysers = [];
+  for (let i = 0; i < n; i++) {
+    const a = ctx.createAnalyser();
+    a.fftSize = 2048;
+    split.connect(a, i);
+    analysers.push(a);
+  }
+  buf = new Float32Array(2048);
+  monitorGain = ctx.createGain();
+  monitorGain.gain.value = 0;
+  source.connect(monitorGain).connect(ctx.destination);
+
+  luReset();
+  try {
+    if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([KWEIGHT], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(workletUrl);
+    kw = new AudioWorkletNode(ctx, "patch-kweight", { channelCount: n, channelCountMode: "explicit", channelInterpretation: "discrete" });
+    kw.port.onmessage = (e) => onBlock(e.data);
+    source.connect(kw);
+    kw.connect(ctx.destination); // silent: keeps the node running
+  } catch (e) {
+    kw = null;
+    $("lnote").textContent = "This browser did not allow the loudness meter (AudioWorklet): " + e.message;
+  }
+  buildMeters(n);
+  history = []; histMax = -Infinity; lastSignalAt = 0; maxPeak = -Infinity; clips = 0; startedAt = performance.now();
+  // Labels are visible now: remember the choice by name.
+  store.set("deviceLabel", track.label);
+  await listDevices();
+
+  $("live").classList.add("on"); $("live").textContent = "LIVE";
+  $("start").textContent = "Stop"; $("start").classList.add("on");
+  $("rec").disabled = false; $("listen").disabled = false;
+  $("track").textContent = track.label || "input";
+  setVerdict("idle", "…", "Listening.");
+  details();
+  raf = requestAnimationFrame(frame);
+}
+
+async function stop(reset = true) {
+  cancelAnimationFrame(raf);
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (ctx) await ctx.close().catch(() => {});
+  stream = ctx = source = monitorGain = kw = null; analysers = [];
+  $("live").classList.remove("on"); $("live").textContent = "IDLE";
+  $("start").textContent = "Start"; $("start").classList.remove("on");
+  $("rec").disabled = true; $("listen").disabled = true; $("listen").classList.remove("on");
+  if (reset) { setVerdict("idle", "—", "Stopped."); $("track").textContent = "no input open"; }
+}
+
+// ---- drawing ----------------------------------------------------------------
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const toDb = (x) => x > 0 ? 20 * Math.log10(x) : -Infinity;
+const frac = (db) => Math.max(0, Math.min(1, (db - FLOOR) / -FLOOR));
+const fmt = (db) => !isFinite(db) || db <= -100 ? "−∞" : (db > 0.05 ? "+" : "") + db.toFixed(1).replace("-", "−");
+
+function fit(canvas) {
+  const r = canvas.getBoundingClientRect(), d = devicePixelRatio || 1;
+  const w = Math.round(r.width * d), h = Math.round(r.height * d);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const g = canvas.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  return { g, w, h, d };
+}
+
+function buildMeters(n) {
+  const box = $("meters");
+  box.innerHTML = "";
+  chans = [];
+  const names = n === 1 ? ["M"] : ["L", "R"];
+  for (let i = 0; i < n; i++) {
+    const row = document.createElement("div");
+    row.className = "meter";
+    row.innerHTML = `<span class="ch">${names[i]}</span><canvas></canvas><span class="val">−∞ <small>pk</small> · −∞ <small>rms</small></span>`;
+    const c = { canvas: row.querySelector("canvas"), el: row.querySelector(".val"), peakHold: -Infinity, holdAt: 0, clip: false };
+    c.canvas.addEventListener("click", () => { c.clip = false; });
+    box.appendChild(row);
+    chans.push(c);
+  }
+  drawScale();
+}
+
+function drawScale() {
+  const { g, w, h, d } = fit($("scale"));
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = css("--dim");
+  g.font = `${11 * d}px ${css("--mono")}`;
+  g.textBaseline = "top";
+  const marks = w / d < 420 ? [-60, -48, -36, -24, -12, 0] : [-60, -48, -36, -24, -18, -12, -6, -3, 0];
+  for (const db of marks) {
+    const x = frac(db) * w;
+    const t = String(db).replace("-", "−");
+    g.textAlign = db === -60 ? "left" : db === 0 ? "right" : "center";
+    g.fillRect(Math.round(x) - (db === 0 ? d : 0), 0, d, 4 * d);
+    g.fillText(t, x, 5 * d);
+  }
+}
+
+function drawMeter(c, peakDb, rmsDb) {
+  const { g, w, h, d } = fit(c.canvas);
+  g.fillStyle = css("--meter-bg");
+  g.fillRect(0, 0, w, h);
+  // ticks
+  g.fillStyle = css("--line");
+  for (const db of [-48, -36, -24, -18, -12, -6, -3]) g.fillRect(Math.round(frac(db) * w), 0, d, h);
+  // rms (lower half), peak (upper half): as wide as the level reaches
+  g.fillStyle = css("--rms");
+  g.fillRect(0, h * 0.55, frac(rmsDb) * w, h * 0.45);
+  g.fillStyle = css("--text");
+  g.fillRect(0, 0, frac(peakDb) * w, h * 0.5);
+  // the part above −6 dBFS in the accent
+  const six = frac(-6) * w, p = frac(peakDb) * w;
+  if (p > six) { g.fillStyle = css("--accent"); g.fillRect(six, 0, p - six, h * 0.5); }
+  // peak hold
+  if (isFinite(c.peakHold) && c.peakHold > FLOOR) {
+    g.fillStyle = c.peakHold > -6 ? css("--accent") : css("--text");
+    g.fillRect(Math.min(w - 2 * d, frac(c.peakHold) * w), 0, 2 * d, h);
+  }
+  // clip latch
+  if (c.clip) { g.fillStyle = css("--accent"); g.fillRect(w - 6 * d, 0, 6 * d, h); }
+}
+
+function drawHistory() {
+  const { g, w, h, d } = fit($("history"));
+  g.clearRect(0, 0, w, h);
+  const bw = 6 * d, gap = 1 * d, n = Math.floor(w / (bw + gap));
+  const items = history.slice(-n);
+  g.fillStyle = css("--meter-bg");
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < items.length; i++) {
+    const db = items[i];
+    const x = w - (items.length - i) * (bw + gap);
+    if (!isFinite(db) || db <= FLOOR) { g.fillStyle = css("--faint"); g.fillRect(x, h - d, bw, d); continue; }
+    const bh = Math.max(d, frac(db) * h);
+    g.fillStyle = css("--accent");
+    g.fillRect(x, h - bh, bw, bh);
+  }
+}
+
+function frame(now) {
+  raf = requestAnimationFrame(frame);
+  let loudest = -Infinity;
+  analysers.forEach((a, i) => {
+    a.getFloatTimeDomainData(buf);
+    let pk = 0, sq = 0;
+    for (let k = 0; k < buf.length; k++) { const v = buf[k], av = v < 0 ? -v : v; if (av > pk) pk = av; sq += v * v; }
+    const peakDb = toDb(pk), rmsDb = toDb(Math.sqrt(sq / buf.length));
+    const c = chans[i];
+    if (pk >= 0.999) { if (!c.clip) clips++; c.clip = true; }
+    if (peakDb >= c.peakHold) { c.peakHold = peakDb; c.holdAt = now; }
+    else if (now - c.holdAt > HOLD_MS) c.peakHold -= FALL_DB_S * (1 / 60);
+    drawMeter(c, peakDb, rmsDb);
+    c.el.innerHTML = `${fmt(peakDb)} <small>pk</small> · ${fmt(rmsDb)} <small>rms</small>`;
+    loudest = Math.max(loudest, peakDb);
+  });
+  maxPeak = Math.max(maxPeak, loudest);
+  histMax = Math.max(histMax, loudest);
+  if (now - lastHistAt >= 100) {
+    history.push(histMax); histMax = -Infinity; lastHistAt = now;
+    if (history.length > 600) history.splice(0, history.length - 600);
+    drawHistory();
+    verdict(now, loudest);
+    details();
+  }
+}
+
+function setVerdict(kind, big, why) {
+  const v = $("verdict");
+  v.className = "big " + kind; v.textContent = big; $("why").textContent = why;
+}
+
+function verdict(now, loudest) {
+  if (loudest > SILENT_DB) lastSignalAt = now;
+  const quietFor = (now - Math.max(lastSignalAt, startedAt)) / 1000;
+  if (lastSignalAt && now - lastSignalAt < 2500) {
+    const lvl = isFinite(maxPeak) ? fmt(maxPeak) : "−∞";
+    setVerdict("sig", "Signal", `Audio arrives. Loudest so far ${lvl} dBFS${clips ? ` · ${clips} clip${clips > 1 ? "s" : ""}` : ""}.`);
+  } else if (quietFor < 1.5) {
+    setVerdict("idle", "…", "Listening.");
+  } else if (!isFinite(loudest)) {
+    setVerdict("silent", "Silent", "Digital silence: nothing reaches this input. Is the source fed (an AUX send turned up, audio playing)?");
+  } else {
+    setVerdict("silent", "Silent", `Only ${fmt(loudest)} dBFS of noise for ${quietFor.toFixed(0)} s.`);
+  }
+}
+
+function details() {
+  const t = stream && stream.getAudioTracks()[0];
+  const s = t ? t.getSettings() : {};
+  const onoff = (v) => v === undefined ? "—" : v ? "on" : "off";
+  const rows1 = [
+    ["Device", t ? t.label : "—"],
+    ["Channels", s.channelCount ?? "—"],
+    ["Sample rate", s.sampleRate ? `${s.sampleRate} Hz` : (ctx ? `${ctx.sampleRate} Hz` : "—")],
+    ["Sample size", s.sampleSize ? `${s.sampleSize} bit` : "—"],
+    ["Latency", s.latency !== undefined ? `${(s.latency * 1000).toFixed(1)} ms` : (ctx ? `${((ctx.baseLatency || 0) * 1000).toFixed(1)} ms (context)` : "—")],
+  ];
+  const rows2 = [
+    ["Echo cancellation", onoff(s.echoCancellation), s.echoCancellation],
+    ["Noise suppression", onoff(s.noiseSuppression), s.noiseSuppression],
+    ["Auto gain", onoff(s.autoGainControl), s.autoGainControl],
+    ["Loudest peak", isFinite(maxPeak) ? `${fmt(maxPeak)} dBFS` : "—"],
+    ["Clips", t ? String(clips) : "—", clips > 0],
+  ];
+  const html = (rows) => rows.map(([k, v, bad]) => `<div><dt>${k}</dt><dd${bad ? ' class="bad"' : ""}>${String(v).replace(/</g, "&lt;")}</dd></div>`).join("");
+  $("details1").innerHTML = html(rows1);
+  $("details2").innerHTML = html(rows2);
+}
+
+// ---- loudness (ITU-R BS.1770-4, EBU R128 / Tech 3341, 3342) -----------------
+// The audio thread K-weights each channel and sends the mean square of every
+// 100 ms block; momentary is 4 blocks, short-term 30, integrated is gated.
+const KWEIGHT = `
+class KWeight extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    const fs = sampleRate; // filter coefficients for any rate (as libebur128)
+    let K = Math.tan(Math.PI * 1681.974450955533 / fs), Q = 0.7071752369554196;
+    const Vh = Math.pow(10, 3.999843853973347 / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+    let a0 = 1 + K / Q + K * K;
+    this.f1 = [(Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0];
+    K = Math.tan(Math.PI * 38.13547087602444 / fs); Q = 0.5003270373238773;
+    a0 = 1 + K / Q + K * K;
+    this.f2 = [1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0];
+    this.z = [new Float64Array(4), new Float64Array(4)];
+    this.acc = [0, 0]; this.n = 0; this.len = Math.round(fs / 10);
+  }
+  process(inputs) {
+    const inp = inputs[0];
+    if (!inp || !inp.length) return true;
+    const ch = Math.min(2, inp.length), frames = inp[0].length;
+    const [b0, b1, b2, a1, a2] = this.f1, [c0, c1, c2, d1, d2] = this.f2;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < ch; c++) {
+        const z = this.z[c], x = inp[c][i];
+        const y = b0 * x + z[0]; z[0] = b1 * x - a1 * y + z[1]; z[1] = b2 * x - a2 * y;
+        const w = c0 * y + z[2]; z[2] = c1 * y - d1 * w + z[3]; z[3] = c2 * y - d2 * w;
+        this.acc[c] += w * w;
+      }
+      if (++this.n === this.len) {
+        this.port.postMessage(ch === 1 ? [this.acc[0] / this.n] : [this.acc[0] / this.n, this.acc[1] / this.n]);
+        this.acc[0] = this.acc[1] = 0; this.n = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("patch-kweight", KWeight);
+`;
+let workletUrl = null, kw = null, lu = null;
+const ABS_GATE = Math.pow(10, (-70 + 0.691) / 10); // −70 LUFS as power
+const toLufs = (p) => p > 0 ? -0.691 + 10 * Math.log10(p) : -Infinity;
+const LFLOOR = -50;
+const lfrac = (v) => Math.max(0, Math.min(1, (v - LFLOOR) / -LFLOOR));
+
+function luReset() {
+  lu = { sub: [], gate: [], short: [], m: NaN, s: NaN, i: NaN, lra: NaN, maxM: -Infinity, maxS: -Infinity };
+  renderLoudness();
+}
+
+function onBlock(ms) {
+  // A mono input counts as dual mono (heard on both speakers), so it reads
+  // the same as the same microphone opened in stereo.
+  const p = ms.length === 1 ? 2 * ms[0] : ms[0] + ms[1];
+  const L = lu;
+  L.sub.push(p);
+  if (L.sub.length > 30) L.sub.shift();
+  const avg = (k) => { let t = 0; for (let j = L.sub.length - k; j < L.sub.length; j++) t += L.sub[j]; return t / k; };
+  if (L.sub.length >= 4) {
+    const m = avg(4);
+    L.m = toLufs(m); L.maxM = Math.max(L.maxM, L.m);
+    L.gate.push(m);
+    L.i = integrated(L.gate);
+  }
+  if (L.sub.length >= 30) {
+    const sh = avg(30);
+    L.s = toLufs(sh); L.maxS = Math.max(L.maxS, L.s);
+    L.short.push(sh);
+    if (L.short.length % 10 === 0) L.lra = loudnessRange(L.short);
+  }
+  renderLoudness();
+}
+
+function integrated(blocks) {
+  let sum = 0, n = 0;
+  for (const v of blocks) if (v > ABS_GATE) { sum += v; n++; }
+  if (!n) return -Infinity;
+  const rel = (sum / n) * 0.1; // −10 LU
+  sum = 0; n = 0;
+  for (const v of blocks) if (v > ABS_GATE && v > rel) { sum += v; n++; }
+  return n ? toLufs(sum / n) : -Infinity;
+}
+
+function loudnessRange(shorts) {
+  const a = shorts.filter((v) => v > ABS_GATE);
+  if (a.length < 2) return NaN;
+  const rel = (a.reduce((x, y) => x + y, 0) / a.length) * 0.01; // −20 LU
+  const b = a.filter((v) => v > rel).map(toLufs).sort((x, y) => x - y);
+  if (b.length < 2) return NaN;
+  const q = (f) => b[Math.round(f * (b.length - 1))];
+  return q(0.95) - q(0.10);
+}
+
+function renderLoudness() {
+  const L = lu;
+  const lv = (v) => Number.isNaN(v) ? "—" : v < -70 ? "< −70" : v.toFixed(1).replace("-", "−");
+  const unit = (v) => Number.isNaN(v) || v < -70 ? "" : "<small>LUFS</small>";
+  $("lm").innerHTML = lv(L.m) + unit(L.m);
+  $("ls").innerHTML = lv(L.s) + unit(L.s);
+  $("li").innerHTML = lv(L.i) + unit(L.i);
+  $("lr").innerHTML = Number.isNaN(L.lra) ? "—" : L.lra.toFixed(1) + "<small>LU</small>";
+  $("lmx").textContent = isFinite(L.maxM) && L.maxM > -70 ? `400 ms · max ${lv(L.maxM)}` : "400 ms";
+  $("lsx").textContent = isFinite(L.maxS) && L.maxS > -70 ? `3 s · max ${lv(L.maxS)}` : "3 s";
+  const secs = Math.floor(L.gate.length / 10);
+  $("lix").textContent = secs ? `the whole take · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "the whole take";
+  drawLoudness();
+}
+
+function drawLoudness() {
+  const { g, w, h, d } = fit($("lbar"));
+  const bh = 20 * d;
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = css("--meter-bg");
+  g.fillRect(0, 0, w, bh);
+  const marks = [-50, -40, -30, -23, -16, -10, 0];
+  g.fillStyle = css("--line");
+  for (const v of marks) g.fillRect(Math.round(lfrac(v) * w), 0, d, bh);
+  if (lu && isFinite(lu.m)) { g.fillStyle = css("--text"); g.fillRect(0, 0, lfrac(lu.m) * w, bh * 0.5); }
+  if (lu && isFinite(lu.s)) { g.fillStyle = css("--rms"); g.fillRect(0, bh * 0.55, lfrac(lu.s) * w, bh * 0.45); }
+  if (lu && isFinite(lu.i) && lu.i > LFLOOR) {
+    g.fillStyle = css("--accent");
+    g.fillRect(Math.min(w - 2 * d, lfrac(lu.i) * w), 0, 2 * d, bh);
+  }
+  g.font = `${11 * d}px ${css("--mono")}`;
+  g.textBaseline = "top";
+  for (const v of marks) {
+    const x = lfrac(v) * w, ref = v === -23 || v === -16;
+    g.fillStyle = ref ? css("--text") : css("--dim");
+    g.fillRect(Math.round(x) - (v === 0 ? d : 0), bh, d, 4 * d);
+    g.textAlign = v === LFLOOR ? "left" : v === 0 ? "right" : "center";
+    g.fillText(String(v).replace("-", "−"), x, bh + 5 * d);
+  }
+}
+
+// ---- record and listen --------------------------------------------------------
+function toggleRecord() {
+  if (!stream) return;
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  const type = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
+  recorder = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 256000 } : undefined);
+  recChunks = [];
+  recorder.ondataavailable = (e) => e.data.size && recChunks.push(e.data);
+  recorder.onstop = () => {
+    clearInterval(recTimer);
+    $("rec").textContent = "Record"; $("rec").classList.remove("on");
+    const blob = new Blob(recChunks, { type: recorder.mimeType });
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+    const a = $("playback"); a.src = lastUrl; a.hidden = false;
+    const dl = $("download"); dl.href = lastUrl; dl.hidden = false;
+    const t = new Date(), p2 = (n) => String(n).padStart(2, "0");
+    const stamp = `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())}-${p2(t.getHours())}${p2(t.getMinutes())}${p2(t.getSeconds())}`;
+    dl.download = `patch-input-test-${stamp}.${(recorder.mimeType || "").includes("ogg") ? "ogg" : "webm"}`;
+    $("rectime").textContent = `recorded ${((performance.now() - recStart) / 1000).toFixed(1)} s`;
+  };
+  recorder.start(250);
+  recStart = performance.now();
+  $("rec").textContent = "Stop recording"; $("rec").classList.add("on");
+  recTimer = setInterval(() => { $("rectime").textContent = `recording ${((performance.now() - recStart) / 1000).toFixed(0)} s`; }, 250);
+}
+
+function toggleListen() {
+  if (!monitorGain) return;
+  const on = monitorGain.gain.value === 0;
+  monitorGain.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.02);
+  $("listen").classList.toggle("on", on);
+}
+
+// ---- controls -------------------------------------------------------------------
+document.querySelectorAll(".toggle").forEach((el) => {
+  const k = el.dataset.k;
+  el.classList.toggle("on", !!opts[k]);
+  const flip = () => {
+    opts[k] = !opts[k]; store.set(k, opts[k]);
+    el.classList.toggle("on", opts[k]);
+    if (stream) start();
+  };
+  el.addEventListener("click", flip);
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); flip(); } });
+});
+$("start").addEventListener("click", () => stream ? stop() : start());
+$("refresh").addEventListener("click", unlock);
+$("lreset").addEventListener("click", () => luReset());
+$("device").addEventListener("change", () => {
+  const o = $("device").selectedOptions[0];
+  store.set("deviceLabel", o && o.value ? o.text : "");
+  if (stream) start();
+});
+$("rec").addEventListener("click", toggleRecord);
+$("listen").addEventListener("click", toggleListen);
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("select, button, .toggle, audio")) return;
+  if (e.key === " ") { e.preventDefault(); stream ? stop() : start(); }
+  else if (e.key === "r") toggleRecord();
+  else if (e.key === "l") toggleListen();
+});
+navigator.mediaDevices.addEventListener("devicechange", listDevices);
+addEventListener("resize", () => { drawScale(); drawHistory(); drawLoudness(); });
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { drawScale(); drawHistory(); drawLoudness(); });
+
+unlock();
+luReset();
+drawHistory();
+details();
+</script>
+</body>
+</html>

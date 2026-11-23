@@ -1,0 +1,1152 @@
+import { Theme, Label, SectionHeading, Button, Meter, Tag, Scroll } from "@patch-ui/patch-ui.slint";
+import { Host } from "@patch-ui/patch-ui.slint";
+
+// One plugin in the rack, in chain order.
+export struct RackSlot {
+    id: int,
+    name: string,
+    vendor: string,
+    // In the master path.
+    active: bool,
+    // "off", "loading", "on", "failed".
+    state: string,
+    detail: string,
+    // Output level, meter position 0…1.
+    level: float,
+    load: string,
+    // Opens as the plugin's own editor.
+    original: bool,
+    // Its own editor is open now.
+    original-open: bool,
+    // The editor's zoom: 0 (1×), 1 (1.5×), 2 (2×).
+    zoom: int,
+    // Where in the mix it runs ("Master", "Mic 1", "FX 1"), and its key.
+    place: string,
+    place-key: string,
+    first: bool,
+    last: bool,
+}
+
+// An installed VST3 bundle.
+export struct InstalledPlugin {
+    name: string,
+    vendor: string,
+    detail: string,
+    path: string,
+    in-rack: bool,
+    native: bool,
+    // In ~/.vst3: the user's own, which Uninstall… may move to the Trash.
+    removable: bool,
+}
+
+// One stage of the master's signal path, in order: "in", "stage",
+// "plugin" (on), "off" (in the rack, passed by), "failed", "this" (the
+// window's own plugin), "out".
+export struct RouteStep {
+    id: int,
+    name: string,
+    sub: string,
+    kind: string,
+    // Sound is passing (in: a source is playing).
+    live: bool,
+}
+
+// One line of the signal path: a place in the mix with plugins.
+export struct RouteLine {
+    title: string,
+    steps: [RouteStep],
+}
+
+// A place a plugin can run: "master", "aux-1"…, or "node:<strip>" (a
+// Mixer channel); `head` rows title a group.
+export struct PlaceOption {
+    key: string,
+    name: string,
+    detail: string,
+    head: bool,
+}
+
+// One control on a plugin's Patch face.
+export struct PluginControl {
+    id: int,
+    name: string,
+    value: float,
+    text: string,
+    // "knob", "switch", "choice", "readout".
+    kind: string,
+    // Where the knob's arc starts (its default when that sits inside).
+    origin: float,
+    default: float,
+    steps: int,
+}
+
+// A plugin's controls that belong together (one strip, one section).
+export struct PluginGroup {
+    name: string,
+    controls: [PluginControl],
+}
+
+export global PluginState {
+    // The rack (the Plugins window).
+    in property <[RackSlot]> slots;
+    in property <[InstalledPlugin]> installed;
+    in property <string> message;
+    in property <bool> engine;
+    in property <bool> busy;
+    callback add(string);
+    callback remove(int);
+    // Every control of a slot back to the plugin's default.
+    callback defaults(int);
+    callback power(int, bool);
+    callback shift(int, int);
+    callback open(int, bool);
+    callback rescan();
+    // Install…: a downloaded plugin into ~/.vst3, and what came of it.
+    callback install();
+    callback uninstall(string);
+    in property <bool> installing;
+    in property <string> install-note;
+    in property <bool> install-failed;
+    // The plugin's own editor of a slot, open or closed (rack and face).
+    callback show-original(int, bool);
+    // A slot's editor zoom (0, 1, 2).
+    callback set-zoom(int, int);
+    // The signal path, a line per place with plugins (the master first).
+    in property <[RouteLine]> route;
+    // Where a plugin can run, and the callback that moves it there.
+    in property <[PlaceOption]> places;
+    callback set-place(int, string);
+
+    // A plugin's own window.
+    in property <int> slot;
+    in property <string> name;
+    in property <string> vendor;
+    in property <string> about;
+    in property <string> category;
+    in property <bool> active;
+    in property <bool> has-editor;
+    in property <bool> original-open;
+    in property <bool> prefers-original;
+    in property <int> zoom;
+    // The path, with this plugin in it.
+    in property <[RouteStep]> face-route;
+    in property <string> face-state;
+    in property <[PluginGroup]> groups;
+    in property <int> control-count;
+    in property <float> in-level;
+    in property <float> out-level;
+    in property <string> in-text;
+    in property <string> out-text;
+    in property <string> load;
+    callback set(int, float);
+    callback reset(int);
+    callback face-power(bool);
+    callback original(bool);
+}
+
+// The plugin's own editor's size: 1×, 1.5×, 2× (on top of the screen's
+// scale).
+component ZoomPicker inherits Rectangle {
+    in property <int> zoom;
+    in property <bool> enabled: true;
+    callback pick(int);
+    width: zl.preferred-width;
+    height: 26px;
+    border-radius: 13px;
+    background: Theme.bg-deep;
+    border-width: 1px;
+    border-color: Theme.border;
+    opacity: enabled ? 1 : 0.4;
+    zl := HorizontalLayout {
+        padding: 2px;
+        spacing: 1px;
+        for z[i] in ["1×", "1.5×", "2×"]: Rectangle {
+            property <bool> chosen: i == root.zoom;
+            width: zt.preferred-width + 14px;
+            border-radius: 11px;
+            background: chosen ? Theme.raised : za.has-hover ? Theme.hover : transparent;
+            border-width: chosen ? 1px : 0px;
+            border-color: Theme.border-strong;
+            zt := Text {
+                text: z;
+                color: parent.chosen ? Theme.text-bright : Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            za := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => { root.pick(i); }
+            }
+        }
+    }
+}
+
+// One stop on the path: its name and, below, what it is.
+component RouteStop inherits Rectangle {
+    in property <RouteStep> step;
+    in property <bool> compact;
+    callback clicked();
+    property <bool> plugin: step.kind == "plugin" || step.kind == "this" || step.kind == "off" || step.kind == "failed";
+    property <bool> end: step.kind == "in" || step.kind == "out";
+    width: max(nt.preferred-width, root.compact ? 0px : st.preferred-width) + (root.compact ? 16px : 22px) + (root.end ? 12px : 0px);
+    height: root.compact ? 24px : 46px;
+    border-radius: root.compact ? 12px : 10px;
+    background: step.kind == "this" ? Theme.accent-soft
+        : step.kind == "plugin" ? (ta.has-hover ? Theme.hover : Theme.accent-soft.with-alpha(0.5))
+        : root.end ? Theme.raised
+        : ta.has-hover && root.plugin ? Theme.hover : Theme.bg-deep;
+    border-width: step.kind == "this" ? 2px : 1px;
+    border-color: step.kind == "failed" ? Theme.error
+        : step.kind == "this" || step.kind == "plugin" ? Theme.accent
+        : root.end ? Theme.border-strong : Theme.border;
+    opacity: step.kind == "off" ? 0.55 : 1;
+    // The source's or output's dot: lit while sound passes.
+    if root.end: Rectangle {
+        x: 9px;
+        y: root.compact ? (parent.height - self.height) / 2 : 11px;
+        width: 7px;
+        height: 7px;
+        border-radius: 3.5px;
+        background: root.step.live ? Theme.accent : Theme.text-faint;
+    }
+    nt := Text {
+        x: (root.end ? 21px : 11px) + (root.compact ? -3px : 0px);
+        y: root.compact ? (parent.height - self.height) / 2 : 6px;
+        text: root.step.name;
+        color: root.step.kind == "this" || root.step.kind == "plugin" || root.end ? Theme.text-bright : Theme.text;
+        font-family: Theme.font;
+        font-size: root.compact ? Theme.fs-tiny : Theme.fs-small;
+        font-weight: root.plugin || root.end ? 600 : 400;
+    }
+    st := Text {
+        visible: !root.compact;
+        x: root.end ? 21px : 11px;
+        y: 25px;
+        width: parent.width - self.x - 8px;
+        text: root.step.sub;
+        color: root.step.kind == "failed" ? Theme.error : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        enabled: root.plugin;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// The master's signal path, left to right: where the sound comes from,
+// what it passes, where it goes.
+component RouteView inherits Flickable {
+    in property <[RouteStep]> steps;
+    in property <bool> compact;
+    callback open(int);
+    // Wider than the window: it scrolls sideways.
+    content-width: max(self.width, path.preferred-width);
+    content-height: self.height;
+    interactive: path.preferred-width > self.width;
+    path := HorizontalLayout {
+        height: root.height;
+        alignment: start;
+        spacing: root.compact ? 4px : 6px;
+        for s[i] in root.steps: HorizontalLayout {
+            spacing: root.compact ? 4px : 6px;
+            if i > 0: Text {
+                text: "→";
+                color: s.live || s.kind == "plugin" || s.kind == "this" ? Theme.accent : Theme.text-faint;
+                font-family: Theme.font;
+                font-size: root.compact ? Theme.fs-tiny : Theme.fs;
+                vertical-alignment: center;
+            }
+            RouteStop {
+                y: (parent.height - self.height) / 2;
+                step: s;
+                compact: root.compact;
+                clicked => { root.open(s.id); }
+            }
+        }
+    }
+}
+
+// ── The Patch face ────────────────────────────────────────────────
+
+// A rotary control drawn as an arc: the track, then the value from the
+// control's origin. Drag up or down (Shift: fine), wheel, double-click
+// resets.
+component ArcKnob inherits Rectangle {
+    in property <PluginControl> control;
+    in property <bool> live;
+    callback moved(float);
+    callback reset();
+    property <float> v: clamp(control.value, 0, 1);
+    property <float> a-origin: -135 + 270 * clamp(control.origin, 0, 1);
+    property <float> a-value: -135 + 270 * v;
+    property <float> lo: min(a-origin, a-value);
+    property <float> hi: max(a-origin, a-value);
+    pure function x-of(a: float) -> float { return 50 + 40 * Math.sin(a * 1deg); }
+    pure function y-of(a: float) -> float { return 50 - 40 * Math.cos(a * 1deg); }
+    pure function arc(a0: float, a1: float) -> string {
+        return "M " + x-of(a0) + " " + y-of(a0)
+            + " A 40 40 0 " + (a1 - a0 > 180 ? "1" : "0") + " 1 " + x-of(a1) + " " + y-of(a1);
+    }
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.arc(-135, 135);
+        stroke: Theme.border-strong;
+        stroke-width: 5px;
+        stroke-line-cap: round;
+    }
+    if root.hi - root.lo > 0.5: Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.arc(root.lo, root.hi);
+        stroke: root.live ? Theme.accent : Theme.text-dim;
+        stroke-width: 5px;
+        stroke-line-cap: round;
+    }
+    // The hand: a dot on the rim.
+    Rectangle {
+        width: 7px;
+        height: 7px;
+        border-radius: 3.5px;
+        x: parent.width * root.x-of(root.a-value) / 100 - self.width / 2;
+        y: parent.height * root.y-of(root.a-value) / 100 - self.height / 2;
+        background: root.live ? Theme.accent : Theme.text;
+        border-width: 2px;
+        border-color: Theme.raised;
+    }
+    Text {
+        text: root.control.text;
+        color: ta.pressed || ta.has-hover ? Theme.text-bright : Theme.text;
+        font-family: Theme.font;
+        font-size: root.control.text.character-count > 5 ? Theme.fs-tiny : Theme.fs-small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width * 0.78;
+        x: parent.width * 0.11;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        mouse-cursor: ns-resize;
+        property <float> start;
+        property <length> y0;
+        property <bool> fine;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                self.start = root.v;
+                self.y0 = self.mouse-y;
+                self.fine = e.modifiers.shift;
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                let travel = self.fine ? 1200px : 220px;
+                root.moved(clamp(self.start - (self.mouse-y - self.y0) / travel, 0, 1));
+            }
+        }
+        double-clicked => { root.reset(); }
+        // As Patch's other knobs: a step a notch; sideways and Ctrl pass on.
+        scroll-event(e) => {
+            if (e.modifiers.control || e.delta-y == 0) { return reject; }
+            let step = root.control.steps > 0 ? 1 / root.control.steps : 0.01;
+            root.moved(clamp(root.v + (e.delta-y > 0 ? step : -step), 0, 1));
+            return accept;
+        }
+    }
+}
+
+component ControlCard inherits Rectangle {
+    in property <PluginControl> control;
+    in property <bool> live;
+    callback set(float);
+    callback reset();
+    property <bool> on: control.value >= 0.5;
+    property <float> step: 1 / max(1, control.steps);
+    border-radius: 10px;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: hover.has-hover ? Theme.border-strong : Theme.border;
+    hover := TouchArea { }
+    if root.control.kind == "knob": ArcKnob {
+        x: (parent.width - self.width) / 2;
+        y: 14px;
+        width: min(parent.width - 28px, parent.height - 52px);
+        height: self.width;
+        control: root.control;
+        live: root.live;
+        moved(v) => { root.set(v); }
+        reset => { root.reset(); }
+    }
+    if root.control.kind == "switch": Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - 34px - self.height) / 2 + 4px;
+        width: min(parent.width - 36px, 92px);
+        height: 34px;
+        border-radius: 17px;
+        background: root.on ? (root.live ? Theme.accent-soft : Theme.selection) : Theme.bg;
+        border-width: 1px;
+        border-color: root.on ? (root.live ? Theme.accent : Theme.text-dim) : Theme.border-strong;
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            y: 5px;
+            x: root.on ? parent.width - self.width - 5px : 5px;
+            background: root.on ? (root.live ? Theme.accent : Theme.text) : Theme.text-faint;
+            animate x { duration: 110ms; easing: ease-out; }
+        }
+        Text {
+            x: root.on ? 12px : 34px;
+            width: parent.width - 46px;
+            height: parent.height;
+            text: root.control.text;
+            color: root.on ? Theme.text-bright : Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-small;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.set(root.on ? 0 : 1); }
+        }
+    }
+    if root.control.kind == "choice": HorizontalLayout {
+        x: 6px;
+        width: parent.width - 12px;
+        y: (parent.height - 34px - self.height) / 2 + 4px;
+        height: 34px;
+        spacing: 2px;
+        Rectangle {
+            width: 18px;
+            border-radius: 6px;
+            background: back.has-hover ? Theme.hover : transparent;
+            Text { text: "‹"; color: Theme.text-dim; font-size: Theme.fs-large; horizontal-alignment: center; vertical-alignment: center; }
+            back := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    let next = root.control.value - root.step;
+                    root.set(next < -0.0001 ? 1 : clamp(next, 0, 1));
+                }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            border-radius: 6px;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            Text {
+                text: root.control.text;
+                color: Theme.text-bright;
+                font-family: Theme.font;
+                font-size: Theme.fs-small;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width - 6px;
+                overflow: elide;
+            }
+        }
+        Rectangle {
+            width: 18px;
+            border-radius: 6px;
+            background: fwd.has-hover ? Theme.hover : transparent;
+            Text { text: "›"; color: Theme.text-dim; font-size: Theme.fs-large; horizontal-alignment: center; vertical-alignment: center; }
+            fwd := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    let next = root.control.value + root.step;
+                    root.set(next > 1.0001 ? 0 : clamp(next, 0, 1));
+                }
+            }
+        }
+    }
+    if root.control.kind == "readout": Text {
+        y: (parent.height - 34px - self.height) / 2 + 4px;
+        width: parent.width;
+        text: root.control.text;
+        color: Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-large;
+        horizontal-alignment: center;
+    }
+    Text {
+        x: 10px;
+        y: parent.height - 30px;
+        width: parent.width - 20px;
+        height: 22px;
+        text: root.control.name;
+        color: Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// Patch's own face for any plugin: its controls as knobs, switches and
+// choices, its level in and out, and a switch to the plugin's own editor.
+export component PluginFace inherits Rectangle {
+    property <length> pad: 16px;
+    property <length> meters-w: 76px;
+    property <length> head-h: 92px;
+    property <length> cell-w: 118px;
+    property <length> cell-h: 138px;
+    property <length> gap: 10px;
+    property <length> grid-w: root.width - 2 * pad - meters-w - gap;
+    property <int> cols: max(1, floor((grid-w + gap) / (cell-w + gap)));
+    property <length> cell: (grid-w - (cols - 1) * gap) / cols;
+    background: Theme.bg;
+
+    // Name, maker, on/off and the view switch; below, the path.
+    Rectangle {
+        x: root.pad;
+        y: 12px;
+        width: root.width - 2 * root.pad;
+        height: 46px;
+        HorizontalLayout {
+            spacing: Theme.s4;
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Label { text: PluginState.about; tone: "dim"; }
+                Label { text: PluginState.category; tone: "faint"; small: true; }
+            }
+            // Patch | Original
+            Rectangle {
+                width: seg.preferred-width;
+                height: 30px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 15px;
+                background: Theme.bg-deep;
+                border-width: 1px;
+                border-color: Theme.border;
+                seg := HorizontalLayout {
+                    padding: 3px;
+                    spacing: 2px;
+                    for view[i] in ["Patch", "Original"]: Rectangle {
+                        property <bool> chosen: i == 0 ? !PluginState.original-open : PluginState.original-open;
+                        width: t.preferred-width + 26px;
+                        border-radius: 12px;
+                        background: chosen ? Theme.raised : vt.has-hover ? Theme.hover : transparent;
+                        border-width: chosen ? 1px : 0px;
+                        border-color: Theme.border-strong;
+                        opacity: i == 1 && !PluginState.has-editor ? 0.4 : 1;
+                        t := Text {
+                            text: view;
+                            color: parent.chosen ? Theme.text-bright : Theme.text-dim;
+                            font-family: Theme.font;
+                            font-size: Theme.fs-small;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        vt := TouchArea {
+                            enabled: i == 0 || PluginState.has-editor;
+                            mouse-cursor: pointer;
+                            clicked => { PluginState.original(i == 1); }
+                        }
+                    }
+                }
+            }
+            ZoomPicker {
+                y: (parent.height - self.height) / 2;
+                zoom: PluginState.zoom;
+                enabled: PluginState.has-editor;
+                pick(z) => { PluginState.set-zoom(PluginState.slot, z); }
+            }
+            Button {
+                text: PluginState.active ? "On" : "Off";
+                lit: PluginState.active;
+                y: (parent.height - self.height) / 2;
+                clicked => { PluginState.face-power(!PluginState.active); }
+            }
+        }
+    }
+    RouteView {
+        x: root.pad;
+        y: 60px;
+        width: root.width - 2 * root.pad;
+        height: 28px;
+        compact: true;
+        steps: PluginState.face-route;
+    }
+    Rectangle {
+        x: root.pad;
+        y: root.head-h + 6px;
+        width: root.width - 2 * root.pad;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    // The controls, section by section.
+    Scroll {
+        x: root.pad;
+        y: root.head-h + 14px;
+        width: root.grid-w;
+        height: root.height - self.y - root.pad;
+        drag-scroll: false;
+        spacing: 6px;
+        for g in PluginState.groups: Rectangle {
+            property <int> rows: ceil(g.controls.length / root.cols);
+            property <length> top: g.name == "" ? 0px : 30px;
+            height: self.top + self.rows * (root.cell-h + root.gap);
+            if g.name != "": HorizontalLayout {
+                y: 6px;
+                height: 18px;
+                width: parent.width - 4px;
+                spacing: 10px;
+                Text {
+                    text: g.name;
+                    color: Theme.text;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-tiny;
+                    letter-spacing: 1.5px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    Rectangle { y: parent.height / 2; height: 1px; background: Theme.border; }
+                }
+            }
+            for c[i] in g.controls: ControlCard {
+                x: mod(i, root.cols) * (root.cell + root.gap);
+                y: parent.top + floor(i / root.cols) * (root.cell-h + root.gap);
+                width: root.cell;
+                height: root.cell-h;
+                control: c;
+                live: PluginState.active;
+                set(v) => { PluginState.set(c.id, v); }
+                reset => { PluginState.reset(c.id); }
+            }
+        }
+    }
+    if PluginState.control-count == 0: Label {
+        x: root.pad;
+        y: root.head-h + 30px;
+        width: root.grid-w;
+        text: PluginState.face-state != "" ? PluginState.face-state : "This plugin shows no controls to a host. Use its own editor (Original).";
+        tone: "dim";
+        wrap: word-wrap;
+    }
+
+    // In and out.
+    Rectangle {
+        x: root.width - root.pad - root.meters-w;
+        y: root.head-h + 18px;
+        width: root.meters-w;
+        height: root.height - self.y - root.pad;
+        border-radius: 10px;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.border;
+        property <length> m-h: self.height - 64px;
+        for side[i] in ["IN", "OUT"]: Rectangle {
+            x: 6px + i * 34px;
+            y: 12px;
+            width: 30px;
+            height: parent.height - 24px;
+            Meter {
+                x: 11px;
+                width: 8px;
+                height: parent.height - 34px;
+                value: i == 0 ? PluginState.in-level : PluginState.out-level;
+                peak: i == 0 ? PluginState.in-level : PluginState.out-level;
+            }
+            Text {
+                y: parent.height - 30px;
+                width: parent.width;
+                text: side;
+                color: Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: center;
+            }
+            Text {
+                y: parent.height - 16px;
+                width: parent.width;
+                text: i == 0 ? PluginState.in-text : PluginState.out-text;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+// ── The rack ──────────────────────────────────────────────────────
+
+component SmallIcon inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> danger;
+    callback clicked();
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: ta.has-hover && enabled ? Theme.hover : transparent;
+    opacity: enabled ? 1 : 0.3;
+    Text {
+        text: root.text;
+        color: ta.has-hover && root.danger ? Theme.error : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Where a plugin runs: the master, a bus, one channel.
+component PlacePicker inherits Rectangle {
+    in property <RackSlot> slot;
+    width: pt.preferred-width + 36px;
+    height: 28px;
+    border-radius: 6px;
+    background: pa.has-hover ? Theme.hover : Theme.bg-deep;
+    border-width: 1px;
+    border-color: root.slot.place-key == "master" ? Theme.border-strong : Theme.accent;
+    pt := Text {
+        x: 10px;
+        text: root.slot.place;
+        color: Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+    Text {
+        x: parent.width - 20px;
+        text: "▾";
+        color: Theme.text-dim;
+        font-size: Theme.fs-small;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+    pa := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { picker.show(); }
+    }
+    picker := PopupWindow {
+        x: 0;
+        y: root.height + 2px;
+        width: 260px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            FocusScope {
+                init => { self.focus(); }
+                key-pressed(e) => {
+                    if (e.text == Key.Escape) { picker.close(); return accept; }
+                    return reject;
+                }
+                VerticalLayout {
+                    padding-top: Theme.s2;
+                    padding-bottom: Theme.s2;
+                    HorizontalLayout {
+                        padding-left: Theme.s4;
+                        height: Theme.row-h;
+                        Label { text: root.slot.name + " runs on"; tone: "faint"; small: true; caps: true; letter-spacing: 2px; vertical-alignment: center; }
+                    }
+                    for o in PluginState.places: prow := Rectangle {
+                        property <bool> current: o.key == root.slot.place-key;
+                        height: o.head ? Theme.row-h * 0.8 : Theme.row-h;
+                        background: o.head ? transparent : row-ta.has-hover ? Theme.hover : current ? Theme.selection : transparent;
+                        if !o.head: Rectangle { x: 0px; width: 2px; background: prow.current ? Theme.accent : transparent; }
+                        row-ta := TouchArea {
+                            enabled: !o.head;
+                            mouse-cursor: pointer;
+                            clicked => {
+                                if (!prow.current) { PluginState.set-place(root.slot.id, o.key); }
+                                picker.close();
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: Theme.s4;
+                            padding-right: Theme.s4;
+                            if o.head: Label { text: o.name; tone: "faint"; small: true; caps: true; letter-spacing: 1.5px; vertical-alignment: bottom; }
+                            if !o.head: Label { text: o.name; tone: prow.current ? "bright" : "normal"; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                            if !o.head: Label { text: o.detail; tone: "faint"; small: true; vertical-alignment: center; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A rack row's buttons: where it runs, the plugin's window, its own editor
+// and zoom, order and remove.
+component RackControls inherits HorizontalLayout {
+    in property <RackSlot> slot;
+    in property <bool> zoom-shown;
+    property <bool> asking;
+    spacing: 10px;
+    alignment: end;
+    PlacePicker {
+        y: (parent.height - self.height) / 2;
+        slot: root.slot;
+    }
+    Button {
+        text: "Open";
+        compact: true;
+        y: (parent.height - self.height) / 2;
+        clicked => { PluginState.open(root.slot.id, false); }
+    }
+    // The plugin's own editor, floating; again closes it.
+    Button {
+        text: "Original";
+        compact: true;
+        lit: root.slot.original-open;
+        y: (parent.height - self.height) / 2;
+        clicked => { PluginState.show-original(root.slot.id, !root.slot.original-open); }
+    }
+    if root.zoom-shown: ZoomPicker {
+        y: (parent.height - self.height) / 2;
+        zoom: root.slot.zoom;
+        pick(z) => { PluginState.set-zoom(root.slot.id, z); }
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 0px;
+        // Defaults: asked once, then a button that does it for three
+        // seconds (a stray click resets nothing).
+        if !root.asking: SmallIcon { y: (parent.height - self.height) / 2; text: "↺"; clicked => { root.asking = true; } }
+        if root.asking: Button {
+            text: "Defaults";
+            compact: true;
+            y: (parent.height - self.height) / 2;
+            clicked => {
+                root.asking = false;
+                PluginState.defaults(root.slot.id);
+            }
+        }
+        Timer {
+            interval: 3s;
+            running: root.asking;
+            triggered => { root.asking = false; }
+        }
+        SmallIcon { y: (parent.height - self.height) / 2; text: "↑"; enabled: !root.slot.first; clicked => { PluginState.shift(root.slot.id, -1); } }
+        SmallIcon { y: (parent.height - self.height) / 2; text: "↓"; enabled: !root.slot.last; clicked => { PluginState.shift(root.slot.id, 1); } }
+        SmallIcon { y: (parent.height - self.height) / 2; text: "×"; danger: true; clicked => { PluginState.remove(root.slot.id); } }
+    }
+}
+
+component RackRow inherits Rectangle {
+    in property <RackSlot> slot;
+    in property <int> index;
+    // Too narrow for one line: the buttons go below.
+    property <bool> narrow: root.width < 780px;
+    height: narrow ? 98px : 60px;
+    border-radius: 10px;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: slot.state == "failed" ? Theme.error.with-alpha(0.6) : slot.active ? Theme.accent.with-alpha(0.45) : Theme.border;
+    if root.narrow: RackControls {
+        x: 12px;
+        y: 58px;
+        width: root.width - 20px;
+        height: 32px;
+        slot: root.slot;
+        zoom-shown: root.width > 400px;
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 10px;
+        height: 60px;
+        y: 0;
+        // Power.
+        Rectangle {
+            width: 30px;
+            height: 30px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 15px;
+            background: root.slot.active ? Theme.accent-soft : pw.has-hover ? Theme.hover : Theme.bg;
+            border-width: 1px;
+            border-color: root.slot.active ? Theme.accent : Theme.border-strong;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: root.slot.state == "failed" ? Theme.error
+                    : root.slot.state == "loading" ? Theme.warn
+                    : root.slot.active ? Theme.accent : Theme.text-faint;
+            }
+            pw := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { PluginState.power(root.slot.id, !root.slot.active); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            min-width: 120px;
+            Text {
+                text: root.slot.name;
+                color: root.slot.active ? Theme.text-bright : Theme.text;
+                font-family: Theme.font;
+                font-size: Theme.fs;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Label {
+                text: root.slot.detail;
+                tone: root.slot.state == "failed" ? "error" : "dim";
+                small: true;
+            }
+        }
+        // Output level and cost.
+        if root.width > 520px: VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            width: 86px;
+            Rectangle {
+                height: 4px;
+                border-radius: 2px;
+                background: Theme.bg-deeper;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * clamp(root.slot.level, 0, 1);
+                    border-radius: 2px;
+                    background: root.slot.level > 0.92 ? Theme.warn : Theme.accent;
+                    animate width { duration: 80ms; }
+                }
+            }
+            Label { text: root.slot.load; tone: "faint"; small: true; horizontal-alignment: right; }
+        }
+        if !root.narrow: RackControls {
+            slot: root.slot;
+            zoom-shown: true;
+        }
+    }
+}
+
+component LibraryRow inherits Rectangle {
+    in property <InstalledPlugin> plugin;
+    // Uninstall… asked once: the row asks again before anything moves.
+    property <bool> asking;
+    height: 48px;
+    border-radius: 8px;
+    background: root.asking ? Theme.hover : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea {
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 6px;
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                horizontal-stretch: 1;
+                Label {
+                    text: root.asking ? "Uninstall " + root.plugin.name + "?" : root.plugin.name;
+                    tone: root.asking ? "error" : root.plugin.native ? "bright" : "faint";
+                }
+                Label {
+                    text: root.asking ? "It goes to the Trash; restore it from there." : root.plugin.detail;
+                    tone: "faint";
+                    small: true;
+                }
+            }
+            if root.asking: Button {
+                text: "Keep";
+                compact: true;
+                primary: true;
+                y: (parent.height - self.height) / 2;
+                clicked => { root.asking = false; }
+            }
+            if root.asking: Button {
+                text: "Uninstall";
+                compact: true;
+                y: (parent.height - self.height) / 2;
+                clicked => {
+                    root.asking = false;
+                    PluginState.uninstall(root.plugin.path);
+                }
+            }
+            if !root.asking && root.plugin.in-rack: Label { text: "in rack"; tone: "dim"; small: true; }
+            // Only while the pointer is on the row, and never for one in
+            // the rack (the live chain would lose it).
+            if !root.asking && ta.has-hover && root.plugin.removable && !root.plugin.in-rack: Button {
+                text: "Uninstall…";
+                compact: true;
+                y: (parent.height - self.height) / 2;
+                clicked => { root.asking = true; }
+            }
+            if !root.asking && !root.plugin.in-rack && root.plugin.native: Button {
+                text: "Add";
+                compact: true;
+                enabled: !PluginState.busy;
+                y: (parent.height - self.height) / 2;
+                clicked => { PluginState.add(root.plugin.path); }
+            }
+        }
+    }
+}
+
+// The Plugins Unit: the rack on the master (manage, switch on, open) and
+// the plugins installed on this machine.
+export component PluginsSurface inherits Rectangle {
+    property <bool> wide: root.width >= 860px;
+    property <length> pad: 16px;
+    property <length> side-w: wide ? min(360px, root.width * 0.38) : root.width - 2 * pad;
+    property <length> rack-w: wide ? root.width - 3 * pad - side-w : root.width - 2 * pad;
+    property <length> line-h: 54px;
+    // The path panel: its lines, at most four before the rack needs room.
+    property <length> chain-h: 36px + max(1, min(4, PluginState.route.length)) * line-h;
+    property <length> rack-h: wide ? root.height - chain-h - 2 * pad : max(150px, (root.height - chain-h) * 0.55);
+    background: Theme.bg;
+
+    // The signal path, as it runs now: a line per place in the mix with
+    // plugins (the master first): where the sound comes from, the stages it
+    // passes, where it goes.
+    Rectangle {
+        x: root.pad;
+        y: 10px;
+        width: root.width - 2 * root.pad;
+        height: root.chain-h - 14px;
+        border-radius: 10px;
+        background: Theme.bg-deep;
+        border-width: 1px;
+        border-color: Theme.border;
+        Text {
+            x: 12px;
+            y: 7px;
+            text: "SIGNAL PATH";
+            color: Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            letter-spacing: 1.5px;
+        }
+        Text {
+            x: 120px;
+            y: 7px;
+            width: parent.width - self.x - 12px;
+            text: "each plugin runs where its row says: the master, one channel, AUX or FX";
+            color: Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: right;
+            overflow: elide;
+        }
+        for line[i] in PluginState.route: Rectangle {
+            x: 12px;
+            y: 26px + i * root.line-h;
+            width: parent.width - 24px;
+            height: root.line-h - 6px;
+            Text {
+                x: 0;
+                y: 0;
+                width: 74px;
+                height: parent.height;
+                text: line.title;
+                color: Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                letter-spacing: 1px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            RouteView {
+                x: 80px;
+                y: 0;
+                width: parent.width - 80px;
+                height: parent.height;
+                steps: line.steps;
+                open(id) => { PluginState.open(id, false); }
+            }
+        }
+    }
+
+    // The rack.
+    Rectangle {
+        x: root.pad;
+        y: root.chain-h + 4px;
+        width: root.rack-w;
+        height: root.rack-h;
+        VerticalLayout {
+            spacing: 8px;
+            SectionHeading {
+                text: "Rack";
+                detail: PluginState.slots.length == 0 ? "empty"
+                    : PluginState.message != "" ? PluginState.message
+                    : PluginState.engine ? "live" : "engine not running";
+            }
+            Flickable {
+                interactive: false;
+                property <length> row-h: self.width < 780px ? 106px : 68px;
+                content-height: max(self.height, PluginState.slots.length * self.row-h);
+                for s[i] in PluginState.slots: RackRow {
+                    y: i * parent.row-h;
+                    width: parent.width;
+                    slot: s;
+                    index: i;
+                }
+            }
+            if PluginState.slots.length == 0: Label {
+                text: "Add a plugin from the list. It joins the master's chain, before the limiter, when you switch it on, while the music plays.";
+                tone: "dim";
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    // Installed plugins.
+    Rectangle {
+        x: root.wide ? root.width - root.pad - root.side-w : root.pad;
+        y: root.wide ? root.chain-h + 4px : root.chain-h + root.rack-h + 12px;
+        width: root.side-w;
+        height: root.wide ? root.rack-h : root.height - self.y - root.pad;
+        VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                SectionHeading { text: "Installed"; detail: PluginState.installed.length + " VST3"; horizontal-stretch: 1; }
+                Button {
+                    text: PluginState.installing ? "Installing…" : "Install…";
+                    compact: true;
+                    enabled: !PluginState.installing;
+                    clicked => { PluginState.install(); }
+                }
+                SmallIcon { text: "⟳"; clicked => { PluginState.rescan(); } }
+            }
+            if PluginState.install-note != "": Label {
+                text: PluginState.install-note;
+                tone: PluginState.install-failed ? "error" : "dim";
+                wrap: word-wrap;
+            }
+            Flickable {
+                content-height: max(self.height, PluginState.installed.length * 50px);
+                for p[i] in PluginState.installed: LibraryRow {
+                    y: i * 50px;
+                    width: parent.width;
+                    plugin: p;
+                }
+            }
+            if PluginState.installed.length == 0: Label {
+                text: "No VST3 plugins in ~/.vst3, /usr/lib/vst3 or /usr/local/lib/vst3. Install… puts one there from its download.";
+                tone: "dim";
+                wrap: word-wrap;
+            }
+        }
+    }
+}

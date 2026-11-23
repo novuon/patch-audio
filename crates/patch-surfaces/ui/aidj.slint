@@ -1,0 +1,354 @@
+// AI DJ Unit (ADR-007): the service's AI DJ, drawn as a musical-
+// intelligence field, with the decision it is forming in words beside it.
+// Nothing here decides: every callback is a validated service command.
+import { Theme, Label, MockBadge, SectionHeading, Button, Tag, Tabs, HLine } from "@patch-ui/patch-ui.slint";
+
+export struct AiCand {
+    rank: int,
+    title: string,
+    artist: string,
+    // "126 · 10A · +1 key · energy +2"
+    meta: string,
+    score: float,
+    evidence: float,
+    // "tempo 0.95 · harmony 1.00 · energy 0.80"
+    factors: string,
+    reasons: string,
+    selected: bool,
+    locked: bool,
+}
+
+export global AiDjState {
+    // See DjState.key-guard.
+    callback key-guard(string) -> bool;
+    in property <image> field;
+    // Where the field goes, logical size; Rust renders at physical size.
+    in-out property <length> field-w: 600px;
+    in-out property <length> field-h: 400px;
+    // The Booth's AI panel: "operator" (overview) or "analysis" (why).
+    in-out property <string> view: "operator";
+    // OBSERVE / SUGGEST / PREPARE / ACT and the phase ("EVALUATING").
+    in property <string> mode: "observe";
+    in property <string> phase;
+    // "LIVE · SERVICE", "DEMO · three_candidates", "NO SERVICE".
+    in property <string> origin;
+    in property <bool> live;
+    in property <string> lead-title;
+    in property <string> lead-meta;
+    in property <string> next-title;
+    in property <string> next-meta;
+    in property <float> evidence;
+    in property <string> evidence-text;
+    in property <[string]> uncertainty;
+    in property <[AiCand]> candidates;
+    in property <string> plan-text;
+    in property <float> plan-progress;
+    in property <bool> plan-ready;
+    in property <bool> pending;
+    in property <string> note;
+    in property <string> timing-text;
+    in property <string> eval-text;
+    in property <[string]> history;
+    in property <string> direction;
+    callback set-mode(string);
+    callback pick(int);
+    callback drop(int);
+    callback approve();
+    callback cancel();
+    // The DJ heard the last transition go wrong: `why` in a word or two.
+    callback report(string);
+    in-out property <bool> reporting;
+    // The last transition that played, and why it was reported ("" not).
+    in property <string> previous;
+    in property <string> previous-id;
+    in-out property <string> report-target;
+    in property <string> previous-reported;
+    // The transition planned next, with its timing ("" when none).
+    in property <string> coming;
+    // The same, apart: the incoming title, and how and when it mixes in.
+    in property <string> coming-to;
+    in property <string> coming-how;
+    // The planned transition's timing and length, for the Booth's
+    // When / Length steppers ("in 24 bars", "16 bars"; "" with no plan).
+    in property <string> plan-when;
+    in property <string> plan-bars;
+    // Evidence for the planned transition (filled by the autonomous DJ;
+    // empty or negative = not shown).
+    // Rehearsal score 0–100, -1 not rehearsed; named defects, "" clean.
+    in property <float> rehearsal-score: -1;
+    in property <string> rehearsal-defects;
+    // Calibrated probability that both tempos are right, -1 unknown; under
+    // 0.85 the plan uses short layers only.
+    in property <float> tempo-likely: -1;
+    // "tagged" or "detected" (detected keys are often wrong: drawn dimmer).
+    in property <string> key-source;
+    // "conventional", "overlay: vocal from X", "drum swap: drums from X, 16 beats".
+    in property <string> arrangement;
+    // "proposed", "rehearsed", "rejected → conventional", "opt-in disabled".
+    in property <string> arrangement-state;
+    // Stems for the planned pair: "ready", "preparing 40 %", "evidence only (evicted)", "none".
+    in property <string> stems-pair;
+}
+
+// Text that always takes `lines` small lines, whatever it says: what the
+// AI is doing changes as it loads and plans a track, and a line that grew or
+// vanished moved everything under it (the Booth jumped up and down).
+export component FixedNote inherits Rectangle {
+    in property <string> text;
+    in property <string> tone: "dim";
+    in property <int> lines: 2;
+    clip: true;
+    probe := Text { text: "M"; font-family: Theme.font; font-size: Theme.fs-small; visible: false; }
+    height: root.lines * probe.preferred-height;
+    Label { width: parent.width; height: parent.height; text: root.text; tone: root.tone; small: true; wrap: root.lines > 1 ? word-wrap : no-wrap; overflow: elide; vertical-alignment: top; }
+}
+
+export component FieldView inherits Rectangle {
+    preferred-width: 160px; preferred-height: 160px; min-height: 0px; max-height: 100000px;
+    init => { AiDjState.field-w = self.width; AiDjState.field-h = self.height; }
+    changed width => { AiDjState.field-w = self.width; }
+    changed height => { AiDjState.field-h = self.height; }
+    Image { preferred-width: 0px; preferred-height: 0px; source: AiDjState.field; width: parent.width; height: parent.height; image-fit: contain; }
+}
+
+component StateLine inherits HorizontalLayout {
+    spacing: Theme.s3;
+    height: Theme.row-h - 4px;
+    Label { text: AiDjState.phase; tone: AiDjState.phase == "UNAVAILABLE" ? "warn" : AiDjState.phase == "EXECUTING" || AiDjState.phase == "READY" ? "accent" : "bright"; caps: true; small: true; horizontal-stretch: 0; }
+    Label { text: AiDjState.evidence-text; tone: AiDjState.evidence < 0.45 ? "warn" : "dim"; small: true; horizontal-stretch: 1; }
+    VerticalLayout { alignment: center; MockBadge { text: AiDjState.origin; subtle: AiDjState.live; } }
+}
+
+component EvidenceMeter inherits Rectangle {
+    height: 4px;
+    background: Theme.border;
+    Rectangle { x: 0; width: parent.width * Math.clamp(AiDjState.evidence, 0, 1); background: AiDjState.evidence < 0.45 ? Theme.warn : Theme.text-dim; }
+}
+
+component NowNext inherits VerticalLayout {
+    spacing: 2px;
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: "NOW"; tone: "faint"; small: true; caps: true; width: 44px; }
+        Label { text: AiDjState.lead-title == "" ? "nothing playing" : AiDjState.lead-title; tone: AiDjState.lead-title == "" ? "faint" : "bright"; }
+    }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: ""; width: 44px; }
+        Label { text: AiDjState.lead-meta; tone: "dim"; small: true; }
+    }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: "NEXT"; tone: "faint"; small: true; caps: true; width: 44px; }
+        Label { text: AiDjState.next-title == "" ? "undecided" : AiDjState.next-title; tone: AiDjState.next-title == "" ? "faint" : "normal"; }
+    }
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Label { text: ""; width: 44px; }
+        Label { text: AiDjState.next-meta; tone: "dim"; small: true; }
+    }
+}
+
+// Every part keeps its place and size from "nothing planned" to "mixing":
+// the bar is there empty, the buttons greyed.
+component Plan inherits VerticalLayout {
+    in property <bool> buttons: true;
+    spacing: Theme.s2;
+    SectionHeading { text: "Plan"; detail: AiDjState.plan-ready ? "READY" : ""; pad: 0px; }
+    FixedNote { text: AiDjState.plan-text == "" ? "no transition planned" : AiDjState.plan-text; tone: AiDjState.plan-text == "" ? "faint" : "normal"; lines: 2; }
+    Rectangle {
+        height: 3px;
+        background: Theme.border;
+        Rectangle { x: 0; width: parent.width * Math.clamp(AiDjState.plan-progress, 0, 1); background: Theme.accent; }
+    }
+    if root.buttons: HorizontalLayout {
+        spacing: Theme.s3;
+        alignment: start;
+        Button { text: "Approve"; key: "enter"; primary: AiDjState.pending; enabled: AiDjState.pending; compact: true; clicked => { AiDjState.approve(); } }
+        Button { text: "Cancel"; key: "esc"; enabled: AiDjState.plan-text != ""; compact: true; clicked => { AiDjState.cancel(); } }
+    }
+}
+
+// Why the planned transition should work: the arrangement in bold, the
+// rehearsal, tempo, key and stems evidence beneath. Hidden until known.
+// One line each, always there (empty until known), so the block keeps its
+// height while the evidence comes in.
+component EvidenceBlock inherits VerticalLayout {
+    spacing: 2px;
+    FixedNote {
+        lines: 1;
+        text: AiDjState.arrangement != "" ? AiDjState.arrangement + (AiDjState.arrangement-state != "" ? " · " + AiDjState.arrangement-state : "") : "evidence shows once a transition is planned";
+        tone: AiDjState.arrangement != "" ? "bright" : "faint";
+    }
+    FixedNote {
+        lines: 1;
+        text: AiDjState.rehearsal-score >= 0 ? "rehearsed " + Math.round(AiDjState.rehearsal-score) + (AiDjState.rehearsal-defects != "" ? " · " + AiDjState.rehearsal-defects : " · clean") : "";
+        tone: AiDjState.rehearsal-defects != "" ? "warn" : "dim";
+    }
+    FixedNote {
+        lines: 1;
+        text: AiDjState.tempo-likely >= 0 ? "tempo " + Math.round(AiDjState.tempo-likely * 100) + " % likely right" + (AiDjState.tempo-likely < 0.85 ? " · short layers only" : "") : "";
+        tone: AiDjState.tempo-likely >= 0 && AiDjState.tempo-likely < 0.85 ? "warn" : "dim";
+    }
+    FixedNote {
+        lines: 1;
+        text: (AiDjState.key-source != "" ? "key " + AiDjState.key-source : "") + (AiDjState.key-source != "" && AiDjState.stems-pair != "" ? " · " : "") + (AiDjState.stems-pair != "" ? "stems " + AiDjState.stems-pair : "");
+        tone: AiDjState.key-source == "detected" ? "faint" : "dim";
+    }
+}
+
+// The transition planned next, with its timing.
+component ComingBlock inherits VerticalLayout {
+    horizontal-stretch: 1;
+    alignment: start;
+    spacing: Theme.s1;
+    Label { text: "NEXT TRANSITION"; tone: "faint"; small: true; }
+    FixedNote { text: AiDjState.coming != "" ? AiDjState.coming : "none planned yet"; tone: AiDjState.coming != "" ? "bright" : "faint"; lines: 2; }
+}
+
+component CandRow inherits Rectangle {
+    in property <AiCand> c;
+    in property <bool> detail;
+    height: lay.preferred-height;
+    background: c.selected ? Theme.selection : ta.has-hover ? Theme.hover : transparent;
+    border-width: c.locked ? 1px : 0px;
+    border-color: Theme.accent;
+    ta := TouchArea { clicked => { AiDjState.pick(root.c.rank); } }
+    lay := VerticalLayout {
+        padding: Theme.s2;
+        spacing: 1px;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            Label { text: root.c.rank; tone: "faint"; small: true; width: 14px; }
+            Label { text: root.c.title; tone: root.c.selected ? "bright" : "normal"; horizontal-stretch: 1; }
+            if root.c.locked: Tag { text: "LOCKED"; strong: true; }
+            Label { text: Math.round(root.c.score * 100) + ""; tone: "dim"; small: true; width: 26px; horizontal-alignment: right; }
+            Rectangle {
+                width: 36px;
+                height: 4px;
+                y: (parent.height - 4px) / 2;
+                background: Theme.border;
+    Rectangle { x: 0; width: parent.width * Math.clamp(root.c.evidence, 0, 1); background: root.c.evidence < 0.45 ? Theme.warn : Theme.text-faint; }
+            }
+            Label { text: "×"; tone: "faint"; width: 14px; horizontal-alignment: center;
+                TouchArea { clicked => { AiDjState.drop(root.c.rank); } } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s3;
+            Label { text: ""; width: 14px; }
+            Label { text: root.c.artist + " · " + root.c.meta; tone: "dim"; small: true; }
+        }
+        if root.detail: HorizontalLayout {
+            spacing: Theme.s3;
+            Label { text: ""; width: 14px; }
+            Label { text: root.c.factors; tone: "faint"; small: true; }
+        }
+        if root.detail && root.c.reasons != "": HorizontalLayout {
+            spacing: Theme.s3;
+            Label { text: ""; width: 14px; }
+            Label { text: root.c.reasons; tone: "dim"; small: true; wrap: word-wrap; overflow: clip; }
+        }
+    }
+}
+
+component Candidates inherits VerticalLayout {
+    in property <bool> detail;
+    spacing: 1px;
+    SectionHeading { text: "Candidates"; detail: AiDjState.eval-text; pad: 0px; }
+    if AiDjState.candidates.length == 0: Label {
+        text: AiDjState.mode == "observe" ? "observing: no suggestions (press 2 to suggest)" : "none yet";
+        tone: "faint"; small: true;
+    }
+    for c in AiDjState.candidates: CandRow { c: c; detail: root.detail; }
+}
+
+component Uncertainty inherits VerticalLayout {
+    spacing: 2px;
+    if AiDjState.uncertainty.length > 0: SectionHeading { text: "Uncertain"; detail: ""; pad: 0px; }
+    for u in AiDjState.uncertainty: Label { text: "~ " + u; tone: "warn"; small: true; wrap: word-wrap; }
+}
+
+component Timing inherits VerticalLayout {
+    spacing: 2px;
+    SectionHeading { text: "Timing"; detail: ""; pad: 0px; }
+    Label { text: AiDjState.timing-text; tone: "dim"; small: true; wrap: word-wrap; }
+}
+
+component History inherits VerticalLayout {
+    spacing: 2px;
+    SectionHeading { text: "Decisions"; detail: ""; pad: 0px; }
+    if AiDjState.history.length == 0: Label { text: "none yet"; tone: "faint"; small: true; }
+    for h in AiDjState.history: Label { text: h; tone: "dim"; small: true; }
+}
+
+// The AI DJ inside the DJ Booth window: always beside the live controls.
+// Overview shows what it is doing and lets you approve or pick; Why adds
+// factors, reasons, timing and history. The Booth owns the keys.
+export component AiPanel inherits VerticalLayout {
+    // The Booth's control strip already shows what plays, what comes next,
+    // AI Auto and Approve/Cancel: the panel then leaves them out and keeps
+    // the field small, beside the AI's state.
+    in property <bool> beside-strip;
+    property <bool> why: AiDjState.view == "analysis";
+    spacing: Theme.s3;
+    HorizontalLayout {
+        spacing: Theme.s2;
+        SectionHeading { text: "Auto Mix"; detail: ""; pad: 0px; horizontal-stretch: 1; }
+        Button { text: "Overview"; compact: true; lit: !root.why; clicked => { AiDjState.view = "operator"; } }
+        Button { text: "Why"; key: "v"; compact: true; lit: root.why; clicked => { AiDjState.view = "analysis"; } }
+    }
+    // Always visible in the Booth: manual takeover changes the service
+    // mode to Suggest, so show that Auto stopped and offer a direct return.
+    if !root.beside-strip: Rectangle {
+        background: AiDjState.live && AiDjState.mode != "act" ? Theme.bg-deep : transparent;
+        border-radius: Theme.s2;
+        VerticalLayout {
+            padding: Theme.s3;
+            spacing: Theme.s2;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                Label {
+                    text: !AiDjState.live ? "AI Auto unavailable" : AiDjState.mode == "act" ? "AI Auto enabled" : "AI Auto disabled";
+                    tone: !AiDjState.live ? "faint" : AiDjState.mode == "act" ? "accent" : "warn";
+                    small: true;
+                    caps: true;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                if AiDjState.mode != "act": Button {
+                    text: "Enable AI Auto";
+                    compact: true;
+                    primary: true;
+                    enabled: AiDjState.live;
+                    clicked => { AiDjState.set-mode("act"); }
+                }
+            }
+            if AiDjState.live && AiDjState.mode != "act": Label {
+                text: "You control the decks. Enable AI Auto to continue automatic mixing from the current track.";
+                tone: "dim";
+                small: true;
+                wrap: word-wrap;
+            }
+        }
+    }
+    if !root.beside-strip: StateLine { }
+    if !root.beside-strip: EvidenceMeter { }
+    if !root.beside-strip: HorizontalLayout {
+        spacing: Theme.s4;
+        FieldView { width: Math.clamp(root.width * 0.32, 96px, 200px); height: self.width; }
+        VerticalLayout { horizontal-stretch: 1; alignment: start; NowNext { } }
+    }
+    if !root.beside-strip: ComingBlock { }
+    // Beside the strip (which draws the field, always in view): the AI's
+    // state and evidence.
+    if root.beside-strip: StateLine { }
+    if root.beside-strip: EvidenceMeter { }
+    Plan { buttons: !root.beside-strip; }
+    EvidenceBlock { }
+    Candidates { detail: root.why; }
+    Uncertainty { }
+    if root.why: Timing { }
+    if root.why: History { }
+}
+

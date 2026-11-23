@@ -1,0 +1,10 @@
+/* Patch Dark — themes/patch-dark/colors.toml, the active Patch palette. */
+:root{
+  color-scheme:dark;
+  --bg:#0f1210;--panel:#141715;--raised:#1e221f;--border:#303632;
+  --text:#c2c7c3;--bright:#e8ebe9;--dim:#878c88;
+  --accent:#f0243b;--accent-soft:#4d1b22;--accent-ink:#0a0c0b;
+  --cyan:#4fb3bd;--violet:#9d7cf0;--green:#5fb070;
+}
+
+[hidden]{display:none!important}

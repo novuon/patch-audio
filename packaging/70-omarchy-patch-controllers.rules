@@ -1,0 +1,13 @@
+# Raw-HID access for audio controllers Patch drives.
+#
+# A controller that speaks a vendor HID protocol (NI Traktor Kontrol, and most
+# DJ hardware) exposes no evdev node, so the kernel's input subsystem never
+# sees it and logind's uaccess tag never reaches its /dev/hidraw node. Without
+# this rule the device is listed in Patch's Controllers unit and cannot be
+# opened.
+#
+# uaccess grants access to the user on the active seat only — the mechanism
+# Steam's and OpenRGB's rules use. The mode and group are a fallback for a
+# session without logind. To grant specific hardware only, narrow it with a
+# match such as ATTRS{idVendor}=="17cc", ATTRS{idProduct}=="1101".
+SUBSYSTEM=="hidraw", KERNEL=="hidraw*", MODE="0660", GROUP="realtime", TAG+="uaccess"

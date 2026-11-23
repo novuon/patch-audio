@@ -1,0 +1,104 @@
+import { Theme, Label, Tag, Button, SectionHeading, EmptyState, Scroll } from "@patch-ui/patch-ui.slint";
+
+export struct CtlDevice {
+    name: string,
+    detail: string,
+    transport: string,
+    // How the profile was chosen, and on what evidence.
+    profile: string,
+    matched: bool,
+    // What the matched profile would do. A matched profile with no bindings —
+    // an imported HID preset, whose controls are all JavaScript — answers to
+    // nothing, so the row says so instead of only "matched".
+    bindings: int,
+    outputs: int,
+    // Feedback: messages written back, and those dropped because the device
+    // was full.
+    sent: int,
+    dropped: int,
+}
+
+export struct CtlEvent {
+    device: string,
+    what: string,
+    // The command it ran, or (unbound) the trigger to paste into a binding.
+    action: string,
+    bound: bool,
+}
+
+export global ControllerState {
+    callback reload();
+    in property <[CtlDevice]> devices;
+    in property <[CtlEvent]> events;
+    in property <string> keymap: "~/.config/omarchy-patch/controllers.json";
+    in property <string> status: "no controller";
+}
+
+// Controller surface: service-owned devices and dispatch results.
+export component ControllersSurface inherits Rectangle {
+    property <bool> narrow: self.width < 480px;
+    VerticalLayout {
+        padding: root.narrow ? Theme.s4 : Theme.s5;
+        spacing: Theme.s3;
+        HorizontalLayout {
+            SectionHeading { text: "MIDI & HID"; pad: 0px; horizontal-stretch: 1; }
+            Button { text: "Reload profiles"; compact: true; clicked => { ControllerState.reload(); } }
+        }
+        Label { text: ControllerState.status; tone: "dim"; small: true; wrap: word-wrap; }
+        if ControllerState.devices.length == 0: Label {
+            text: "No controller yet. Plug in a MIDI controller, or name a HID device in your profile. Devices are checked every 2 s; a matching profile loads by itself.";
+            tone: "dim";
+            small: true;
+            wrap: word-wrap;
+        }
+        for d in ControllerState.devices: VerticalLayout {
+            spacing: Theme.s1;
+            // The name has the row; what Patch knows of it goes below, so
+            // a long path or state never squeezes the name to "…".
+            HorizontalLayout {
+                spacing: Theme.s3;
+                VerticalLayout { alignment: center; Tag { text: d.transport; } }
+                Label { text: d.name; tone: "bright"; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+                Label {
+                    text: d.matched ? "profile" : "no profile";
+                    tone: d.matched ? "accent" : "faint";
+                    small: true;
+                    vertical-alignment: center;
+                }
+            }
+            Label { text: d.detail; tone: "faint"; small: true; overflow: elide; }
+            if d.profile != "": Label {
+                text: d.profile + (d.matched ? " · " + d.bindings + " bindings" + (d.outputs > 0 ? " · " + d.outputs + " outputs" : "") + (d.bindings == 0 ? " · nothing will respond" : "") : "") + (d.sent > 0 ? " · " + d.sent + " sent" : "") + (d.dropped > 0 ? " · " + d.dropped + " dropped" : "");
+                tone: "faint";
+                small: true;
+                wrap: word-wrap;
+            }
+        }
+        SectionHeading { text: "Monitor"; detail: "newest first"; pad: 0px; }
+        if ControllerState.events.length == 0: Label {
+            text: "Press a pad or turn a knob: each event shows what it did, or the trigger to bind it.";
+            tone: "faint";
+            small: true;
+            wrap: word-wrap;
+        }
+        Scroll {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: Theme.s1;
+                for e in ControllerState.events: HorizontalLayout {
+                    spacing: Theme.s3;
+                    height: Theme.row-h - 6px;
+                    Label { text: e.what; small: true; width: 150px; vertical-alignment: center; overflow: elide; }
+                    if !root.narrow: Label { text: e.device; tone: "faint"; small: true; width: 120px; vertical-alignment: center; overflow: elide; }
+                    Label { text: e.action; tone: e.bound ? "accent" : "faint"; small: true; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+                }
+            }
+        }
+        Label {
+            text: "Profiles: " + ControllerState.keymap + " · device paths select independent maps · input runs in the Patch service";
+            tone: "faint";
+            small: true;
+            wrap: word-wrap;
+        }
+    }
+}

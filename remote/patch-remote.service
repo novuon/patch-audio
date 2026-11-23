@@ -1,0 +1,21 @@
+[Unit]
+Description=Patch private remote controls
+After=network.target omarchy-patch.service
+# Never give up: a failed start (no release yet, mid-upgrade) is retried.
+StartLimitIntervalSec=0
+
+[Service]
+Environment=XDG_RUNTIME_DIR=%t
+EnvironmentFile=%h/.config/patch-remote/environment
+# The remote of the release that runs (see patch-remote-launch); Tailscale
+# Serve proxies the phone's HTTPS to 127.0.0.1:8124 from its own saved state,
+# so the remote needs no network of its own to start.
+# PATCH_REMOTE_USER is checked with tailscaled's local whois API, not against
+# a client-supplied Tailscale-User-Login header. This user must be able to
+# open tailscaled.sock. Browsers on this computer use the pairing file.
+ExecStart=%h/.local/share/omarchy-patch/patch-remote-launch --control --tailscale-origin ${PATCH_REMOTE_ORIGIN} --tailscale-user ${PATCH_REMOTE_USER}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1210">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Patch Spin">
+<title>Patch · Spin</title>
+<link rel="stylesheet" href="/palette.css"><link rel="stylesheet" href="/navigation.css"><link rel="stylesheet" href="/spin.css">
+<script src="/pairing.js" defer></script><script src="/navigation.js" defer></script><script src="/spin.js" defer></script>
+</head>
+<body>
+<patch-navigation page="spin"></patch-navigation>
+<main>
+<div class="session-line"><span id="connection" role="status">Connecting</span><span id="phase">Waiting for Patch</span></div>
+<section class="decks" id="decks" aria-label="Turntables"></section>
+<section class="fader" aria-label="Crossfader">
+  <div class="fader-head"><span class="eyebrow">CROSSFADER</span><output id="xfader-value">—</output></div>
+  <div class="fader-track"><span class="fader-knob" id="xfader-knob"></span></div>
+  <div class="fader-ends"><span>DECK A</span><span>DECK B</span></div>
+</section>
+<section class="transition" aria-label="Next transition">
+  <div class="transition-head"><span class="eyebrow">NEXT TRANSITION</span><span id="transition-status">Waiting for Patch</span></div>
+  <div class="transition-values"><div><output id="transition-bars">—</output><span>BARS</span></div><div><output id="transition-time">—</output><span>MIN : SEC</span></div></div>
+  <h2 id="transition-title">No transition scheduled</h2>
+  <p id="transition-detail">Patch will publish its next move here.</p>
+  <progress id="transition-progress" max="1" value="0" aria-label="Transition execution progress"></progress>
+  <div class="evidence-line"><span id="transition-timing">Engine timing</span><span id="transition-rehearsal"></span></div>
+</section>
+<div class="actions"><button id="mix-now" class="primary">Mix now</button><button id="change-next">Change next</button></div>
+<section class="set" aria-label="Auto Mix set controls">
+  <div><span class="eyebrow">Auto Mix SET</span><span id="set-status">Checking set…</span></div>
+  <div class="set-buttons"><button id="set-start" class="primary">Start Auto Mix set</button><button id="set-resume">Resume Auto Mix set</button></div>
+</section>
+<section class="control" aria-label="AI control">
+  <div class="section-heading"><h2>AI control</h2><span id="mode-label" class="eyebrow">—</span></div>
+  <div class="segmented" id="modes" aria-label="AI autonomy"></div>
+  <p id="mode-hint" class="hint">Patch remains in control of musical timing.</p>
+  <div class="section-heading direction-heading"><h3>Energy direction</h3><span class="fine">YOUR INTENT</span></div>
+  <div class="segmented directions" id="directions" aria-label="Energy direction"></div>
+  <p id="note" class="note"></p>
+</section>
+<details class="candidate-panel" id="candidate-panel"><summary><span>Candidate horizon</span><span id="candidate-count" class="fine">—</span></summary><div id="candidates" class="candidate-list">Waiting for candidates</div></details>
+<p class="muted">The platters turn with each deck's reported position and pitch. Everything else is the engine's own state; this page schedules nothing.</p>
+</main>
+<footer><span id="ack" role="status" aria-live="polite">Following Patch</span><span id="access">PRIVATE REMOTE</span></footer>
+</body>
+</html>

@@ -1,0 +1,1054 @@
+import { Theme, Label, Button, Icon, Slider, SearchField, Scroll } from "@patch-ui/patch-ui.slint";
+// A line of the queue, or of the sources played lately.
+export struct QueueRow {
+    title: string,
+    // Its length, or where a long one was left ("12:41 / 48:06").
+    time: string,
+    current: bool,
+    // The queue as it last stood: the player is not running.
+    resting: bool,
+}
+// One pad of the cart wall, as shown (the board itself is the Player's:
+// `player::carts`).
+export struct CartPad {
+    key: string,
+    label: string,
+    // Its length at rest, the time left while it plays.
+    time: string,
+    assigned: bool,
+    playing: bool,
+    fading: bool,
+    looped: bool,
+    fade: bool,
+    progress: float,
+    gain: float,
+    // Plays only while held down.
+    hold: bool,
+    // Turns the transport down under it.
+    duck: bool,
+    // 0 none, 1 to 5.
+    colour: int,
+}
+// A named place in the file, or one of the file's own chapters.
+export struct MarkRow {
+    time: string,
+    name: string,
+    chapter: bool,
+}
+export struct CartBank {
+    name: string,
+    // A sound of this bank plays.
+    live: bool,
+}
+export global PlayerState {
+    in property <string> file;
+    in property <string> title;
+    in property <string> audio;
+    in property <string> status: "ready";
+    in property <bool> playing;
+    in property <bool> loaded;
+    in property <bool> seekable;
+    in property <bool> browsing;
+    in property <string> time: "00:00 / 00:00";
+    // What is left of a timed file ("-02:47"); empty for a stream.
+    in property <string> remaining;
+    in property <float> progress;
+    in property <float> volume: 1;
+    in property <bool> looping;
+    in property <string> message;
+    in property <bool> pfl: false;
+    in property <string> artist;
+    // Something to play: a file loaded, or a queue from last time.
+    in property <bool> can-play;
+    // The waveform: drawn by `wave` at a size, again when `wave-rev` moves.
+    in property <bool> has-wave;
+    in property <int> wave-rev;
+    pure callback wave(int, int, int) -> image;
+    // Chapters and the cue point, 0 to 1 along the file.
+    in property <[float]> marks;
+    // The A-B loop: 0 none, 1 A set, 2 looping; its ends 0 to 1.
+    in property <int> ab;
+    in property <float> ab-a;
+    in property <float> ab-b;
+    // Repeat: 0 off, 1 this one, 2 the whole queue.
+    in property <int> repeat;
+    in property <string> speed-label: "1x";
+    in property <bool> speed-changed;
+    in property <[QueueRow]> queue;
+    in property <string> queue-detail;
+    in property <bool> queue-resting;
+    in property <[QueueRow]> recent;
+    // A window opens on the queue unless the pads hold sounds.
+    in property <bool> prefers-queue;
+    // The file's chapters and the user's marks, in time order.
+    in property <[MarkRow]> mark-rows;
+    // The user's marks, 0 to 1 along the file (for the waveform).
+    in property <[float]> user-marks;
+    // A mark was just set: its row, and a count that moves so the list
+    // can select it and take its name.
+    in property <int> mark-selected: -1;
+    in property <int> mark-focus;
+    // A pad's colours, by number (1 to 5).
+    pure public function colour(index: int) -> color {
+        index == 1 ? #d9534f : index == 2 ? #e0a030 : index == 3 ? #4caf7a : index == 4 ? #4a90d9 : index == 5 ? #9d7cf0 : transparent
+    }
+    // The cart wall: the shown bank's twelve pads.
+    in property <[CartPad]> carts;
+    in property <[CartBank]> banks;
+    in property <int> bank;
+    // One at a time: starting a pad stops the others.
+    in property <bool> solo;
+    in property <int> carts-playing;
+    callback browse();
+    callback load(string);
+    callback toggle();
+    callback stop();
+    callback seek(float);
+    // Seconds from here (back with a negative number).
+    callback skip(float);
+    callback set-volume(float);
+    callback set-loop(bool);
+    callback cue();
+    callback set_pfl(bool);
+    callback next();
+    callback previous();
+    callback queue-add();
+    callback queue-play(int);
+    callback queue-remove(int);
+    callback queue-up(int);
+    callback queue-clear();
+    callback queue-shuffle();
+    callback recent-play(int);
+    // Slower (-1) or faster (1) by a quarter; 0: the next of the usual speeds.
+    callback speed-step(int);
+    callback ab-loop();
+    callback repeat-next();
+    // A hold pad went down, and came up.
+    callback cart-down(int);
+    callback cart-up(int);
+    callback cart-hold(int, bool);
+    callback cart-duck(int, bool);
+    // The next colour for this pad.
+    callback cart-colour(int);
+    // Mark the place that plays now.
+    callback mark-add();
+    callback mark-jump(int);
+    callback mark-remove(int);
+    callback mark-name(int, string);
+    // To the next (1) or the previous (-1) mark or chapter.
+    callback mark-step(int);
+    // The list onto the clipboard, as lines of "time name".
+    callback marks-copy();
+    // A pad pressed: start it, or stop it when it plays.
+    callback cart-fire(int);
+    callback cart-bank(int);
+    // Stop every cart: fading (true) or at once.
+    callback cart-stop-all(bool);
+    callback cart-solo(bool);
+    // Choose sounds, the first for this pad.
+    callback cart-files(int);
+    callback cart-label(int, string);
+    callback cart-loop(int, bool);
+    callback cart-fade(int, bool);
+    callback cart-gain(int, float);
+    callback cart-clear(int);
+    callback bank-name(string);
+}
+
+// A pad of the wall. Left click plays (or stops) it; right click edits it.
+component CartButton inherits Rectangle {
+    in property <CartPad> pad;
+    in property <bool> selected;
+    callback fire();
+    callback edit();
+    // Pressed and let go: a hold pad plays between the two.
+    callback down();
+    callback up();
+    // What the corner says at rest: how it plays, then its length.
+    property <string> mode: pad.hold ? "HOLD" : pad.looped ? "LOOP" : "";
+    // Two lines once there is the height; one line in a short window.
+    property <bool> roomy: self.height >= 38px;
+    property <bool> on: pad.playing && !pad.fading;
+    property <color> ink: root.on ? Theme.accent-ink : !pad.assigned ? Theme.text-faint : ta.has-hover ? Theme.text-bright : Theme.text;
+    property <color> quiet: root.on ? Theme.accent-ink.with-alpha(0.75) : pad.fading ? Theme.accent : Theme.text-dim;
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+    min-height: 24px;
+    clip: true;
+    border-radius: Theme.r-control;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : pad.playing ? Theme.accent : ta.has-hover ? Theme.text-faint : pad.assigned ? Theme.border-strong : Theme.border;
+    background: root.on ? (ta.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : pad.fading ? Theme.accent-soft
+        : ta.pressed ? Theme.selection
+        : ta.has-hover ? Theme.hover
+        : pad.assigned ? Theme.raised : transparent;
+    if root.roomy: VerticalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        padding-top: Theme.s2 + 1px;
+        padding-bottom: Theme.s2 + 3px;
+        spacing: Theme.s1;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            Text {
+                text: pad.key;
+                color: root.on ? Theme.accent-ink : pad.assigned ? Theme.text-dim : Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                font-weight: 700;
+                horizontal-stretch: 0;
+            }
+            Text {
+                text: pad.fading ? "FADE" : (pad.duck ? "DUCK  " : "") + (root.mode == "" ? pad.time : pad.time == "" ? root.mode : root.mode + "  " + pad.time);
+                color: root.quiet;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: right;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+        }
+        Text {
+            text: pad.assigned ? pad.label : ta.has-hover ? "Add a sound" : "";
+            color: root.ink;
+            font-family: Theme.font-ui;
+            font-size: root.height >= 96px && root.width >= 150px ? Theme.fs : Theme.fs-small;
+            font-weight: pad.assigned ? Theme.ui-weight : 400;
+            vertical-alignment: center;
+            vertical-stretch: 1;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+    }
+    if !root.roomy: HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s3;
+        Text {
+            text: pad.key;
+            color: root.on ? Theme.accent-ink : pad.assigned ? Theme.text-dim : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            font-weight: 700;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+        Text {
+            text: pad.assigned ? pad.label : ta.has-hover ? "Add a sound" : "";
+            color: root.ink;
+            font-family: Theme.font-ui;
+            font-size: Theme.fs-small;
+            font-weight: pad.assigned ? Theme.ui-weight : 400;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if pad.time != "" || pad.fading || root.mode != "": Text {
+            text: pad.fading ? "FADE" : root.mode != "" && !pad.playing ? root.mode : pad.time;
+            color: root.quiet;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
+    // How far it is: along the pad's foot. No animation: the app moves it
+    // on between polls, a pixel at a time (an animation drew every frame).
+    if pad.playing && !pad.looped && pad.progress > 0: Rectangle {
+        x: 1px;
+        y: parent.height - 4px;
+        height: 3px;
+        width: max(0px, (parent.width - 2px) * pad.progress);
+        border-radius: 1px;
+        background: root.on ? Theme.accent-ink.with-alpha(0.8) : Theme.accent;
+    }
+    // Its colour: a stripe down the left edge, quiet enough to sit under the accent.
+    if pad.colour > 0: Rectangle {
+        x: 1px;
+        y: 1px;
+        width: 3px;
+        height: parent.height - 2px;
+        border-radius: 1px;
+        background: root.on ? Theme.accent-ink.with-alpha(0.85) : PlayerState.colour(pad.colour);
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.fire(); }
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.right && e.kind == PointerEventKind.up) { root.edit(); }
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) { root.down(); }
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) { root.up(); }
+            if (e.kind == PointerEventKind.cancel) { root.up(); }
+        }
+    }
+}
+
+component BankTab inherits Rectangle {
+    in property <CartBank> bank;
+    in property <bool> current;
+    callback chosen();
+    width: t.preferred-width + (bank.live ? 30px : 20px);
+    height: Theme.row-h;
+    background: ta.has-hover && !root.current ? Theme.hover : transparent;
+    HorizontalLayout {
+        alignment: center;
+        spacing: Theme.s2 + 1px;
+        if bank.live: VerticalLayout {
+            alignment: center;
+            Rectangle { width: 5px; height: 5px; border-radius: 1px; background: Theme.accent; }
+        }
+        t := Text {
+            text: bank.name;
+            color: root.current ? Theme.text-bright : Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-small;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        y: parent.height - 2px;
+        height: 2px;
+        background: root.current ? Theme.accent : transparent;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.chosen(); }
+    }
+}
+
+// The file's whole length as a waveform: what has played in the accent,
+// the playhead, chapters, the cue and the A-B loop. Click or drag to seek.
+// The app moves `progress` on about a pixel at a time while it plays, so
+// nothing here animates (an animation redrew at the display's rate).
+component WaveBar inherits Rectangle {
+    in property <float> progress;
+    in property <bool> enabled;
+    in property <bool> playing;
+    callback seek(float);
+    property <float> held;
+    property <float> shown: ta.pressed ? root.held : root.progress;
+    // Drawn at twice the size: sharp on a scaled screen.
+    property <image> picture: PlayerState.wave(Math.round(self.width / 1px) * 2, Math.round(self.height / 1px) * 2, PlayerState.wave-rev);
+    background: Theme.bg-deep;
+    border-radius: Theme.r-control;
+    clip: true;
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.picture;
+        image-fit: fill;
+        colorize: Theme.text-faint;
+    }
+    if PlayerState.ab == 2: Rectangle {
+        x: root.width * PlayerState.ab-a;
+        width: max(1px, root.width * (PlayerState.ab-b - PlayerState.ab-a));
+        background: Theme.accent-soft;
+    }
+    Rectangle {
+        x: 0px;
+        width: root.width * root.shown;
+        clip: true;
+        Image {
+            x: 0px;
+            width: root.width;
+            height: root.height;
+            source: root.picture;
+            image-fit: fill;
+            colorize: Theme.accent;
+        }
+    }
+    if PlayerState.ab >= 1: Rectangle {
+        x: root.width * PlayerState.ab-a;
+        width: 1px;
+        background: Theme.accent;
+    }
+    for mark in PlayerState.marks: Rectangle {
+        x: root.width * mark;
+        y: 0px;
+        width: 1px;
+        height: 6px;
+        background: Theme.text-dim;
+    }
+    // The user's marks: taller, and with a head, so they read apart from chapters.
+    for mark in PlayerState.user-marks: Rectangle {
+        x: root.width * mark - 2px;
+        y: 0px;
+        width: 5px;
+        height: 100%;
+        Rectangle { x: 2px; width: 1px; height: 55%; y: 0px; background: Theme.text-bright; }
+        Rectangle { x: 0px; y: 0px; width: 5px; height: 4px; border-radius: 1px; background: Theme.text-bright; }
+    }
+    Rectangle {
+        x: root.width * root.shown - 0.5px;
+        width: 1px;
+        background: Theme.text-bright;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.held = Math.clamp(self.mouse-x / self.width, 0, 1);
+                root.seek(root.held);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.held = Math.clamp(self.mouse-x / self.width, 0, 1);
+                root.seek(root.held);
+            }
+        }
+    }
+}
+
+// A small mark-sized button inside a list line.
+component LineButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    width: Theme.row-h - 2px;
+    Text {
+        text: root.text;
+        color: ta.has-hover ? Theme.text-bright : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component QueueLine inherits Rectangle {
+    in property <QueueRow> line;
+    in property <int> number;
+    // A queue's line can move up and be taken out; a recent one cannot.
+    in property <bool> editable;
+    callback play();
+    callback up();
+    callback remove();
+    height: Theme.row-h;
+    border-radius: Theme.r-control;
+    background: ta.has-hover ? Theme.hover : line.current ? Theme.raised : transparent;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.play(); }
+    }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        // Clear of the list's scrollbar.
+        padding-right: Theme.s3 + 2px;
+        spacing: Theme.s3;
+        Rectangle {
+            width: 16px;
+            if line.current: Icon {
+                x: 2px;
+                y: (parent.height - self.height) / 2;
+                name: "play";
+                size: 10px;
+                ink: Theme.accent;
+            }
+            if !line.current && root.number > 0: Text {
+                width: 100%;
+                height: 100%;
+                text: root.number;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                vertical-alignment: center;
+            }
+        }
+        Label {
+            text: line.title;
+            tone: line.current ? "bright" : line.resting ? "dim" : "normal";
+            small: true;
+            horizontal-stretch: 1;
+        }
+        Label {
+            text: line.time;
+            tone: "faint";
+            small: true;
+            horizontal-stretch: 0;
+            min-width: self.preferred-width;
+        }
+        if root.editable && root.number > 1: LineButton { text: "↑"; clicked => { root.up(); } }
+        if root.editable: LineButton { text: "×"; clicked => { root.remove(); } }
+    }
+}
+
+// The queue (what plays next, in order) and, under it, what played lately.
+component QueuePane inherits Rectangle {
+    callback acted();
+    VerticalLayout {
+        spacing: Theme.s2;
+        Rectangle {
+            height: Theme.row-h;
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
+            HorizontalLayout {
+                spacing: Theme.s3;
+                Label { text: "Queue"; tone: "bright"; small: true; horizontal-stretch: 0; min-width: self.preferred-width; }
+                Label { text: PlayerState.queue-detail; tone: "faint"; small: true; horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    HorizontalLayout {
+                        spacing: Theme.s2;
+                        Button { text: "Add…"; compact: true; clicked => { PlayerState.queue-add(); root.acted(); } }
+                        Button { text: "Shuffle"; compact: true; enabled: PlayerState.queue.length > 1 && !PlayerState.queue-resting; clicked => { PlayerState.queue-shuffle(); root.acted(); } }
+                        Button { text: "Clear"; compact: true; enabled: PlayerState.queue.length > 1 || PlayerState.queue-resting; clicked => { PlayerState.queue-clear(); root.acted(); } }
+                    }
+                }
+            }
+        }
+        Scroll {
+            vertical-stretch: 1;
+            for q[i] in PlayerState.queue: QueueLine {
+                line: q;
+                number: i + 1;
+                editable: !q.resting;
+                play => { PlayerState.queue-play(i); root.acted(); }
+                up => { PlayerState.queue-up(i); root.acted(); }
+                remove => { PlayerState.queue-remove(i); root.acted(); }
+            }
+            if PlayerState.queue.length == 0: Label {
+                height: Theme.row-h * 2;
+                text: "Nothing queued. Add… lines files up to play in order; Open file plays one now.";
+                tone: "faint";
+                small: true;
+                wrap: word-wrap;
+            }
+            if PlayerState.recent.length > 0: Label {
+                height: Theme.row-h + Theme.s2;
+                text: "PLAYED LATELY";
+                tone: "faint";
+                small: true;
+                caps: true;
+                vertical-alignment: bottom;
+            }
+            for r[i] in PlayerState.recent: QueueLine {
+                line: r;
+                play => { PlayerState.recent-play(i); root.acted(); }
+            }
+        }
+    }
+}
+
+component MarkLine inherits Rectangle {
+    in property <MarkRow> mark;
+    in property <bool> selected;
+    callback jump();
+    callback remove();
+    height: Theme.row-h;
+    border-radius: Theme.r-control;
+    background: ta.has-hover ? Theme.hover : root.selected ? Theme.raised : transparent;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.jump(); }
+    }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3 + 2px;
+        spacing: Theme.s4;
+        Label { text: mark.time; tone: mark.chapter ? "faint" : "dim"; small: true; horizontal-stretch: 0; min-width: self.preferred-width; }
+        Label {
+            text: mark.name != "" ? mark.name : mark.chapter ? "chapter" : "unnamed";
+            tone: mark.name == "" ? "faint" : root.selected ? "bright" : "normal";
+            small: true;
+            horizontal-stretch: 1;
+        }
+        if mark.chapter: Label { text: "from the file"; tone: "faint"; small: true; horizontal-stretch: 0; }
+        if !mark.chapter: LineButton { text: "×"; clicked => { root.remove(); } }
+    }
+}
+
+// Marks: places named while listening, and the file's own chapters. The
+// list copies out as timestamps for show notes.
+component MarksPane inherits Rectangle {
+    callback acted();
+    property <int> selected: -1;
+    property <bool> naming: root.selected >= 0 && root.selected < PlayerState.mark-rows.length && !PlayerState.mark-rows[root.selected].chapter;
+    // A mark set with M: its line is selected and its name asked for.
+    property <int> asked: PlayerState.mark-focus;
+    function name-mark() {
+        root.selected = PlayerState.mark-selected;
+        if (root.naming) {
+            name.text = PlayerState.mark-rows[root.selected].name;
+            name.start-edit();
+        }
+    }
+    changed asked => { root.name-mark(); }
+    init => { if (root.asked > 0) { root.name-mark(); } }
+    VerticalLayout {
+        spacing: Theme.s2;
+        Rectangle {
+            height: Theme.row-h;
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
+            HorizontalLayout {
+                spacing: Theme.s3;
+                Label { text: "Marks"; tone: "bright"; small: true; horizontal-stretch: 0; min-width: self.preferred-width; }
+                Label { text: PlayerState.mark-rows.length > 0 ? PlayerState.mark-rows.length : ""; tone: "faint"; small: true; horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    HorizontalLayout {
+                        spacing: Theme.s2;
+                        Button { text: "Mark here"; key: "m"; compact: true; enabled: PlayerState.seekable; clicked => { PlayerState.mark-add(); } }
+                        Button { text: "Copy"; compact: true; enabled: PlayerState.mark-rows.length > 0; clicked => { PlayerState.marks-copy(); root.acted(); } }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: root.naming ? name.height + Theme.s2 : 0px;
+            visible: root.naming;
+            clip: true;
+            name := SearchField {
+                y: 0px;
+                width: 100%;
+                prompt: root.naming ? PlayerState.mark-rows[root.selected].time : "";
+                placeholder: "name this place";
+                edited(text) => { PlayerState.mark-name(root.selected, text); }
+                accepted => { root.acted(); }
+                cancelled => { root.acted(); }
+            }
+        }
+        Scroll {
+            vertical-stretch: 1;
+            for m[i] in PlayerState.mark-rows: MarkLine {
+                mark: m;
+                selected: i == root.selected;
+                jump => {
+                    PlayerState.mark-jump(i);
+                    root.selected = i;
+                    name.text = m.name;
+                    root.acted();
+                }
+                remove => {
+                    root.selected = -1;
+                    PlayerState.mark-remove(i);
+                    root.acted();
+                }
+            }
+            if PlayerState.mark-rows.length == 0: Label {
+                height: Theme.row-h * 3;
+                text: "No marks in this file. M marks the place that plays; name it, and Copy gives the list as timestamps for show notes.";
+                tone: "faint";
+                small: true;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+export component PlayerSurface inherits Rectangle {
+    // Changing the pads: a click selects a pad, the row above the wall
+    // names it and sets its sound, loop, fade and level.
+    property <bool> editing;
+    property <int> selected: -1;
+    property <CartPad> sel: PlayerState.carts[root.selected];
+    property <bool> wide: root.width >= 900px;
+    // The queue beside the pads once both fit; else one or the other.
+    property <bool> both: root.width >= 1000px;
+    // The lower half: 0 the pads, 1 the queue, 2 the marks. With both
+    // halves showing, the pads stay and this chooses the side pane.
+    property <int> view: PlayerState.prefers-queue ? 1 : 0;
+    property <bool> show-carts: root.both || root.view == 0;
+    property <bool> show-side: root.both || root.view != 0;
+    function pad-of(key: string) -> int {
+        key == "1" ? 0 : key == "2" ? 1 : key == "3" ? 2 : key == "4" ? 3 : key == "5" ? 4 : key == "6" ? 5
+            : key == "7" ? 6 : key == "8" ? 7 : key == "9" ? 8 : key == "0" ? 9 : key == "-" ? 10 : key == "=" ? 11 : -1
+    }
+    // A pad's key went down: a hold pad starts (once: a held key repeats),
+    // any other pad is pressed.
+    function key-down(index: int, repeat: bool) {
+        if (repeat) { return; }
+        if (!root.editing && PlayerState.carts[index].hold && PlayerState.carts[index].assigned) {
+            PlayerState.cart-down(index);
+        } else {
+            root.press(index);
+        }
+    }
+    property <length> queue-w: 330px;
+    property <length> carts-w: root.both ? lower.width - root.queue-w - Theme.s5 : lower.width;
+    property <bool> six: root.carts-w >= 900px;
+    property <int> columns: root.six ? 6 : 4;
+    property <int> rows: root.six ? 2 : 3;
+    property <bool> tall: root.height >= 470px;
+    // Below the Unit's own size: the pads and the transport come first.
+    property <bool> short: root.height < 330px;
+    property <bool> narrow: root.width < 540px;
+    function name-shown() {
+        name.text = root.selected >= 0 ? PlayerState.carts[root.selected].label : PlayerState.banks[PlayerState.bank].name;
+    }
+    function edit(index: int) {
+        root.editing = true;
+        root.selected = index;
+        root.name-shown();
+    }
+    function done() {
+        root.editing = false;
+        root.selected = -1;
+        keys.focus();
+    }
+    function press(index: int) {
+        if (index >= PlayerState.carts.length) { return; }
+        if (root.editing) {
+            root.edit(index);
+        } else if (PlayerState.carts[index].assigned) {
+            PlayerState.cart-fire(index);
+        } else if (root.show-carts) {
+            // A free pad asks for its sound.
+            PlayerState.cart-files(index);
+        }
+    }
+    function bank(index: int) {
+        PlayerState.cart-bank(Math.mod(index + PlayerState.banks.length, max(1, PlayerState.banks.length)));
+        root.selected = -1;
+        // The row names the bank now shown (the model follows the call).
+        name.text = PlayerState.banks[PlayerState.bank].name;
+    }
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) { return reject; }
+            if (e.text == " " && PlayerState.can-play) { PlayerState.toggle(); return accept; }
+            if (e.text == "o") { PlayerState.browse(); return accept; }
+            if (e.text == "c" && PlayerState.loaded) { PlayerState.cue(); return accept; }
+            if (e.text == "p" && PlayerState.loaded) { PlayerState.set_pfl(!PlayerState.pfl); return accept; }
+            if (e.text == "n" && PlayerState.queue.length > 1) { PlayerState.next(); return accept; }
+            if (e.text == "b" && PlayerState.loaded) { PlayerState.previous(); return accept; }
+            if (e.text == "l" && PlayerState.loaded) { PlayerState.repeat-next(); return accept; }
+            if (e.text == "a" && PlayerState.seekable) { PlayerState.ab-loop(); return accept; }
+            if (e.text == "<" && PlayerState.loaded) { PlayerState.speed-step(-1); return accept; }
+            if (e.text == ">" && PlayerState.loaded) { PlayerState.speed-step(1); return accept; }
+            if (e.text == "q") { root.view = Math.mod(root.view + 1, 3); return accept; }
+            if (e.text == "m" && PlayerState.seekable) { root.view = 2; PlayerState.mark-add(); return accept; }
+            if (e.text == ";" && PlayerState.seekable) { PlayerState.mark-step(-1); return accept; }
+            if (e.text == "'" && PlayerState.seekable) { PlayerState.mark-step(1); return accept; }
+            if (e.text == Key.LeftArrow && PlayerState.seekable) { PlayerState.seek(Math.max(0, PlayerState.progress - 0.02)); return accept; }
+            if (e.text == Key.RightArrow && PlayerState.seekable) { PlayerState.seek(Math.min(1, PlayerState.progress + 0.02)); return accept; }
+            if (e.text == "," && PlayerState.seekable) { PlayerState.skip(-10); return accept; }
+            if (e.text == "." && PlayerState.seekable) { PlayerState.skip(30); return accept; }
+            // The carts: the number row plays the shown bank's pads.
+            if (e.text == "1") { root.key-down(0, e.repeat); return accept; }
+            if (e.text == "2") { root.key-down(1, e.repeat); return accept; }
+            if (e.text == "3") { root.key-down(2, e.repeat); return accept; }
+            if (e.text == "4") { root.key-down(3, e.repeat); return accept; }
+            if (e.text == "5") { root.key-down(4, e.repeat); return accept; }
+            if (e.text == "6") { root.key-down(5, e.repeat); return accept; }
+            if (e.text == "7") { root.key-down(6, e.repeat); return accept; }
+            if (e.text == "8") { root.key-down(7, e.repeat); return accept; }
+            if (e.text == "9") { root.key-down(8, e.repeat); return accept; }
+            if (e.text == "0") { root.key-down(9, e.repeat); return accept; }
+            if (e.text == "-") { root.key-down(10, e.repeat); return accept; }
+            if (e.text == "=") { root.key-down(11, e.repeat); return accept; }
+            if (e.text == "[") { root.bank(PlayerState.bank - 1); return accept; }
+            if (e.text == "]") { root.bank(PlayerState.bank + 1); return accept; }
+            if (e.text == "f") { PlayerState.cart-stop-all(true); return accept; }
+            if (e.text == "e") {
+                if (root.editing) { root.done(); } else { root.edit(-1); }
+                return accept;
+            }
+            if (e.text == Key.Escape) {
+                if (root.editing) { root.done(); } else { PlayerState.cart-stop-all(false); }
+                return accept;
+            }
+            return reject;
+        }
+        key-released(e) => {
+            // A hold pad stops when its key comes up.
+            if (root.pad-of(e.text) >= 0) {
+                PlayerState.cart-up(root.pad-of(e.text));
+                return accept;
+            }
+            return reject;
+        }
+        VerticalLayout {
+            padding: Theme.s4;
+            spacing: Theme.s3;
+            // What to play: a path or address, or the file chooser.
+            if !root.short: HorizontalLayout {
+                spacing: Theme.s3;
+                input := SearchField {
+                    placeholder: "Paste a file path or stream address";
+                    prompt: ">";
+                    accepted => { PlayerState.load(self.text); keys.focus(); }
+                    cancelled => { keys.focus(); }
+                }
+                Button { text: PlayerState.browsing ? "Choosing…" : "Open file"; compact: true; height: input.height; clicked => { if !PlayerState.browsing { PlayerState.browse(); } } }
+                // What the lower half shows, while both do not fit.
+                HorizontalLayout {
+                    spacing: 0px;
+                    if !root.both: Button { text: "Carts"; compact: true; height: input.height; lit: root.view == 0; clicked => { root.view = 0; keys.focus(); } }
+                    Button { text: "Queue"; compact: true; height: input.height; lit: root.view == 1 || (root.both && root.view == 0); clicked => { root.view = 1; keys.focus(); } }
+                    Button { text: "Marks"; compact: true; height: input.height; lit: root.view == 2; clicked => { root.view = 2; keys.focus(); } }
+                }
+            }
+            // What plays, and how far.
+            Rectangle {
+                background: Theme.bg-deep;
+                border-radius: Theme.r-control;
+                vertical-stretch: 0;
+                height: root.tall ? Theme.row-h * 2 + Theme.s4 : Theme.row-h + Theme.s3;
+                HorizontalLayout {
+                    padding-left: Theme.s4;
+                    padding-right: Theme.s4;
+                    spacing: Theme.s4;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Label {
+                            text: PlayerState.title != "" ? PlayerState.title : PlayerState.file != "" ? PlayerState.file : "Ready to play";
+                            tone: PlayerState.loaded ? "bright" : "dim";
+                            font-size: root.tall ? Theme.fs-large : Theme.fs;
+                        }
+                        if root.tall: Label {
+                            text: PlayerState.file == "" ? "Open audio, or play a saved take from the Recorder."
+                                : (PlayerState.artist != "" ? PlayerState.artist + "  ·  " : "") + (PlayerState.audio != "" ? PlayerState.audio + "  ·  " : "") + PlayerState.file;
+                            tone: "faint";
+                            small: true;
+                        }
+                    }
+                    Label {
+                        text: PlayerState.loaded ? PlayerState.time : "00:00 / 00:00";
+                        tone: PlayerState.loaded ? "bright" : "faint";
+                        font-size: root.tall ? Theme.fs-large : Theme.fs;
+                        horizontal-stretch: 0;
+                        min-width: self.preferred-width;
+                    }
+                    if PlayerState.loaded && PlayerState.remaining != "": Label {
+                        text: PlayerState.remaining;
+                        tone: "dim";
+                        horizontal-stretch: 0;
+                        min-width: self.preferred-width;
+                    }
+                }
+            }
+            if PlayerState.has-wave: WaveBar {
+                height: root.height >= 620px ? 64px : root.tall ? 46px : 30px;
+                progress: PlayerState.progress;
+                enabled: PlayerState.seekable;
+                playing: PlayerState.playing;
+                seek(v) => { PlayerState.seek(v); }
+            }
+            // A stream, or nothing loaded: no shape to show.
+            if !PlayerState.has-wave: Slider { value: PlayerState.progress; enabled: PlayerState.seekable; changed(v) => { PlayerState.seek(v); } }
+            HorizontalLayout {
+                spacing: Theme.s2;
+                Button { text: PlayerState.playing ? "Pause" : "Play"; compact: true; lit: PlayerState.playing; enabled: PlayerState.can-play; clicked => { PlayerState.toggle(); } }
+                Button { text: "Stop"; compact: true; enabled: PlayerState.loaded; clicked => { PlayerState.stop(); } }
+                if root.wide: Button { text: "Prev"; compact: true; enabled: PlayerState.loaded; clicked => { PlayerState.previous(); } }
+                if root.wide: Button { text: "Next"; compact: true; enabled: PlayerState.queue.length > 1 && !PlayerState.queue-resting; clicked => { PlayerState.next(); } }
+                if !root.narrow: Button { text: "-10 s"; compact: true; enabled: PlayerState.seekable; clicked => { PlayerState.skip(-10); } }
+                if !root.narrow: Button { text: "+30 s"; compact: true; enabled: PlayerState.seekable; clicked => { PlayerState.skip(30); } }
+                Button { text: "Cue"; compact: true; enabled: PlayerState.loaded; clicked => { PlayerState.cue(); } }
+                Button { text: "PFL"; compact: true; lit: PlayerState.pfl; enabled: PlayerState.loaded; clicked => { PlayerState.set_pfl(!PlayerState.pfl); } }
+                if !root.narrow: Button { text: PlayerState.ab == 1 ? "A-…" : "A-B"; compact: true; lit: PlayerState.ab > 0; enabled: PlayerState.seekable; clicked => { PlayerState.ab-loop(); } }
+                Button {
+                    text: PlayerState.repeat == 1 ? "Repeat 1" : PlayerState.repeat == 2 ? "Repeat all" : "Repeat";
+                    compact: true;
+                    lit: PlayerState.repeat > 0;
+                    enabled: PlayerState.loaded;
+                    clicked => { PlayerState.repeat-next(); }
+                }
+                if !root.narrow: Button { text: PlayerState.speed-label; compact: true; lit: PlayerState.speed-changed; enabled: PlayerState.loaded; clicked => { PlayerState.speed-step(0); } }
+                Rectangle { }
+                if root.width >= 620px: Label { text: Math.round(PlayerState.volume * 100) + "%"; tone: "dim"; small: true; horizontal-stretch: 0; horizontal-alignment: right; min-width: 30px; }
+                // The Mixer's strip has the level too: gone first when there is no room.
+                if root.width >= 420px: VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    Slider { width: root.wide ? 140px : 60px; value: PlayerState.volume; changed(v) => { PlayerState.set-volume(v); } }
+                }
+            }
+            lower := Rectangle {
+            vertical-stretch: 1;
+            if root.show-side && root.view != 2: QueuePane {
+                x: root.both ? parent.width - root.queue-w : 0px;
+                y: 0px;
+                width: root.both ? root.queue-w : parent.width;
+                height: parent.height;
+                acted => { keys.focus(); }
+            }
+            if root.show-side && root.view == 2: MarksPane {
+                x: root.both ? parent.width - root.queue-w : 0px;
+                y: 0px;
+                width: root.both ? root.queue-w : parent.width;
+                height: parent.height;
+                acted => { keys.focus(); }
+            }
+            VerticalLayout {
+            x: 0px;
+            y: 0px;
+            width: root.carts-w;
+            height: parent.height;
+            visible: root.show-carts;
+            spacing: Theme.s3;
+            // The cart wall: banks, then the pads.
+            Rectangle {
+                height: root.narrow ? Theme.row-h * 2 + Theme.s2 : Theme.row-h;
+                Rectangle {
+                    y: Theme.row-h - 1px;
+                    height: 1px;
+                    background: Theme.border;
+                }
+                HorizontalLayout {
+                    y: 0px;
+                    height: Theme.row-h;
+                    alignment: start;
+                    for b[i] in PlayerState.banks: BankTab {
+                        bank: b;
+                        current: i == PlayerState.bank;
+                        chosen => { root.bank(i); keys.focus(); }
+                    }
+                }
+                // Beside the banks; under them in a narrow window.
+                HorizontalLayout {
+                    y: root.narrow ? Theme.row-h + Theme.s2 : 0px;
+                    height: Theme.row-h;
+                    alignment: end;
+                    VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: Theme.s2;
+                            Button { text: "Solo"; compact: true; lit: PlayerState.solo; clicked => { PlayerState.cart-solo(!PlayerState.solo); keys.focus(); } }
+                            Button { text: "Fade"; compact: true; enabled: PlayerState.carts-playing > 0; clicked => { PlayerState.cart-stop-all(true); keys.focus(); } }
+                            Button { text: "Stop"; compact: true; enabled: PlayerState.carts-playing > 0; clicked => { PlayerState.cart-stop-all(false); keys.focus(); } }
+                            Button {
+                                text: root.editing ? "Done" : "Edit";
+                                compact: true;
+                                lit: root.editing;
+                                clicked => { if (root.editing) { root.done(); } else { root.edit(-1); keys.focus(); } }
+                            }
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 0px;
+                // The edit row: there all the time (its field is set as the
+                // selection moves), no height unless pads are being changed.
+                Rectangle {
+                    height: !root.editing ? 0px : (root.selected >= 0 ? name.height * 2 + Theme.s2 : name.height) + Theme.s3;
+                    visible: root.editing;
+                    clip: true;
+                    // First line: the name, and the pad's sound.
+                    name := SearchField {
+                        x: 0px;
+                        y: 0px;
+                        width: max(80px, parent.width - first.width - Theme.s3);
+                        prompt: root.selected >= 0 ? "Pad " + root.sel.key : "Bank";
+                        placeholder: root.selected >= 0 ? (root.sel.assigned ? "its name" : "choose a sound first") : "this bank's name";
+                        edited(text) => {
+                            if (root.selected >= 0) { PlayerState.cart-label(root.selected, text); } else { PlayerState.bank-name(text); }
+                        }
+                        accepted => { keys.focus(); }
+                        cancelled => { keys.focus(); }
+                    }
+                    first := HorizontalLayout {
+                        x: parent.width - self.width;
+                        y: 0px;
+                        width: self.preferred-width;
+                        height: name.height;
+                        spacing: Theme.s2;
+                        if root.selected < 0: Label {
+                            text: "Click a pad to change it";
+                            tone: "faint";
+                            small: true;
+                        }
+                        if root.selected >= 0: Button { text: "Sound…"; compact: true; height: name.height; clicked => { PlayerState.cart-files(root.selected); keys.focus(); } }
+                        if root.selected >= 0: Button { text: "Clear"; compact: true; height: name.height; enabled: root.sel.assigned; clicked => { PlayerState.cart-clear(root.selected); root.name-shown(); keys.focus(); } }
+                    }
+                    // Second line: how it plays.
+                    if root.selected >= 0: HorizontalLayout {
+                        x: 0px;
+                        y: name.height + Theme.s2;
+                        width: parent.width;
+                        height: name.height;
+                        spacing: Theme.s2;
+                        Button { text: "Loop"; compact: true; height: name.height; lit: root.sel.looped; enabled: root.sel.assigned; clicked => { PlayerState.cart-loop(root.selected, !root.sel.looped); keys.focus(); } }
+                        Button { text: root.narrow ? "Fade" : "Fade out"; compact: true; height: name.height; lit: root.sel.fade; enabled: root.sel.assigned; clicked => { PlayerState.cart-fade(root.selected, !root.sel.fade); keys.focus(); } }
+                        Button { text: "Hold"; compact: true; height: name.height; lit: root.sel.hold; enabled: root.sel.assigned; clicked => { PlayerState.cart-hold(root.selected, !root.sel.hold); keys.focus(); } }
+                        Button { text: "Duck"; compact: true; height: name.height; lit: root.sel.duck; enabled: root.sel.assigned; clicked => { PlayerState.cart-duck(root.selected, !root.sel.duck); keys.focus(); } }
+                        // The pad's colour: click for the next.
+                        Rectangle {
+                            width: name.height;
+                            height: name.height;
+                            border-radius: Theme.r-control;
+                            border-width: 1px;
+                            border-color: swatch.has-hover ? Theme.text-faint : Theme.border-strong;
+                            background: Theme.raised;
+                            Rectangle {
+                                x: 5px;
+                                y: 5px;
+                                width: parent.width - 10px;
+                                height: parent.height - 10px;
+                                border-radius: 2px;
+                                border-width: root.sel.colour == 0 ? 1px : 0px;
+                                border-color: Theme.text-faint;
+                                background: PlayerState.colour(root.sel.colour);
+                            }
+                            swatch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { PlayerState.cart-colour(root.selected); keys.focus(); }
+                            }
+                        }
+                        Rectangle { }
+                        if !root.narrow: Label { text: Math.round(root.sel.gain * 100) + "%"; tone: "dim"; small: true; horizontal-stretch: 0; horizontal-alignment: right; min-width: 30px; }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 0;
+                            Slider { width: root.narrow ? 48px : 90px; value: root.sel.gain; enabled: root.sel.assigned; changed(v) => { PlayerState.cart-gain(root.selected, v); } }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    vertical-stretch: 1;
+                    spacing: Theme.s2;
+                    for row in root.rows: HorizontalLayout {
+                        vertical-stretch: 1;
+                        spacing: Theme.s2;
+                        for column in root.columns: CartButton {
+                            property <int> index: row * root.columns + column;
+                            pad: PlayerState.carts[self.index];
+                            selected: root.editing && root.selected == self.index;
+                            // A hold pad plays between down and up; a click is for the others.
+                            fire => {
+                                if (root.editing || !self.pad.hold || !self.pad.assigned) { root.press(self.index); }
+                                keys.focus();
+                            }
+                            edit => { root.edit(self.index); }
+                            down => { if (!root.editing && self.pad.hold && self.pad.assigned) { PlayerState.cart-down(self.index); } }
+                            up => { PlayerState.cart-up(self.index); }
+                        }
+                    }
+                }
+            }
+            }
+            }
+            if PlayerState.message != "": Label { text: PlayerState.message; tone: "warn"; wrap: word-wrap; small: true; }
+            if PlayerState.message == "" && root.tall && !root.narrow: Label {
+                text: root.editing ? "Click a pad, then name it and choose its sound. Several files fill the free pads after it. Esc when done."
+                    : root.show-carts ? "1 to = play the pads · [ ] bank · F fade all · Esc stop all · right-click a pad to change it. Sounds keep playing when the window closes."
+                    : root.view == 2 ? "M marks the place that plays · ; and ' go to the mark before and after · Copy gives the list as timestamps."
+                    : "Click the waveform to seek · N next · B back · A loops a part · < > speed. A long file goes on where you left it.";
+                tone: "faint";
+                small: true;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

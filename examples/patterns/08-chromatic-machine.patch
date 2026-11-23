@@ -1,0 +1,11 @@
+// Chromatic Machine — crisp, high-contrast prism and lattice geometry.
+// A 32-bar industrial arc with a short, high-energy center and a clear
+// release. Visuals only; no audio or deck controls.
+cycle 4
+scene("<lattice lattice prism prism prism cells prism nebula>/8")
+visual.intensity("<0.38 0.52 0.68 0.84 1 0.88 0.62 0.32>/8")
+visual.motion("<0.22 0.38 0.58 0.78 1 0.82 0.52 0.2>/8")
+visual.density("<0.72 0.82 0.9 0.94 1 0.86 0.62 0.38>/8")
+visual.symmetry("<0.8 0.62 0.42 0.22 0.1 0.28 0.52 0.76>/8")
+visual.feedback("<0.08 0.16 0.28 0.42 0.58 0.38 0.22 0.1>/8")
+visual.hue("<0.02 0.14 0.28 0.42 0.58 0.72 0.86 0.98>/8")

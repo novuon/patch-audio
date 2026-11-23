@@ -1,0 +1,483 @@
+// Visualiser Unit: text effects played to the music (ttfx, drawn in Rust
+// at the window's size). Nothing to set: the director follows the music;
+// space moves on, h holds the effect playing, f true fullscreen.
+import { DjState, DeckItem, EqKnobs, DeckLevels } from "dj.slint";
+import { Theme, Button, Toggle, Slider, Host } from "@patch-ui/patch-ui.slint";
+
+export struct VisualLibraryItem { id: string, name: string, family: string, enabled: bool, off: bool }
+export struct VisualControl { id: string, label: string, kind: int, value: float, min: float, max: float, options: [string] }
+
+export global VisualState {
+    in property <[VisualLibraryItem]> scene-library;
+    in property <[VisualControl]> show-controls;
+    in property <[VisualControl]> material-controls;
+    in property <[string]> profile-names;
+    // Patch, Ambient, Shaders, Titles: any combination plays.
+    in property <[bool]> sources;
+    in property <int> editing-section;
+    in property <string> editing-material;
+    in property <string> editing-material-name;
+    in property <string> current-scene;
+    in property <string> current-scene-id;
+    in property <string> current-family;
+    in property <string> library-count;
+    in property <bool> show-automatic;
+    in property <string> settings-note;
+    in-out property <string> profile-name: "My show";
+    in-out property <int> panel-tab;
+    callback pick-scene(string);
+    // Off: the show and Space skip the scene (a pick still plays it).
+    callback switch-scene(string);
+    callback toggle-source(int);
+    callback edit-control(string, float);
+    callback edit-section(int);
+    callback edit-material(string);
+    callback pulse-now();
+    callback save-profile(string);
+    callback load-profile(string);
+    in property <image> frame;
+    in-out property <bool> pointer-present;
+    in-out property <float> pointer-x;
+    in-out property <float> pointer-y;
+    in-out property <bool> decks-enabled;
+    in-out property <bool> performer-enabled;
+    in-out property <float> deck-opacity: 0.85;
+    in-out property <float> performer-opacity: 0.95;
+    in-out property <bool> point-appearance;
+    in-out property <bool> auto-layers: true;
+    in-out property <bool> performer-first;
+    in-out property <bool> director-colours;
+    // The mark on the DJ's chest: 0 "P.", 1 the Omarchy logo, 2 none.
+    in-out property <int> emblem;
+    in-out property <bool> performer-me;
+    in-out property <bool> ribbons: true;
+    in-out property <float> film-photo: 1;
+    in-out property <float> film-shadow;
+    in-out property <float> film-points;
+    in-out property <color> deck-colour-a: #f0243b;
+    in-out property <color> deck-colour-b: #9d7cf0;
+    in property <color> signal-colour-a: #f0243b;
+    in property <color> signal-colour-b: #9d7cf0;
+    in-out property <bool> layers-open;
+    in property <bool> layers-gpu;
+    // The layers stepped down on a slow machine (0 as set, 1 without the
+    // DJ, 2 without the layers), and a short note saying so.
+    in property <int> layers-shed;
+    in property <string> layers-note;
+    // Each deck's title and its mix apart, for the track text.
+    in property <string> a-title;
+    in property <string> a-mix;
+    in property <string> b-title;
+    in property <string> b-mix;
+    callback layers-changed();
+    // Drawn on the GPU beneath the window's items (the frame image unused):
+    // the surface lets it through.
+    in property <bool> gpu;
+    // Where the frame goes, logical size; Rust renders to it.
+    in-out property <length> view-w: 640px;
+    in-out property <length> view-h: 360px;
+    // "beams · lift" and whether it is held.
+    in property <string> caption;
+    in property <bool> held;
+    // Seconds since the scene began: the caption shows, then fades.
+    in property <float> scene-age;
+    callback next();
+    callback hold();
+    // m: choreography → generative → hybrid; g: the next generative scene.
+    callback cycle-mode();
+    callback next-scene();
+    // True fullscreen: only the animation (no header, footer or caption).
+    in property <bool> bare;
+    callback toggle-fullscreen();
+}
+
+component ShowControl inherits HorizontalLayout {
+    in property <VisualControl> control;
+    spacing: Theme.s2;
+    Text { text: root.control.label; color: Theme.text-dim; font-size: Theme.fs-small; font-family: Theme.font; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+    if root.control.kind == 0: Toggle { checked: root.control.value >= 0.5; toggled => { VisualState.edit-control(root.control.id, self.checked ? 1 : 0); } }
+    if root.control.kind == 1: HorizontalLayout {
+        width: 150px;
+        Slider { value: (root.control.value - root.control.min) / Math.max(0.001, root.control.max - root.control.min); changed(v) => { VisualState.edit-control(root.control.id, root.control.min + v * (root.control.max - root.control.min)); } }
+        Text { width: 36px; text: Math.round(root.control.value * 100) / 100; color: Theme.text-dim; font-size: Theme.fs-tiny; font-family: Theme.font; vertical-alignment: center; }
+    }
+    if root.control.kind == 2: Button { text: root.control.options[Math.round(root.control.value)]; compact: true; clicked => { VisualState.edit-control(root.control.id, root.control.value >= root.control.max ? root.control.min : Math.round(root.control.value) + 1); } }
+}
+
+// One deck's track, in the scene's light: "A / ARTIST", the title, its
+// mix, BPM and key, a progress line and the time. The deck that isn't
+// heard dims.
+component TrackText inherits VerticalLayout {
+    in property <DeckItem> deck;
+    in property <string> side;
+    in property <color> colour;
+    in property <string> title;
+    in property <string> mix;
+    in property <float> lit: 1;
+    in property <length> scale: 1080px;
+    in property <bool> right;
+    property <TextHorizontalAlignment> align: root.right ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+    height: root.scale * 0.24;
+    alignment: start;
+    spacing: root.scale * 0.006;
+    opacity: root.lit;
+    animate opacity { duration: 600ms; easing: ease-in-out; }
+    Text { text: root.side + " / " + (root.deck.loaded ? root.deck.artist : "awaiting track"); color: root.colour; font-family: Theme.font-display; font-size: Math.max(1px, root.scale * 0.021); letter-spacing: root.scale * 0.001; horizontal-alignment: root.align; overflow: elide; }
+    Text { text: root.title; color: #f2f4f8; font-family: Theme.font-display; font-size: Math.max(1px, root.scale * 0.032); font-weight: 600; letter-spacing: root.scale * 0.002; horizontal-alignment: root.align; overflow: elide; }
+    if root.mix != "": Text { text: root.mix; color: #c9ced8; font-family: Theme.font-display; font-size: Math.max(1px, root.scale * 0.021); horizontal-alignment: root.align; overflow: elide; }
+    Rectangle { height: root.scale * 0.008; }
+    Text { text: root.deck.loaded ? root.deck.bpm + " BPM  ·  " + root.deck.key : ""; color: root.colour; font-family: Theme.font-display; font-size: Math.max(1px, root.scale * 0.021); horizontal-alignment: root.align; }
+    Rectangle {
+        height: root.scale * 0.004;
+        background: #ffffff1c;
+        Rectangle { x: root.right ? parent.width * (1 - root.deck.progress) : 0px; width: parent.width * root.deck.progress; background: root.colour; }
+    }
+    Text { text: root.deck.loaded ? root.deck.time + " / " + root.deck.length : ""; color: #c9ced8; font-family: Theme.font-display; font-size: Math.max(1px, root.scale * 0.017); horizontal-alignment: root.align; }
+}
+
+// A small knob: a hairline ring, a bright arc from 12 o'clock to its value
+// (−1 … 1), its name under it.
+component MixKnob inherits Rectangle {
+    in property <float> value;
+    in property <string> label;
+    in property <color> colour;
+    in property <length> size: 18px;
+    width: root.size * 1.5; height: root.size * 1.75;
+    // The knob's cap.
+    Rectangle {
+        x: (parent.width - root.size * 0.68) / 2; y: root.size * 0.16; width: root.size * 0.68; height: self.width;
+        border-radius: self.width / 2; background: #ffffff0d;
+    }
+    // Its scale: 270°, open at the bottom, and the centre tick at 12.
+    Path {
+        x: (parent.width - root.size) / 2; y: 0px; width: root.size; height: root.size;
+        viewbox-width: 20; viewbox-height: 20;
+        stroke: #ffffff2c; stroke-width: 1px;
+        commands: "M 3.636 16.364 A 9 9 0 1 1 16.364 16.364 M 10 -0.6 L 10 2.2";
+    }
+    // From the centre to the value, in the deck's colour.
+    Path {
+        property <float> a: root.value * 2.35;
+        x: (parent.width - root.size) / 2; y: 0px; width: root.size; height: root.size;
+        viewbox-width: 20; viewbox-height: 20;
+        stroke: root.colour; stroke-width: 1.6px;
+        commands: "M 10 1 A 9 9 0 " + (Math.abs(self.a) > 3.14159 ? "1" : "0") + " " + (self.a >= 0 ? "1" : "0") + " " + (10 + 9 * Math.sin(self.a * 1rad)) + " " + (10 - 9 * Math.cos(self.a * 1rad));
+    }
+    // The pointer: where the knob stands, straight up at zero.
+    Path {
+        property <float> a: root.value * 2.35;
+        x: (parent.width - root.size) / 2; y: 0px; width: root.size; height: root.size;
+        viewbox-width: 20; viewbox-height: 20;
+        stroke: #e8ecf2; stroke-width: 1.5px;
+        commands: "M " + (10 + 3 * Math.sin(self.a * 1rad)) + " " + (10 - 3 * Math.cos(self.a * 1rad)) + " L " + (10 + 6.6 * Math.sin(self.a * 1rad)) + " " + (10 - 6.6 * Math.cos(self.a * 1rad));
+    }
+    Text { y: root.size * 1.12; width: parent.width; text: root.label; color: #aab0bb; font-family: Theme.font-display; font-size: Math.max(1px, root.size * 0.36); letter-spacing: 0.5px; horizontal-alignment: center; }
+}
+
+// A level meter: two hairline columns of segments.
+component MixMeter inherits Rectangle {
+    in property <float> left;
+    in property <float> right;
+    in property <color> colour;
+    for side[i] in [root.left, root.right]: Rectangle {
+        x: i * parent.width * 0.6; width: parent.width * 0.4;
+        for k in 14: Rectangle {
+            y: parent.height * (1 - (k + 1) / 14) + 1px; height: parent.height / 14 - 1.5px;
+            background: side >= (k + 1) / 14 ? (k >= 12 ? #ffffffd8 : root.colour) : #ffffff10;
+        }
+    }
+}
+
+// One deck's controls, a transparent cluster beside its jog: the BPM in a
+// ring that fills with the track, the beat FX, then the EQ, the filter's
+// curve and the level. Hairlines and small type: an instrument's detail.
+component DeckControls inherits VerticalLayout {
+    in property <DeckItem> deck;
+    in property <EqKnobs> eq;
+    in property <DeckLevels> lv;
+    in property <color> colour;
+    in property <bool> fx-here;
+    in property <length> unit;
+    in property <bool> right;
+    spacing: root.unit * 0.55;
+    width: self.preferred-width; height: self.preferred-height;
+    HorizontalLayout {
+        spacing: root.unit * 0.7;
+        alignment: root.right ? LayoutAlignment.end : LayoutAlignment.start;
+        Rectangle {
+            width: root.unit * 2.6; height: self.width;
+            Path {
+                width: parent.width; height: parent.height; viewbox-width: 40; viewbox-height: 40;
+                stroke: #ffffff22; stroke-width: 1px;
+                commands: "M 20 1.5 A 18.5 18.5 0 1 1 19.99 1.5";
+            }
+            Path {
+                property <float> a: Math.clamp(root.deck.progress, 0.001, 0.998) * 6.2831;
+                width: parent.width; height: parent.height; viewbox-width: 40; viewbox-height: 40;
+                stroke: root.colour; stroke-width: 1.8px;
+                commands: "M 20 1.5 A 18.5 18.5 0 " + (self.a > 3.14159 ? "1" : "0") + " 1 " + (20 + 18.5 * Math.sin(self.a * 1rad)) + " " + (20 - 18.5 * Math.cos(self.a * 1rad));
+            }
+            VerticalLayout {
+                alignment: center;
+                Text { text: root.deck.loaded ? root.deck.bpm : "—"; color: #f2f4f8; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.52); horizontal-alignment: center; }
+                Text { text: root.deck.playing ? "BPM" : "PAUSED"; color: #9aa0ac; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.24); letter-spacing: 0.6px; horizontal-alignment: center; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: root.unit * 0.18;
+            Rectangle {
+                width: root.unit * 2.6; height: root.unit * 0.9;
+                border-radius: root.unit * 0.45; border-width: 1px;
+                border-color: root.fx-here ? root.colour : #ffffff26;
+                background: root.fx-here ? root.colour.with-alpha(0.18) : #00000040;
+                Text { text: root.fx-here ? DjState.fx-label.to-uppercase() : "FX OFF"; color: root.fx-here ? #f2f4f8 : #6f7580; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.32); letter-spacing: 0.8px; horizontal-alignment: center; vertical-alignment: center; }
+                Rectangle { x: parent.width * 0.15; y: parent.height - 3px; height: 1.5px; width: root.fx-here ? parent.width * 0.7 * DjState.fx-depth : 0px; background: root.colour; }
+            }
+            Text { text: root.fx-here && DjState.fx-uses-beats ? (DjState.fx-beats < 1 ? Math.round(DjState.fx-beats * 4) + "/4" : Math.round(DjState.fx-beats) + "") + " BEAT · " + Math.round(DjState.fx-depth * 100) + "%" : "BEAT FX"; color: #aab0bb; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.28); letter-spacing: 0.5px; horizontal-alignment: center; }
+        }
+    }
+    HorizontalLayout {
+        spacing: root.unit * 0.45;
+        alignment: root.right ? LayoutAlignment.end : LayoutAlignment.start;
+        for band[i] in [root.eq.low, root.eq.mid, root.eq.high]: MixKnob { value: band; label: i == 0 ? "LOW" : i == 1 ? "MID" : "HIGH"; colour: root.colour; size: root.unit; }
+        VerticalLayout {
+            spacing: root.unit * 0.15;
+            Path {
+                property <float> f: root.eq.filter;
+                width: root.unit * 1.9; height: root.unit;
+                viewbox-width: 100; viewbox-height: 40;
+                stroke: root.colour; stroke-width: 1.2px;
+                // Flat when the filter is open; a low-pass or high-pass
+                // slope only once it is turned.
+                commands: Math.abs(self.f) < 0.02 ? "M 0 30 L 100 30"
+                    : self.f < 0 ? "M 0 30 L " + (70 + self.f * 60) + " 30 Q " + (85 + self.f * 60) + " 22 " + (100 + self.f * 60) + " 40"
+                    : "M " + (self.f * 60) + " 40 Q " + (15 + self.f * 60) + " 22 " + (30 + self.f * 60) + " 30 L 100 30";
+            }
+            Text { text: "FILTER"; color: #aab0bb; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.36); letter-spacing: 0.5px; horizontal-alignment: center; }
+        }
+        MixMeter { width: root.unit * 0.5; height: root.unit * 1.75; left: root.lv.level-l; right: root.lv.level-r; colour: root.colour; }
+    }
+}
+
+// The mix as a transparent overlay: each deck's cluster over the side of
+// the console beside its jog, the crossfader under the mixer.
+component MixDisplay inherits Rectangle {
+    property <length> unit: Math.min(self.height * 0.05, self.width * 0.016);
+    DeckControls {
+        x: parent.width * 0.022; y: parent.height * 0.79;
+        deck: DjState.deck-a; eq: DjState.eq-a; lv: DjState.levels-a; colour: VisualState.signal-colour-a; unit: root.unit;
+        fx-here: DjState.fx-on && DjState.fx-deck == "a";
+    }
+    DeckControls {
+        x: parent.width * 0.978 - self.width; y: parent.height * 0.79; right: true;
+        deck: DjState.deck-b; eq: DjState.eq-b; lv: DjState.levels-b; colour: VisualState.signal-colour-b; unit: root.unit;
+        fx-here: DjState.fx-on && DjState.fx-deck == "b";
+    }
+    HorizontalLayout {
+        width: self.preferred-width; height: self.preferred-height;
+        x: (parent.width - self.width) / 2; y: parent.height * 0.915;
+        spacing: root.unit * 0.4;
+        Text { text: "A"; color: VisualState.signal-colour-a; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.42); vertical-alignment: center; }
+        Rectangle {
+            width: root.unit * 4.2; height: root.unit * 0.7;
+            Rectangle { y: parent.height / 2; height: 1px; background: #ffffff30; }
+            Rectangle {
+                x: DjState.xfader * (parent.width - self.width); width: root.unit * 0.22; height: parent.height;
+                border-radius: 1px; background: @linear-gradient(90deg, VisualState.signal-colour-a 0%, VisualState.signal-colour-b 100%);
+            }
+        }
+        Text { text: "B"; color: VisualState.signal-colour-b; font-family: Theme.font-display; font-size: Math.max(1px, root.unit * 0.42); vertical-alignment: center; }
+    }
+}
+
+export component VisualSurface inherits Rectangle {
+    background: VisualState.gpu ? transparent : Theme.bg-deeper;
+    init => { keys.focus(); VisualState.view-w = self.width; VisualState.view-h = self.height; }
+    changed width => { VisualState.view-w = self.width; }
+    changed height => { VisualState.view-h = self.height; }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == " ") { VisualState.next(); return accept; }
+            if (e.text == "a") { VisualState.toggle-source(1); return accept; }
+            if (e.text == "x") { VisualState.switch-scene(VisualState.current-scene-id); return accept; }
+            if (e.text == "h") { VisualState.hold(); return accept; }
+            if (e.text == "m") { VisualState.cycle-mode(); return accept; }
+            if (e.text == "g") { VisualState.next-scene(); return accept; }
+            if (e.text == "l") { Host.focus-surface("visualiser-controls"); return accept; }
+            // d, like m: DJ (the booth, decks and the DJ) → booth (no DJ)
+            // → off → DJ again; kept like the panel's switches.
+            if (e.text == "d") {
+                if (VisualState.decks-enabled && VisualState.performer-enabled) {
+                    VisualState.performer-enabled = false;
+                } else if (VisualState.decks-enabled || VisualState.performer-enabled) {
+                    VisualState.decks-enabled = false;
+                    VisualState.performer-enabled = false;
+                } else {
+                    VisualState.decks-enabled = true;
+                    VisualState.performer-enabled = true;
+                }
+                VisualState.layers-changed();
+                return accept;
+            }
+            if (e.text == "f") { VisualState.toggle-fullscreen(); return accept; }
+            return reject;
+        }
+    }
+    if !VisualState.gpu: Image {
+        width: parent.width;
+        height: parent.height;
+        source: VisualState.frame;
+        image-fit: fill;
+        // Scaled up by whole steps: sharp (glyph edges stay crisp).
+        image-rendering: pixelated;
+    }
+    // Why the layers stepped down or back up, for a few seconds.
+    if VisualState.layers-note != "": Text {
+        x: Theme.s4;
+        y: parent.height - self.height - Theme.s3 * 3;
+        text: VisualState.layers-note;
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+    }
+    // Clicking anywhere moves on too.
+    canvas-pointer := TouchArea {
+        changed has-hover => { VisualState.pointer-present = self.has-hover; }
+        moved => {
+            VisualState.pointer-x = self.mouse-x / Math.max(1px, self.width);
+            VisualState.pointer-y = self.mouse-y / Math.max(1px, self.height);
+        }
+        clicked => { VisualState.next(); keys.focus(); }
+    }
+    // What plays, for a few seconds after it starts (always when held).
+    if !VisualState.bare: Text {
+        x: Theme.s4;
+        y: parent.height - self.height - Theme.s3;
+        text: VisualState.caption + (VisualState.held ? " · held" : "");
+        color: VisualState.held ? Theme.accent : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        opacity: VisualState.held ? 1 : Math.max(0, 1 - Math.max(0, VisualState.scene-age - 3) / 2);
+    }
+    // The track and the mix, part of the picture (the user's reference,
+    // 2026-10-26): each deck's track in the upper third beside the DJ, the
+    // mix controls on the console's front. No buttons or panels: the window
+    // shows what fullscreen shows (the layer settings open with L).
+    // A soft shade behind each deck's words: they read over any scene.
+    if VisualState.decks-enabled && VisualState.layers-gpu && VisualState.layers-shed < 2: Rectangle {
+        x: -parent.width * 0.06; y: parent.height * 0.04; width: parent.width * 0.5; height: parent.height * 0.5;
+        background: @radial-gradient(circle, #000000b0 0%, #00000070 45%, #00000000 72%);
+    }
+    if VisualState.decks-enabled && VisualState.layers-gpu && VisualState.layers-shed < 2: Rectangle {
+        x: parent.width * 0.56; y: parent.height * 0.04; width: parent.width * 0.5; height: parent.height * 0.5;
+        background: @radial-gradient(circle, #000000b0 0%, #00000070 45%, #00000000 72%);
+    }
+    if VisualState.decks-enabled && VisualState.layers-gpu && VisualState.layers-shed < 2: TrackText {
+        x: parent.width * 0.075; y: parent.height * 0.17;
+        width: parent.width * 0.3; scale: parent.height;
+        deck: DjState.deck-a; side: "A"; colour: VisualState.signal-colour-a;
+        title: VisualState.a-title; mix: VisualState.a-mix;
+        lit: DjState.deck-a.playing ? Math.max(0.35, Math.min(1, (1 - DjState.xfader) * 2)) : 0.3;
+    }
+    if VisualState.decks-enabled && VisualState.layers-gpu && VisualState.layers-shed < 2: TrackText {
+        x: parent.width * (1 - 0.075 - 0.3); y: parent.height * 0.17;
+        width: parent.width * 0.3; scale: parent.height; right: true;
+        deck: DjState.deck-b; side: "B"; colour: VisualState.signal-colour-b;
+        title: VisualState.b-title; mix: VisualState.b-mix;
+        lit: DjState.deck-b.playing ? Math.max(0.35, Math.min(1, DjState.xfader * 2)) : 0.3;
+    }
+    if VisualState.decks-enabled && VisualState.layers-gpu && VisualState.layers-shed < 2: MixDisplay {
+        width: parent.width; height: parent.height;
+    }
+
+}
+
+// The Visualiser's control panel, in its own window of the same Unit
+// (L or the button in the Visualiser opens it), so the picture stays clean.
+export component VisualControlsSurface inherits Rectangle {
+    background: Theme.bg-deeper;
+    panel-scroll := Flickable {
+        width: parent.width; height: parent.height;
+        content-width: self.width;
+        content-height: Math.max(self.height, background-controls.preferred-height);
+    background-controls := VerticalLayout {
+        width: panel-scroll.width;
+        padding: Theme.s3; spacing: Theme.s2;
+        HorizontalLayout {
+            for name[i] in ["Scenes", "Choreography", "Layers"]: Button { text: name; compact: true; lit: VisualState.panel-tab == i; clicked => { VisualState.panel-tab = i; } }
+        }
+        Text { text: VisualState.current-family + " · " + VisualState.current-scene; color: Theme.text-bright; font-size: Theme.fs-small; font-family: Theme.font; wrap: word-wrap; }
+        if VisualState.panel-tab == 0: VerticalLayout {
+            spacing: Theme.s2;
+            Text { text: VisualState.library-count; color: Theme.text-dim; font-size: Theme.fs-tiny; font-family: Theme.font; wrap: word-wrap; }
+            HorizontalLayout {
+                for name[i] in ["Patch", "Ambient", "Shaders", "Titles"]: Button { text: (VisualState.sources[i] ? "✓ " : "○ ") + name; compact: true; lit: VisualState.sources[i]; clicked => { VisualState.toggle-source(i); } }
+            }
+            HorizontalLayout {
+                Button { text: "Next · Space"; compact: true; clicked => { VisualState.next(); } }
+                Button { text: VisualState.held ? "Held · H" : "Hold · H"; compact: true; lit: VisualState.held; clicked => { VisualState.hold(); } }
+                Button { text: VisualState.show-automatic ? "Auto" : "Manual"; compact: true; lit: VisualState.show-automatic; clicked => { VisualState.edit-control("automatic", VisualState.show-automatic ? 0 : 1); } }
+            }
+            Button { text: "Pulse now"; compact: true; clicked => { VisualState.pulse-now(); } }
+            Text { text: "M: native / shader / hybrid · G: next shader"; color: Theme.text-faint; font-size: Theme.fs-tiny; font-family: Theme.font; wrap: word-wrap; }
+            Text { text: "X switches the scene on screen off · On/Off per scene below"; color: Theme.text-faint; font-size: Theme.fs-tiny; font-family: Theme.font; wrap: word-wrap; }
+            for scene in VisualState.scene-library: HorizontalLayout {
+                spacing: Theme.s2;
+                Button { horizontal-stretch: 1; text: scene.name + " · " + scene.family + (scene.off ? " · off" : ""); compact: true; lit: VisualState.current-scene-id == scene.id; clicked => { VisualState.pick-scene(scene.id); } }
+                Button { horizontal-stretch: 0; text: scene.off ? "Off" : "On"; compact: true; lit: !scene.off; clicked => { VisualState.switch-scene(scene.id); } }
+            }
+        }
+        if VisualState.panel-tab == 1: VerticalLayout {
+            spacing: Theme.s2;
+            HorizontalLayout {
+                TextInput { text <=> VisualState.profile-name; font-family: Theme.font; font-size: Theme.fs-small; color: Theme.text-bright; single-line: true; }
+                Button { text: "Save profile"; compact: true; clicked => { VisualState.save-profile(VisualState.profile-name); } }
+            }
+            for name in VisualState.profile-names: Button { text: "Load " + name; compact: true; clicked => { VisualState.load-profile(name); } }
+            Text { text: VisualState.settings-note; color: Theme.text-dim; font-size: Theme.fs-tiny; font-family: Theme.font; wrap: word-wrap; }
+            Button { text: "Section: " + ["Idle", "Reveal", "Groove", "Lift", "Calm", "Handover", "Drop"][VisualState.editing-section]; compact: true; clicked => { VisualState.edit-section(mod(VisualState.editing-section + 1, 7)); } }
+            for control in VisualState.show-controls: ShowControl { control: control; }
+            Text { text: "Material: " + VisualState.editing-material-name; color: Theme.text-bright; font-size: Theme.fs-small; font-family: Theme.font; wrap: word-wrap; }
+            for control in VisualState.material-controls: ShowControl { control: control; }
+            Text { text: "Choose material to configure"; color: Theme.text-dim; font-size: Theme.fs-small; font-family: Theme.font; }
+            for scene in VisualState.scene-library: Button { text: (scene.enabled ? "✓ " : "○ ") + scene.name; compact: true; lit: VisualState.editing-material == scene.id; clicked => { VisualState.edit-material(scene.id); } }
+        }
+        if VisualState.panel-tab == 2: VerticalLayout {
+            spacing: Theme.s2;
+        HorizontalLayout {
+            Button { text: "Decks & Signal " + (VisualState.decks-enabled ? "ON" : "OFF"); compact: true; lit: VisualState.decks-enabled; clicked => { VisualState.decks-enabled = !VisualState.decks-enabled; VisualState.layers-changed(); } }
+            Slider { value <=> VisualState.deck-opacity; changed(v) => { VisualState.layers-changed(); } }
+        }
+        HorizontalLayout {
+            Button { text: "Signal ribbons " + (VisualState.ribbons ? "ON" : "OFF"); compact: true; lit: VisualState.ribbons; clicked => { VisualState.ribbons = !VisualState.ribbons; VisualState.layers-changed(); } }
+        }
+        HorizontalLayout {
+            Button { text: "Patch Performer " + (VisualState.performer-enabled ? "ON" : "OFF"); compact: true; lit: VisualState.performer-enabled; clicked => { VisualState.performer-enabled = !VisualState.performer-enabled; VisualState.layers-changed(); } }
+            Slider { value <=> VisualState.performer-opacity; changed(v) => { VisualState.layers-changed(); } }
+        }
+        HorizontalLayout {
+            Button { text: "Auto"; lit: VisualState.auto-layers; compact: true; clicked => { VisualState.auto-layers = !VisualState.auto-layers; VisualState.layers-changed(); } }
+        }
+        HorizontalLayout {
+            Button { text: VisualState.director-colours ? "Director palette" : "Patch colours"; compact: true; clicked => { VisualState.director-colours = !VisualState.director-colours; VisualState.layers-changed(); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s1;
+            Text { text: "Performer"; color: Theme.text-dim; font-size: Theme.fs-small; font-family: Theme.font; vertical-alignment: center; }
+            // Three performers from one film: the silhouette (with the chest
+            // mark below), the points, the person. Where the film is not
+            // installed, the drawn DJ shows as silhouette or points.
+            for name[i] in ["Silhouette", "Dots", "Me"]: Button { text: name; compact: true; lit: (i == 0 ? VisualState.film-shadow : i == 1 ? VisualState.film-points : VisualState.film-photo) >= 0.99; clicked => { VisualState.performer-me = true; VisualState.point-appearance = i == 1; VisualState.film-shadow = i == 0 ? 1 : 0; VisualState.film-points = i == 1 ? 1 : 0; VisualState.film-photo = i == 2 ? 1 : 0; VisualState.layers-changed(); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s1;
+            Text { text: "Chest"; color: Theme.text-dim; font-size: Theme.fs-small; font-family: Theme.font; vertical-alignment: center; }
+            for name[i] in ["P.", "Omarchy", "Off"]: Button { text: name; compact: true; lit: VisualState.emblem == i; clicked => { VisualState.emblem = i; VisualState.layers-changed(); } }
+        }
+        }
+        Text { text: VisualState.layers-gpu ? "Shared Director · live mix" : "Layers need OpenGL · existing visuals remain active"; color: Theme.text-faint; font-size: Theme.fs-tiny; font-family: Theme.font; wrap: word-wrap; }
+    }
+    }
+}

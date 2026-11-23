@@ -1,0 +1,14 @@
+[Unit]
+Description=Patch audio service (the Omarchy audio layer)
+Documentation=https://github.com/novuon/Patch
+After=pipewire.service wireplumber.service
+Requires=pipewire.service
+PartOf=pipewire.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/omarchy-patch engine start
+
+[Install]
+WantedBy=pipewire.service

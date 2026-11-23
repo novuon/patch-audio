@@ -1,0 +1,562 @@
+import { Theme, Label, Button, SectionHeading, Scroll, Dot, Tabs, SearchField } from "@patch-ui/patch-ui.slint";
+import { VisualState } from "visual.slint";
+
+// The Tidal Unit: TidalCycles, native to Patch. Code on the left (over the
+// Visualiser when the backdrop is on), what plays on the right: channels
+// you can mute and solo, and a reference you can search and play from.
+// Keys as in Tidal's editors: Ctrl+Enter runs the block under the cursor
+// (or the selection), Ctrl+Shift+Enter runs everything, Ctrl+. hushes.
+
+export struct TidalChannel { name: string, code: string, sounds: string, line: int, muted: bool, soloed: bool, silenced: bool, hit: float }
+export struct TidalHelp { topic: string, word: string, usage: string, doc: string, example: string }
+export struct TidalError { line: int, col: int, message: string }
+// A word of the code lit while its events play: line, column, length (in
+// characters).
+export struct TidalMark { line: int, col: int, len: int }
+
+export global TidalState {
+    in-out property <string> code;
+    in property <bool> playing;
+    in property <string> cycle: "–";
+    in property <string> tempo;
+    in property <[TidalChannel]> channels;
+    in property <[TidalError]> errors;
+    in property <[string]> warnings;
+    in property <string> message: "Connecting to the Patch engine…";
+    // Line numbers, and the same lines marked: what was just run, where
+    // the errors are. One Text each, so they line up with the code.
+    in property <string> gutter: "1";
+    in property <string> flash;
+    // Lines whose channels just hit: the live playhead in the code.
+    in property <string> live;
+    in property <float> flash-level;
+    in property <string> marks;
+    // The code once per colour (see `tidal::editor::layers`): plain,
+    // comment, string, number, word, control, head, operator, unknown.
+    in property <[string]> layers;
+    // The words whose events are sounding now.
+    in property <[TidalMark]> active;
+    // What the word at the cursor does, and how Tab completes it.
+    in property <string> hint;
+    // 0 off, 1 dim, 2 bright: the Visualiser under the code.
+    in property <int> backdrop;
+    in property <[TidalHelp]> help;
+    in property <[string]> topics;
+    in-out property <int> topic;
+    in property <[string]> starters;
+    in property <string> delivery;
+    in-out property <bool> show-help: false;
+    // How far the code is scrolled down (the editor sets it).
+    in-out property <length> scrolled;
+    // Run the block at the cursor (anchor ≠ cursor: the selection), or all.
+    callback run(int, int, bool);
+    // "hush", "play", "stop", "backdrop", "faster", "slower", "follow", "own"
+    callback action(string);
+    // A channel's "mute", "solo" or "silence".
+    callback channel(string, string);
+    // Help: put an example in the code (as a block after the cursor's).
+    callback insert(string, int);
+    callback starter(int);
+    callback search(string);
+    // Typed: the code and the cursor after it.
+    callback edited(string, int);
+    callback cursor-moved(int);
+    // An edit the editor does for you, on the selection (anchor, cursor):
+    // "newline", "tab", "comment", "undo", "redo", "backspace", or a typed
+    // bracket or quote. The cursor after it, or -1: not handled (type as usual).
+    callback edit(string, int, int) -> int;
+}
+
+component CodeArea inherits Rectangle {
+    in property <float> veil: 1;
+    out property <int> cursor: input.cursor-position-byte-offset;
+    background: Theme.bg-deeper.with-alpha(root.veil);
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent.with-alpha(0.5) : Theme.border;
+    clip: true;
+    forward-focus: input;
+    property <length> gutter-w: 40px;
+    // The face's cell: monospaced, so a column is a width.
+    property <length> cw: probe.preferred-width / 10;
+    // A line's height over a hundred lines: a two-line probe was off by a
+    // fraction of a pixel, which the boxes far down the code added up.
+    property <length> lh: (probe2.preferred-height - probe.preferred-height) / 100;
+    property <length> caret-x;
+    property <length> caret-y;
+    property <bool> caret-on: true;
+    // The cursor offset last kept in view.
+    property <int> followed: -1;
+    // The probes measure the face; in a box of no size, so the hundred
+    // lines don't make the code area at least as tall as they are (it then
+    // ran past the window and held all the code: nothing to scroll).
+    Rectangle {
+        width: 0px;
+        height: 0px;
+        clip: true;
+        probe := Text { visible: false; text: "0000000000"; font-family: Theme.font; font-size: Theme.fs; }
+        probe2 := Text { visible: false; text: "0000000000" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0" + "\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0"; font-family: Theme.font; font-size: Theme.fs; }
+    }
+    Timer {
+        interval: 530ms;
+        running: input.has-focus;
+        triggered => { root.caret-on = !root.caret-on; }
+    }
+    fl := Flickable {
+        x: Theme.s2;
+        y: Theme.s3;
+        width: parent.width - Theme.s2 - Theme.s3;
+        height: parent.height - 2 * Theme.s3;
+        content-height: max(self.height, input.preferred-height + Theme.s5);
+        content-width: max(self.width, input.preferred-width + root.gutter-w + Theme.s5);
+        changed content-y => { TidalState.scrolled = -self.content-y; }
+        // The gutter: numbers, the run lines' bars, the errors' dots.
+        Text {
+            x: 0px;
+            y: 0px;
+            width: root.gutter-w - Theme.s3;
+            horizontal-alignment: right;
+            text: TidalState.gutter;
+            color: Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+        }
+        Text {
+            x: 0px;
+            y: 0px;
+            width: root.gutter-w - Theme.s3;
+            horizontal-alignment: right;
+            text: TidalState.flash;
+            color: Theme.accent;
+            opacity: TidalState.flash-level;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+        }
+        Text {
+            x: 0px;
+            y: 0px;
+            width: root.gutter-w - Theme.s3;
+            horizontal-alignment: right;
+            text: TidalState.live;
+            color: Theme.accent;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+        }
+        Text {
+            x: 0px;
+            y: 0px;
+            width: root.gutter-w - Theme.s3;
+            horizontal-alignment: right;
+            text: TidalState.marks;
+            color: Theme.error;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+        }
+        // The words sounding now, under the code.
+        for m in TidalState.active: Rectangle {
+            x: root.gutter-w + m.col * root.cw - 2px;
+            y: m.line * root.lh;
+            width: m.len * root.cw + 4px;
+            height: root.lh;
+            border-radius: 3px;
+            background: Theme.accent.with-alpha(0.22);
+            border-width: 1px;
+            border-color: Theme.accent.with-alpha(0.8);
+        }
+        // The text itself is drawn by the colour layers above it: the
+        // input keeps the editing, the selection and the cursor's place.
+        input := TextInput {
+            x: root.gutter-w;
+            y: 0px;
+            text <=> TidalState.code;
+            width: max(fl.width - root.gutter-w, self.preferred-width);
+            height: max(fl.height, self.preferred-height);
+            single-line: false;
+            wrap: no-wrap;
+            color: transparent;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+            selection-background-color: Theme.accent.with-alpha(0.3);
+            selection-foreground-color: transparent;
+            edited => { TidalState.edited(self.text, self.cursor-position-byte-offset); }
+            cursor-position-changed(p) => {
+                root.caret-x = p.x;
+                root.caret-y = p.y;
+                root.caret-on = true;
+                // This also fires when the view scrolls under a cursor that
+                // stays put: keeping the cursor in view then undid every
+                // turn of the mouse wheel. Only a cursor that moved is
+                // followed.
+                if (self.cursor-position-byte-offset == root.followed) { return; }
+                root.followed = self.cursor-position-byte-offset;
+                TidalState.cursor-moved(self.cursor-position-byte-offset);
+                // Keep the cursor in view. Not before the editor has its
+                // size: at 0 px wide the window opened scrolled sideways,
+                // the line numbers and the first letters cut off.
+                if (fl.width < root.gutter-w + 8 * root.cw || fl.height < 3 * root.lh) { return; }
+                if (p.y + fl.content-y < 0) { fl.content-y = -p.y; }
+                if (p.y + root.lh + fl.content-y > fl.height) { fl.content-y = min(0px, fl.height - p.y - root.lh); }
+                if (p.x + root.gutter-w + fl.content-x < root.gutter-w) { fl.content-x = min(0px, -p.x); }
+                if (p.x + root.gutter-w + 2 * root.cw + fl.content-x > fl.width) { fl.content-x = min(0px, fl.width - p.x - root.gutter-w - 2 * root.cw); }
+            }
+            key-pressed(e) => {
+                if (e.modifiers.control && (e.text == Key.Return || e.text == "\n")) {
+                    TidalState.run(self.anchor-position-byte-offset, self.cursor-position-byte-offset, e.modifiers.shift);
+                    return accept;
+                }
+                if (e.modifiers.control && e.text == ".") {
+                    TidalState.action("hush");
+                    return accept;
+                }
+                if (e.modifiers.control && e.text == " ") {
+                    TidalState.action(TidalState.playing ? "stop" : "play");
+                    return accept;
+                }
+                if (e.modifiers.control && e.text == "h") {
+                    TidalState.show-help = !TidalState.show-help;
+                    return accept;
+                }
+                if (e.modifiers.control && e.text == "b") {
+                    TidalState.action("backdrop");
+                    return accept;
+                }
+                // The editor's own edits and undo (the input's undo would
+                // forget them).
+                let what = e.modifiers.control && !e.modifiers.alt
+                    ? (e.text == "z" || e.text == "Z" ? (e.modifiers.shift ? "redo" : "undo")
+                        : e.text == "y" ? "redo" : e.text == "/" ? "comment" : "")
+                    : e.modifiers.alt || e.modifiers.meta ? ""
+                    : e.text == Key.Return || e.text == "\n" ? "newline"
+                    : e.text == Key.Tab ? "tab"
+                    : e.text == Key.Backspace ? "backspace"
+                    : e.text == "(" || e.text == "[" || e.text == "\"" || e.text == ")" || e.text == "]" ? e.text
+                    : "";
+                if (what != "") {
+                    let r = TidalState.edit(what, self.anchor-position-byte-offset, self.cursor-position-byte-offset);
+                    if (r >= 0) {
+                        self.set-selection-offsets(r, r);
+                        return accept;
+                    }
+                    // Undo with nothing left, Tab at nothing: swallowed.
+                    if (what == "undo" || what == "redo" || what == "tab" || what == "comment") { return accept; }
+                }
+                return reject;
+            }
+        }
+        // The code, one text per colour, over the input.
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[0]; color: Theme.text-bright; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[1]; color: Theme.text-faint; font-italic: true; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[2]; color: Theme.code-string; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[3]; color: Theme.code-number; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[4]; color: Theme.code-word; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[5]; color: Theme.code-control; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[6]; color: Theme.text-bright; font-weight: 700; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[7]; color: Theme.text-dim; }
+        Text { x: root.gutter-w; y: 0px; wrap: no-wrap; font-family: Theme.font; font-size: Theme.fs; text: TidalState.layers[8]; color: Theme.error; }
+        // The cursor (the input's own is drawn in its text's colour: none).
+        Rectangle {
+            x: root.gutter-w + root.caret-x;
+            y: root.caret-y;
+            width: 2px;
+            height: root.lh;
+            background: Theme.text-bright;
+            visible: input.has-focus && root.caret-on && input.anchor-position-byte-offset == input.cursor-position-byte-offset;
+        }
+    }
+}
+
+// One channel: a light that flashes on its events, its name, what it
+// plays, and mute, solo and silence.
+component ChannelRow inherits Rectangle {
+    in property <TidalChannel> ch;
+    height: Theme.row-h + 14px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s3;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px + 5px * root.ch.hit;
+                height: 8px + 5px * root.ch.hit;
+                border-radius: 6px;
+                background: root.ch.muted || root.ch.silenced ? Theme.text-faint.with-alpha(0.3)
+                    : Theme.accent.with-alpha(0.15 + 0.85 * root.ch.hit);
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 0px;
+            Label {
+                text: (root.ch.line >= 0 ? "L" + (root.ch.line + 1) + "  " : "")
+                    + root.ch.name + (root.ch.sounds != "" ? "  " + root.ch.sounds : "");
+                tone: root.ch.muted || root.ch.silenced ? "faint"
+                    : root.ch.hit > 0.25 ? "accent" : "bright";
+            }
+            Label { text: root.ch.code; tone: "faint"; small: true; }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: Theme.s2;
+                Button { compact: true; text: "M"; lit: root.ch.muted; clicked => { TidalState.channel(root.ch.name, "mute"); } }
+                Button { compact: true; text: "S"; lit: root.ch.soloed; clicked => { TidalState.channel(root.ch.name, "solo"); } }
+                Button { compact: true; text: "✕"; clicked => { TidalState.channel(root.ch.name, "silence"); } }
+            }
+        }
+    }
+}
+
+component HelpRow inherits Rectangle {
+    in property <TidalHelp> item;
+    in property <int> cursor;
+    background: ta.has-hover ? Theme.hover : transparent;
+    height: v.preferred-height;
+    v := VerticalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        padding-top: Theme.s2;
+        padding-bottom: Theme.s2;
+        spacing: 1px;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            Label { text: root.item.word; tone: "accent"; horizontal-stretch: 0; }
+            Label { text: root.item.usage; tone: "dim"; small: true; }
+        }
+        Label { text: root.item.doc; small: true; wrap: word-wrap; overflow: clip; }
+        Label { text: "▸ " + root.item.example; tone: "faint"; small: true; }
+    }
+    // Click: the example goes into the code, ready to run.
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { TidalState.insert(root.item.example, root.cursor); }
+    }
+}
+
+// What plays: the clock, the tempo, the channels, what was delivered.
+component PlayingPanel inherits VerticalLayout {
+    // A column of its own: the channel list takes the height.
+    in property <bool> fill;
+    in property <length> list-max: 100000px;
+    in property <bool> delivery: true;
+    spacing: Theme.s2;
+    // What plays.
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        padding-top: Theme.s2;
+        spacing: Theme.s3;
+        height: Theme.row-h + 4px;
+        Dot { state: TidalState.playing ? "accent" : "off"; y: (parent.height - self.height) / 2; }
+        Label { tone: "bright"; text: TidalState.playing ? "cycle " + TidalState.cycle : "stopped"; horizontal-stretch: 0; }
+        Label { tone: "dim"; small: true; text: TidalState.tempo; horizontal-alignment: right; }
+    }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        spacing: Theme.s2;
+        alignment: start;
+        Button { compact: true; text: "−"; clicked => { TidalState.action("slower"); } }
+        Button { compact: true; text: "+"; clicked => { TidalState.action("faster"); } }
+        Button { compact: true; text: "Own tempo"; clicked => { TidalState.action("own"); } }
+        Button { compact: true; text: "Follow deck"; clicked => { TidalState.action("follow"); } }
+    }
+    SectionHeading { text: "Channels"; detail: TidalState.channels.length > 0 ? TidalState.channels.length : "none yet"; pad: Theme.s3; }
+    if TidalState.channels.length == 0: HorizontalLayout {
+        padding-left: Theme.s3;
+        Label { tone: "faint"; small: true; text: "Write d1 $ s \"bd*4\" and press Ctrl+Enter."; }
+    }
+    // Every channel in view when there is room (the reference
+    // below gives way); a long list scrolls.
+    Scroll {
+        vertical-stretch: root.fill ? 1 : 0;
+        min-height: min(max(80px, TidalState.channels.length * (Theme.row-h + 14px)), root.list-max);
+        for c in TidalState.channels: ChannelRow { ch: c; }
+    }
+    if root.delivery: HorizontalLayout {
+    padding-left: Theme.s3;
+    padding-right: Theme.s3;
+    Label { tone: "faint"; small: true; text: TidalState.delivery; }
+    }
+}
+
+// The reference and the starting points.
+component ReferencePanel inherits VerticalLayout {
+    in property <int> cursor;
+    spacing: Theme.s2;
+    Tabs {
+        labels: ["Reference", "Start"];
+        current: TidalState.topic < 0 ? 1 : 0;
+        selected(i) => { TidalState.topic = i == 1 ? -1 : 0; TidalState.search(""); }
+    }
+    if TidalState.topic >= 0: SearchField {
+        placeholder: "search fast, jux, scale, room …";
+        edited(t) => { TidalState.search(t); }
+    }
+    if TidalState.topic >= 0: Scroll {
+        vertical-stretch: 2;
+        for h in TidalState.help: HelpRow { item: h; cursor: root.cursor; }
+    }
+    if TidalState.topic < 0: Scroll {
+        vertical-stretch: 2;
+        HorizontalLayout {
+            padding-left: Theme.s3;
+            Label { tone: "dim"; small: true; text: "A starting point: replaces the code, then runs it."; }
+        }
+        for s[i] in TidalState.starters: Rectangle {
+            height: Theme.row-h + 6px;
+            background: sta.has-hover ? Theme.hover : transparent;
+            Label { x: Theme.s3; text: "▸ " + s; tone: "bright"; }
+            sta := TouchArea { mouse-cursor: pointer; clicked => { TidalState.starter(i); } }
+        }
+    }
+}
+
+export component TidalSurface inherits Rectangle {
+    // Code first: under 1000 px the right column comes and goes (Help).
+    property <bool> narrow: self.width < 1000px;
+    property <length> side-w: clamp(self.width * 0.3, 300px, 440px);
+    // From 1500 px: code, what plays, the reference, side by side.
+    property <bool> three: self.width >= 1500px;
+    property <length> play-w: clamp(self.width * 0.2, 320px, 420px);
+    property <length> ref-w: clamp(self.width * 0.24, 360px, 520px);
+    // The backdrop: the Visualiser's own picture, drawn beneath (GPU) or
+    // as an image (CPU), with the code on a veil over it.
+    background: TidalState.backdrop > 0 && VisualState.gpu ? transparent : Theme.bg;
+    forward-focus: code;
+    init => { VisualState.view-w = self.width; VisualState.view-h = self.height; }
+    changed width => { VisualState.view-w = self.width; }
+    changed height => { VisualState.view-h = self.height; }
+    if TidalState.backdrop > 0 && !VisualState.gpu: Image {
+        width: parent.width;
+        height: parent.height;
+        source: VisualState.frame;
+        image-fit: fill;
+        image-rendering: pixelated;
+    }
+    HorizontalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s4;
+        // Narrow, Help takes the code's place (and gives it back): side by
+        // side the code was left a sliver.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            visible: !(root.narrow && TidalState.show-help);
+            max-width: self.visible ? 100000px : 0px;
+            spacing: Theme.s3;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                alignment: start;
+                Button { text: "Run"; key: "^⏎"; primary: true; clicked => { TidalState.run(code.cursor, code.cursor, false); } }
+                Button { text: "Run all"; key: "^⇧⏎"; compact: true; clicked => { TidalState.run(0, 0, true); } }
+                Button { text: "Hush"; key: "^."; compact: true; clicked => { TidalState.action("hush"); } }
+                Button { text: TidalState.playing ? "Stop" : "Play"; key: "^␣"; compact: true; clicked => { TidalState.action(TidalState.playing ? "stop" : "play"); } }
+                Button {
+                    text: TidalState.backdrop == 0 ? "Backdrop" : TidalState.backdrop == 1 ? "Backdrop · dim" : "Backdrop · bright";
+                    key: "^B";
+                    compact: true;
+                    lit: TidalState.backdrop > 0;
+                    clicked => { TidalState.action("backdrop"); }
+                }
+                if root.narrow: Button { text: TidalState.show-help ? "Code" : "Help"; key: "^H"; compact: true; clicked => { TidalState.show-help = !TidalState.show-help; } }
+            }
+            code := CodeArea {
+                vertical-stretch: 1;
+                // Whatever is inside, the code area takes the room the
+                // column has: grown to its content, it ran past the window
+                // and held all the code, and the wheel had nothing to scroll.
+                min-height: 120px;
+                preferred-height: 120px;
+                veil: TidalState.backdrop == 0 ? 1 : TidalState.backdrop == 1 ? 0.78 : 0.5;
+            }
+            if TidalState.errors.length > 0: Rectangle {
+                background: Theme.bg-deep.with-alpha(0.92);
+                height: errs.preferred-height;
+                errs := VerticalLayout {
+                    padding: Theme.s2;
+                    spacing: Theme.s1;
+                    for e in TidalState.errors: HorizontalLayout {
+                        spacing: Theme.s3;
+                        Label { horizontal-stretch: 0; tone: "error"; small: true; text: e.line > 0 ? e.line + ":" + e.col : "error"; }
+                        Label { tone: "error"; small: true; text: e.message; wrap: word-wrap; overflow: clip; }
+                    }
+                    Label { tone: "faint"; small: true; text: "nothing changed: what played plays on"; }
+                }
+            }
+            if TidalState.warnings.length > 0: Rectangle {
+                background: Theme.bg-deep.with-alpha(0.92);
+                height: warns.preferred-height;
+                warns := VerticalLayout {
+                    padding: Theme.s2;
+                    for w in TidalState.warnings: Label { tone: "warn"; small: true; text: w; wrap: word-wrap; overflow: clip; }
+                }
+            }
+            // Always there, so the code doesn't jump as the hint comes and goes.
+            Rectangle {
+                background: TidalState.backdrop > 0 ? Theme.bg-deep.with-alpha(0.8) : transparent;
+                height: Theme.row-h - 6px;
+                Label { x: Theme.s2; width: parent.width - 2 * Theme.s2; height: parent.height; tone: "dim"; small: true; text: TidalState.hint; }
+            }
+            Rectangle {
+                background: TidalState.backdrop > 0 ? Theme.bg-deep.with-alpha(0.8) : transparent;
+                height: Theme.row-h - 4px;
+                HorizontalLayout {
+                    padding-left: Theme.s2;
+                    padding-right: Theme.s2;
+                    spacing: Theme.s3;
+                    Label { tone: "dim"; small: true; text: TidalState.message; horizontal-stretch: 1; }
+                    Label { tone: "faint"; small: true; text: "▌ ran  ▸ live  ● error"; horizontal-alignment: right; }
+                }
+            }
+        }
+        // Wide: what plays and the reference each a column of their own.
+        if root.three: Rectangle {
+            horizontal-stretch: 0;
+            min-width: root.play-w;
+            max-width: root.play-w;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border;
+            PlayingPanel { fill: true; }
+        }
+        if root.three: Rectangle {
+            horizontal-stretch: 0;
+            min-width: root.ref-w;
+            max-width: root.ref-w;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border;
+            ReferencePanel { padding-top: Theme.s2; padding-bottom: Theme.s2; cursor: code.cursor; }
+        }
+        // Otherwise one column: the channels first, as many as fit in
+        // half of it, the reference under them.
+        if !root.three && (!root.narrow || TidalState.show-help): Rectangle {
+            horizontal-stretch: root.narrow ? 1 : 0;
+            min-width: root.narrow ? 0px : root.side-w;
+            max-width: root.narrow ? 100000px : root.side-w;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border;
+            VerticalLayout {
+                spacing: Theme.s2;
+                padding-bottom: Theme.s2;
+                // Narrow, this replaces the code: the way back.
+                if root.narrow: HorizontalLayout {
+                    padding-left: Theme.s3;
+                    padding-top: Theme.s2;
+                    alignment: start;
+                    Button { text: "Code"; key: "^H"; compact: true; clicked => { TidalState.show-help = false; } }
+                }
+                PlayingPanel { fill: false; delivery: false; list-max: root.height * 0.45; }
+                ReferencePanel { vertical-stretch: 1; cursor: code.cursor; }
+                HorizontalLayout {
+                    padding-left: Theme.s3;
+                    padding-right: Theme.s3;
+                    Label { tone: "faint"; small: true; text: TidalState.delivery; }
+                }
+            }
+        }
+    }
+}

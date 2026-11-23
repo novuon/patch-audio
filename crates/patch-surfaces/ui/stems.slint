@@ -1,0 +1,207 @@
+import { Theme, Label, Button, Slider } from "@patch-ui/patch-ui.slint";
+import { Knob } from "knob.slint";
+
+export struct StemItem { id:string, name:string, gain:float, muted:bool, solo:bool, meter:float, human:bool }
+export struct StemDeck { automating:bool, batch-id:string, batch-status:string, backend-ready:bool, installing:bool, partial:bool, status:string, key:string, job:string, ready:bool, attached:bool, enabled:bool, pinned:bool, items:[StemItem] }
+
+export global StemState {
+    in property <bool> preview-expanded;
+    in property <StemDeck> a;
+    in property <StemDeck> b;
+    in property <StemDeck> c;
+    in property <StemDeck> d;
+    public pure function item(id: string) -> StemDeck { return id == "b" ? self.b : id == "c" ? self.c : id == "d" ? self.d : self.a; }
+    in property <string> message;
+    in property <string> bridge-source;
+    in property <string> bridge-stem;
+    in property <string> bridge-destination;
+    in property <bool> bridge-fx;
+    in property <float> bridge-depth: 0.5;
+    callback action(string,string,string,float);
+}
+
+// One stem in the deck's stem row: its knob (like the EQ's: centre 100 %,
+// fully left mutes the part, fully right doubles it) and beside it the
+// name and gain, the level, and mute / solo / send. The knob turns to where
+// the engine has the gain every frame, so an AI ramp turns it smoothly.
+component StemKnob inherits Rectangle {
+    in property <string> deck;
+    in property <StemItem> stem;
+    in property <bool> ai;
+    // Stems attached: otherwise shown unlit and inert.
+    in property <bool> on: true;
+    property <bool> sending: StemState.bridge-source == root.deck && StemState.bridge-stem == root.stem.id;
+    property <bool> silent: !root.on || root.stem.muted || root.stem.gain <= 0.001;
+    opacity: root.on ? 1 : 0.5;
+    animate opacity { duration: 200ms; }
+    min-width: 0px;
+    HorizontalLayout {
+        spacing: Theme.s3;
+        Knob {
+            bare: true;
+            size: 32px;
+            value: clamp(root.stem.gain - 1, -1, 1);
+            live: root.on && !root.stem.muted;
+            moved(v) => { if (root.on) { StemState.action("gain", root.deck, root.stem.id, v + 1); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: Theme.s2;
+                Text {
+                    text: root.stem.name;
+                    color: root.silent ? Theme.text-faint : root.ai ? Theme.accent : Theme.text-bright;
+                    animate color { duration: 200ms; }
+                    font-family: Theme.font;
+                    font-size: Theme.fs-tiny;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.stem.muted ? "off" : round(root.stem.gain * 100) + "%";
+                    color: root.stem.muted ? Theme.accent : Theme.text-dim;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-tiny;
+                    horizontal-alignment: right;
+                }
+            }
+            Rectangle {
+                height: 3px;
+                background: Theme.bg-deeper;
+                border-radius: 1.5px;
+                clip: true;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * clamp(root.on ? root.stem.meter : 0, 0, 1);
+                    animate width { duration: 60ms; }
+                    background: root.silent ? Theme.text-faint : root.ai ? Theme.accent : Theme.text-dim;
+                }
+            }
+            HorizontalLayout {
+                spacing: 2px;
+                alignment: start;
+                Button { text: "M"; compact: true; enabled: root.on; width: 22px; lit: root.stem.muted; clicked => { StemState.action("mute", root.deck, root.stem.id, root.stem.muted ? 0 : 1); } }
+                Button { text: "S"; compact: true; enabled: root.on; width: 22px; lit: root.stem.solo; clicked => { StemState.action("solo", root.deck, root.stem.id, root.stem.solo ? 0 : 1); } }
+                // A stem sends between A and B only: no dead button on C and D.
+                if root.deck == "a" || root.deck == "b": Button { text: "→" + (root.deck == "a" ? "B" : "A"); compact: true; enabled: root.on && (root.deck == "a" || root.deck == "b"); width: 28px; lit: root.sending; clicked => { StemState.action(root.sending ? "bridge_off" : "bridge", root.deck, root.stem.id, 1); } }
+            }
+        }
+    }
+}
+
+export component StemControls inherits VerticalLayout {
+    in property <string> deck;
+    property <StemDeck> d: StemState.item(deck);
+    // Four strips in a row on a wide surface, else two by two (set by the
+    // surface, from its own width).
+    in property <bool> one-row: true;
+    property <bool> sending-here: StemState.bridge-source == root.deck;
+    vertical-stretch: 0;
+    spacing: Theme.s2;
+
+    // ── One row: the section and its state, the four stems, its actions ──
+    Rectangle {
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: root.d.automating ? Theme.accent-soft : Theme.border;
+        animate border-color { duration: 200ms; }
+        border-radius: 6px;
+        HorizontalLayout {
+            padding: Theme.s2 + 2px;
+            padding-left: Theme.s3;
+            spacing: Theme.s3 + Theme.s2;
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                width: 132px;
+                HorizontalLayout {
+                    spacing: Theme.s2;
+                    Text {
+                        text: "STEMS · " + root.deck.to-uppercase();
+                        color: Theme.text-bright;
+                        font-family: Theme.font;
+                        font-size: Theme.fs-small;
+                        font-weight: 700;
+                        letter-spacing: 1.5px;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: root.d.attached ? Theme.accent : root.d.ready ? Theme.text : root.d.job != "" ? Theme.warn : Theme.border-strong;
+                        }
+                    }
+                }
+                Label { text: root.d.status + (StemState.message != "" && StemState.message != "ok" ? " · " + StemState.message : ""); small: true; tone: root.d.automating ? "bright" : root.d.ready ? "normal" : "dim"; overflow: elide; }
+            }
+            if root.d.items.length >= 4 && root.one-row: HorizontalLayout {
+                horizontal-stretch: 1;
+                spacing: Theme.s3 + Theme.s2;
+                for item in root.d.items: StemKnob { deck: root.deck; stem: item; ai: root.d.automating; on: root.d.attached; horizontal-stretch: 1; }
+            }
+            // Narrow: two by two, so no stem's name runs into the next.
+            if root.d.items.length >= 4 && !root.one-row: VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: Theme.s2;
+                for r in 2: HorizontalLayout {
+                    spacing: Theme.s3 + Theme.s2;
+                    for k in 2: StemKnob { deck: root.deck; stem: root.d.items[r * 2 + k]; ai: root.d.automating; on: root.d.attached; horizontal-stretch: 1; }
+                }
+            }
+            if root.d.items.length < 4: Rectangle { horizontal-stretch: 1; }
+            if root.d.batch-id != "": VerticalLayout { alignment: center; Button { text: "Cancel prep · " + root.d.batch-status; compact: true; clicked => { StemState.action("cancel_batch", root.deck, root.d.batch-id, 0); } } }
+            if root.d.backend-ready && (!root.d.ready || root.d.partial) && root.d.job == "": VerticalLayout { alignment: center; Button { text: root.d.partial ? "Prepare full set" : "Prepare stems"; compact: true; primary: true; clicked => { StemState.action("prepare", root.deck, "", 0); } } }
+            if root.d.job != "" && !root.d.ready: VerticalLayout { alignment: center; Button { text: "Cancel prep"; compact: true; clicked => { StemState.action("cancel", root.deck, root.d.job, 0); } } }
+            if root.d.ready && !root.d.attached: VerticalLayout { alignment: center; Button { text: "Enable stems"; compact: true; primary: true; clicked => { StemState.action("attach", root.deck, root.d.key, 0); } } }
+            if root.d.attached: VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Button { text: "Reset"; compact: true; clicked => { StemState.action("reset", root.deck, "", 0); } }
+                HorizontalLayout {
+                    spacing: 2px;
+                    Button { text: "Auto"; compact: true; clicked => { StemState.action("auto", root.deck, "", 0); } }
+                    Button { text: root.d.pinned ? "Pinned" : "Pin"; compact: true; lit: root.d.pinned; enabled: root.d.ready; clicked => { StemState.action(root.d.pinned ? "unpin" : "pin", root.deck, root.d.key, 0); } }
+                }
+            }
+        }
+    }
+
+    // ── A stem being sent to the other deck: what, where, with what ──
+    // Only on the two decks the send joins (C and D are not part of it).
+    if root.d.attached && StemState.bridge-source != "" && (StemState.bridge-source == root.deck || StemState.bridge-destination == root.deck): Rectangle {
+        height: Theme.row-h;
+        background: Theme.accent-soft;
+        border-radius: 4px;
+        HorizontalLayout {
+            padding-left: Theme.s3;
+            padding-right: Theme.s2;
+            spacing: Theme.s3;
+            Label {
+                text: StemState.bridge-stem + " · Deck " + StemState.bridge-source + " → Deck " + StemState.bridge-destination + (StemState.bridge-fx ? " · with Beat FX" : " · clean");
+                small: true;
+                tone: "bright";
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            VerticalLayout { alignment: center; Button { text: StemState.bridge-fx ? "FX on" : "Add FX"; compact: true; lit: StemState.bridge-fx; clicked => { StemState.action("bridge_fx", root.deck, "", StemState.bridge-fx ? 0 : 1); } } }
+            if StemState.bridge-fx && root.sending-here: Label { text: "Depth"; small: true; tone: "dim"; }
+            if StemState.bridge-fx && root.sending-here: VerticalLayout {
+                alignment: center;
+                Slider { value: StemState.bridge-depth; width: 84px; reset-on-double-click: true; reset-value: 0.5; changed(v) => { StemState.action("bridge_depth", root.deck, "", v); } }
+            }
+            if StemState.bridge-fx && root.sending-here: Label { text: round(StemState.bridge-depth * 100) + "%"; width: 34px; small: true; horizontal-alignment: right; }
+            VerticalLayout { alignment: center; Button { text: "Stop send"; compact: true; primary: true; clicked => { StemState.action("bridge_off", root.deck, "", 0); } } }
+        }
+    }
+
+    // ── The four channels, side by side ──
+
+
+}

@@ -1,0 +1,46 @@
+# Patch Dark: a base Omarchy theme for Patch.
+# The Patch style's Ink ground, Graphite panels and controls, Paper
+# text, one signal red. Violet and indigo are lifted to read on black.
+# Every colour is set by hand (themes/generate.py); nothing is mixed.
+mode = "dark"
+
+accent = "#f0243b"
+# The brand red itself, for lights (keyboard, mouse, case, RAM).
+brand = "#f0243b"
+selection = "#4d1b22"
+muted = "#8f8a8f"
+
+background = "#141114"
+dark_background = "#100e10"
+darker_background = "#0b0a0b"
+lighter_background = "#1e1b1f"
+
+foreground = "#d2cdc8"
+dark_foreground = "#8f8a8f"
+light_foreground = "#aaa5a8"
+bright_foreground = "#f7f4ee"
+
+selection_foreground = "#f7f4ee"
+selection_background = "#4d1b22"
+
+# Window borders: ink when focused, a faint rule otherwise.
+hyprland_active_border = "#d2cdc8"
+hyprland_inactive_border = "rgba(4a454b88)"
+
+# ANSI, every one at least 4.5:1 on the background (terminals, and the
+# agents in them: Codex, Claude Code, herdr's panes).
+red = "#f44e5e"
+yellow = "#d9ad3c"
+orange = "#e07a45"
+green = "#5fb070"
+cyan = "#4fb3bd"
+blue = "#7c8ae0"
+magenta = "#9d7cf0"
+brown = "#b08a64"
+
+bright_red = "#ff7d86"
+bright_yellow = "#f0c75e"
+bright_green = "#7fcf8f"
+bright_cyan = "#74d0d9"
+bright_blue = "#9ca7ee"
+bright_magenta = "#b89cf7"

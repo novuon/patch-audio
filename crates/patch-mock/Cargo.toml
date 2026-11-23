@@ -1,0 +1,13 @@
+[package]
+name = "patch-mock"
+description = "Simulated providers for every Unit. Deterministic, so screenshots are reproducible."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+patch-model.workspace = true
+
+[lints]
+workspace = true

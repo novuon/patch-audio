@@ -1,0 +1,6 @@
+# CI and release builds install this exact toolchain with rustup.
+# Arch's `rust` package floats with stable and is not used there.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy"]
+profile = "minimal"

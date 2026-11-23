@@ -1,0 +1,231 @@
+{
+ "schema": 1,
+ "core": {
+  "name": "Patch core",
+  "about": "The audio engine and Patch as your system's sound: volume and outputs in the bar · the Mixer and the Meter"
+ },
+ "modules": [
+  {
+   "id": "eq",
+   "name": "EQ",
+   "group": "audio",
+   "switch": true,
+   "about": "Equaliser for the master · your apps and mics · headphone correction (AutoEq)"
+  },
+  {
+   "id": "mic",
+   "name": "Mic",
+   "group": "audio",
+   "switch": true,
+   "about": "Mic pre-amp · noise reduction · voice processing for calls and recording"
+  },
+  {
+   "id": "studio",
+   "name": "Studio tools",
+   "group": "audio",
+   "switch": true,
+   "about": "Router · Analyzer · Recorder for routing and engineering"
+  },
+  {
+   "id": "player",
+   "name": "Player",
+   "group": "audio",
+   "switch": true,
+   "preview": true,
+   "about": "A cart player for jingles and beds (being built for podcasts)"
+  },
+  {
+   "id": "dj",
+   "name": "DJ",
+   "group": "dj",
+   "switch": true,
+   "about": "Decks · crossfader · Mini Booth · the library (it analyses your music in the background)"
+  },
+  {
+   "id": "ai_dj",
+   "name": "Auto Mix",
+   "group": "dj",
+   "switch": true,
+   "needs": [
+    "dj"
+   ],
+   "brings": [
+    "stems"
+   ],
+   "about": "The DJ Booth with Auto Mix: it orders and crossfades a set from your library"
+  },
+  {
+   "id": "stems",
+   "name": "Stems",
+   "group": "dj",
+   "needs": [
+    "dj"
+   ],
+   "hidden": true,
+   "step": "stems",
+   "step_size": 2000000000,
+   "about": "Splits tracks into vocals · drums · bass · the rest for stem mixing (downloads 1 to 3 GB)"
+  },
+  {
+   "id": "visualiser",
+   "name": "Visualiser",
+   "group": "dj",
+   "switch": true,
+   "about": "Visuals to the music for a screen or a projector"
+  },
+  {
+   "id": "controllers",
+   "name": "Controllers",
+   "group": "dj",
+   "switch": true,
+   "about": "MIDI and HID controllers (a udev rule for raw HID; asks for your password)"
+  },
+  {
+   "id": "plugins",
+   "name": "Plugins",
+   "group": "studio",
+   "switch": true,
+   "about": "Native VST3 plugins on the master · a channel · AUX or FX"
+  },
+  {
+   "id": "podcast",
+   "name": "Podcast & broadcast",
+   "group": "studio",
+   "switch": true,
+   "about": "Mic · Player · Recorder and streaming (Icecast · RTMP · a file)"
+  },
+  {
+   "id": "live_coding",
+   "name": "Live coding",
+   "group": "studio",
+   "switch": true,
+   "about": "Tidal · Pattern · the Sequencer"
+  },
+  {
+   "id": "themes",
+   "name": "Patch themes",
+   "group": "look",
+   "switch": true,
+   "download": true,
+   "about": "Patch Light and Patch Dark in Omarchy's theme menu (one wallpaper each)"
+  },
+  {
+   "id": "wallpapers",
+   "name": "Wallpapers & intros",
+   "group": "look",
+   "needs": [
+    "themes"
+   ],
+   "download": true,
+   "about": "Every Patch wallpaper for both themes with its intro animation"
+  }
+ ],
+ "licences": [],
+ "profiles": [
+  {
+   "id": "standard",
+   "name": "Standard",
+   "default": true,
+   "layout": "simple",
+   "about": "Patch as your system's sound: volume and outputs · the Mixer · the EQ",
+   "modules": [
+    "eq"
+   ],
+   "offer": [
+    "mic",
+    "studio",
+    "player",
+    "themes",
+    "wallpapers"
+   ]
+  },
+  {
+   "id": "dj",
+   "name": "DJ",
+   "layout": "ai-dj",
+   "about": "Standard plus decks · crossfader · Mini Booth · the library · Auto Mix",
+   "modules": [
+    "eq",
+    "dj",
+    "ai_dj"
+   ],
+   "offer": [
+    "visualiser",
+    "controllers",
+    "plugins",
+    "mic",
+    "studio",
+    "player",
+    "themes",
+    "wallpapers"
+   ]
+  },
+  {
+   "id": "podcast",
+   "name": "Podcast",
+   "layout": "podcast",
+   "about": "Standard plus the mic · Player · Recorder · streaming",
+   "modules": [
+    "eq",
+    "mic",
+    "player",
+    "studio",
+    "podcast"
+   ],
+   "offer": [
+    "plugins",
+    "themes",
+    "wallpapers"
+   ]
+  },
+  {
+   "id": "live_coding",
+   "name": "Live coding",
+   "layout": "live-code",
+   "about": "Standard plus Tidal · Pattern · the Sequencer · the Visualiser",
+   "modules": [
+    "eq",
+    "live_coding",
+    "visualiser"
+   ],
+   "offer": [
+    "studio",
+    "plugins",
+    "controllers",
+    "themes",
+    "wallpapers"
+   ]
+  },
+  {
+   "id": "full",
+   "name": "Everything",
+   "layout": "performance-dj",
+   "about": "Every module",
+   "modules": [
+    "eq",
+    "mic",
+    "studio",
+    "player",
+    "dj",
+    "ai_dj",
+    "visualiser",
+    "controllers",
+    "plugins",
+    "podcast",
+    "live_coding",
+    "themes",
+    "wallpapers"
+   ],
+   "offer": []
+  },
+  {
+   "id": "minimal",
+   "name": "Minimal",
+   "hidden": true,
+   "layout": "simple",
+   "about": "Only Patch core: your system's sound · the Mixer · the Meter",
+   "modules": [],
+   "offer": []
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f1210">
+<title>Patch · Library</title><link rel="stylesheet" href="/library.css"><link rel="stylesheet" href="/navigation.css">
+<script src="/pairing.js" defer></script><script src="/navigation.js" defer></script><script src="/library.js" defer></script>
+</head><body><patch-navigation page="library"></patch-navigation><main>
+<div class="remote-session"><span id="connection" role="status">Connecting…</span></div>
+<div class="headline"><h1>Library</h1><span id="count">Loading tracks…</span></div>
+<section class="search-panel"><label for="search">Find a track</label><input id="search" type="search" autocomplete="off" placeholder="Track, artist, bpm:122, key:8A"><label class="collection-label" for="collection">Collection</label><select id="collection"><option value="">All tracks</option></select><p class="query-hint">Search text also supports bpm:120-128, fits:8A, rating:4, and #tag.</p></section>
+<section id="results" aria-live="polite"><div class="empty">Waiting for Patch library…</div></section>
+<section class="queue-panel"><div><span class="eyebrow">Auto Mix QUEUE</span><span id="queue-count">—</span></div><p>Queued tracks are added for Patch’s Auto Mix to consider next.</p></section>
+</main><footer><span id="ack" role="status" aria-live="polite">Waiting for Patch…</span><span id="access">PRIVATE REMOTE</span></footer></body></html>

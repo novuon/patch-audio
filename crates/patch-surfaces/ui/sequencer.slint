@@ -1,0 +1,352 @@
+import { Theme, Label, Button, Slider, SectionHeading } from "@patch-ui/patch-ui.slint";
+
+export struct SeqTrack { name: string, muted: bool, length: int, level: int, steps: [int] }
+
+export global SeqState {
+    in property <[SeqTrack]> tracks;
+    in property <bool> ready;
+    in property <bool> playing;
+    in property <int> position;
+    in property <int> bpm: 122;
+    in property <int> swing;
+    in property <int> level: 75;
+    in property <int> track;
+    in property <int> step;
+    in property <int> velocity;
+    in property <int> probability: 100;
+    in property <int> repeats: 1;
+    in property <int> length: 16;
+    in property <int> track-level: 80;
+    in property <int> pan;
+    in property <string> message: "Connecting to the audio engine…";
+    in property <bool> sync-on: false;
+    in property <int> sync-source: 0;
+    callback action(string, int);
+    callback cell(int, int, bool);
+    callback sync(bool, int);
+}
+
+// Individual step pad component
+component StepPad inherits Rectangle {
+    in property <int> track-index: 0;
+    in property <int> step-index: 0;
+    in property <int> v: 0;
+    in property <bool> is-playhead: false;
+    in property <bool> is-selected: false;
+    in property <bool> beyond-length: false;
+    in property <bool> muted;
+
+    callback clicked();
+    callback right-clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: self.beyond-length ? Theme.bg-deeper
+        : self.is-selected ? Theme.selection
+        : self.v > 0 ? Theme.accent-soft
+        : ta.has-hover ? Theme.hover
+        : Math.mod(self.step-index, 4) == 0 ? Theme.selection
+        : Theme.raised;
+    border-width: 1px;
+    border-color: self.is-selected ? Theme.text-bright
+        : self.is-playhead ? Theme.accent
+        : self.v > 0 ? Theme.accent.with-alpha(0.5)
+        : ta.has-hover ? Theme.text-faint
+        : Theme.border;
+
+    // Velocity fill bar at bottom of active pads
+    if root.v > 0: Rectangle {
+        x: 2px;
+        width: parent.width - 4px;
+        height: Math.max(2px, (parent.height - 6px) * root.v / 127);
+        y: parent.height - self.height - 2px;
+        background: Theme.accent;
+        border-radius: 1px;
+        opacity: root.muted ? 0.25 : 0.85;
+    }
+
+    // Playhead glow ring
+    if root.is-playhead: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.accent.with-alpha(0.2);
+        border-radius: 4px;
+        border-width: 2px;
+        border-color: Theme.accent;
+    }
+
+    ta := TouchArea {
+        enabled: SeqState.ready;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                root.right-clicked();
+            }
+        }
+        mouse-cursor: pointer;
+    }
+}
+
+export component SequencerSurface inherits Rectangle {
+    in-out property <int> page: 0;
+
+    init => { keys.focus(); }
+    forward-focus: keys;
+
+    keys := FocusScope {
+        key-pressed(e) => {
+            if e.text == " " { SeqState.action("play", 0); return accept; }
+            if e.text == Key.Escape { SeqState.action("stop", 0); return accept; }
+            return reject;
+        }
+
+        VerticalLayout {
+            padding: Theme.s5; spacing: Theme.s3;
+
+            // Title + Transport
+            HorizontalLayout {
+                spacing: Theme.s3;
+                SectionHeading { text: "Step sequencer"; detail: "8 voices · 32 steps"; }
+                Button { text: SeqState.playing ? "Pause" : "Play"; enabled: SeqState.ready; clicked => { SeqState.action("play", 0); } }
+                Button { text: "Stop"; enabled: SeqState.ready; clicked => { SeqState.action("stop", 0); } }
+                Button { text: "Save"; enabled: SeqState.ready; clicked => { SeqState.action("save", 0); } }
+                Button { text: "Load"; enabled: SeqState.ready; clicked => { SeqState.action("load", 0); } }
+            }
+
+            // Tempo card
+            Rectangle {
+                background: Theme.bg-deep;
+                border-radius: 6px;
+                HorizontalLayout {
+                    padding: Theme.s3;
+                    spacing: Theme.s4;
+
+                    VerticalLayout {
+                        Label { text: "BPM"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.bpm + ""; width: 42px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: (SeqState.bpm - 40) / 200; enabled: SeqState.ready; changed(v) => { SeqState.action("bpm", Math.round(40 + v * 200)); } }
+                        }
+                    }
+
+                    VerticalLayout {
+                        Label { text: "Swing"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.swing + "%"; width: 42px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: SeqState.swing / 60; enabled: SeqState.ready; changed(v) => { SeqState.action("swing", Math.round(v * 60)); } }
+                        }
+                    }
+
+                    VerticalLayout {
+                        Label { text: "Level"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.level + "%"; width: 42px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: SeqState.level / 100; enabled: SeqState.ready; changed(v) => { SeqState.action("level", Math.round(v * 100)); } }
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Button { text: "Four on the floor"; enabled: SeqState.ready; clicked => { SeqState.action("preset", 0); } }
+                    Button { text: "Broken beat"; enabled: SeqState.ready; clicked => { SeqState.action("preset", 1); } }
+                    Button { text: "Machine funk"; enabled: SeqState.ready; clicked => { SeqState.action("preset", 2); } }
+
+                    VerticalLayout {
+                        Label { text: "Sync"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Button { text: SeqState.sync-on ? "SYNC ON" : "SYNC"; enabled: SeqState.ready; primary: SeqState.sync-on; clicked => { SeqState.sync(!SeqState.sync-on, SeqState.sync-source); } }
+                            if SeqState.sync-on: Rectangle { width: 1px; }
+                            if SeqState.sync-on: Button { text: SeqState.sync-source == 0 ? "A" : "B"; enabled: SeqState.ready; clicked => { SeqState.sync(SeqState.sync-on, SeqState.sync-source == 0 ? 1 : 0); } }
+                        }
+                    }
+                }
+            }
+
+            // Page selector
+            HorizontalLayout {
+                spacing: Theme.s3;
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: root.page == 0 ? "● 1–16" : "1–16"; clicked => { root.page = 0; } }
+                Button { text: root.page == 1 ? "● 17–32" : "17–32"; clicked => { root.page = 1; } }
+            }
+
+            // Grid
+            Rectangle {
+                background: Theme.bg-deep;
+                border-radius: 6px;
+                vertical-stretch: 1;
+                min-height: 280px;
+
+                HorizontalLayout {
+                    spacing: 0px;
+                    padding: 0px;
+
+                    // Track headers column
+                    VerticalLayout {
+                        spacing: Theme.s1;
+                        padding: Theme.s3;
+                        padding-right: Theme.s2;
+                        padding-top: Theme.s4;
+                        width: 140px;
+
+                        Label { text: "TRACK / M"; small: true; tone: "faint"; height: 20px; vertical-alignment: center; }
+
+                        for lane[i] in SeqState.tracks: Rectangle {
+                            height: 30px;
+                            background: SeqState.track == i ? Theme.selection : Theme.bg-deep;
+                            border-width: 1px;
+                            border-color: SeqState.track == i ? Theme.accent.with-alpha(0.5) : Theme.border;
+                            border-radius: 3px;
+                            HorizontalLayout {
+                                spacing: Theme.s2;
+                                padding: Theme.s1;
+                                padding-left: Theme.s2;
+
+                                Label { text: lane.name; tone: lane.muted ? "faint" : "bright"; small: true; horizontal-stretch: 1; vertical-alignment: center; }
+
+                                Rectangle {
+                                    width: 20px; height: 18px;
+                                    background: lane.muted ? Theme.accent-soft : Theme.raised;
+                                    border-width: 1px;
+                                    border-color: lane.muted ? Theme.accent.with-alpha(0.6) : Theme.border-strong;
+                                    border-radius: 2px;
+                                    TouchArea {
+                                        enabled: SeqState.ready;
+                                        clicked => { SeqState.action("mute", i); }
+                                        mouse-cursor: pointer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Steps area
+                    VerticalLayout {
+                        spacing: Theme.s1;
+                        padding: Theme.s3;
+                        padding-left: Theme.s2;
+                        padding-top: Theme.s4;
+
+                        // Step number row
+                        HorizontalLayout {
+                            spacing: Theme.s1;
+                            height: 20px;
+                            for n in 16: Label {
+                                text: n + root.page * 16 + 1;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                small: true;
+                                tone: Math.mod(n, 4) == 0 ? "bright" : "faint";
+                                width: 28px;
+                            }
+                        }
+
+                        // Track rows with pads
+                        for lane[i] in SeqState.tracks: HorizontalLayout {
+                            spacing: Theme.s1;
+
+                            // Track level micro bar
+                            Rectangle {
+                                width: 4px;
+                                height: 30px;
+                                background: Theme.bg-deeper;
+                                border-radius: 2px;
+                                Rectangle {
+                                    width: 2px;
+                                    height: 30px * lane.level / 100;
+                                    y: 30px - self.height;
+                                    background: lane.muted ? Theme.text-faint : Theme.accent;
+                                    border-radius: 1px;
+                                }
+                            }
+
+                            // 16 step pads
+                            for n in 16: StepPad {
+                                track-index: i;
+                                step-index: n + root.page * 16;
+                                v: lane.steps[n + root.page * 16];
+                                is-playhead: SeqState.position == n + root.page * 16;
+                                is-selected: SeqState.track == i && SeqState.step == n + root.page * 16;
+                                beyond-length: n + root.page * 16 >= lane.length;
+                                muted: lane.muted;
+                                clicked => { SeqState.cell(i, n + root.page * 16, true); keys.focus(); }
+                                right-clicked => { SeqState.cell(i, n + root.page * 16, false); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Track controls card
+            Rectangle {
+                background: Theme.bg-deep;
+                border-radius: 6px;
+                HorizontalLayout {
+                    padding: Theme.s3;
+                    spacing: Theme.s4;
+                    Label { text: "TRACK " + (SeqState.track + 1); tone: "bright"; width: 80px; vertical-alignment: center; }
+
+                    VerticalLayout {
+                        Label { text: "Length"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.length + ""; width: 28px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: (SeqState.length - 1) / 31; enabled: SeqState.ready; changed(v) => { SeqState.action("length", Math.round(1 + v * 31)); } }
+                        }
+                    }
+
+                    VerticalLayout {
+                        Label { text: "Gain"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.track-level + "%"; width: 42px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: SeqState.track-level / 100; enabled: SeqState.ready; changed(v) => { SeqState.action("track-level", Math.round(v * 100)); } }
+                        }
+                    }
+
+                    VerticalLayout {
+                        Label { text: "Pan"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.pan + ""; width: 36px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: (SeqState.pan + 100) / 200; enabled: SeqState.ready; changed(v) => { SeqState.action("pan", Math.round(v * 200 - 100)); } }
+                        }
+                    }
+
+                    Button { text: "Clear track"; enabled: SeqState.ready; clicked => { SeqState.action("clear", 0); } }
+                }
+            }
+
+            // Step controls card
+            Rectangle {
+                background: Theme.bg-deep;
+                border-radius: 6px;
+                HorizontalLayout {
+                    padding: Theme.s3;
+                    spacing: Theme.s4;
+                    Label { text: "STEP " + (SeqState.step + 1); tone: "bright"; width: 80px; vertical-alignment: center; }
+
+                    VerticalLayout {
+                        Label { text: "Velocity"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.velocity + ""; width: 36px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: SeqState.velocity / 127; enabled: SeqState.ready; changed(v) => { SeqState.action("velocity", Math.round(v * 127)); } }
+                        }
+                    }
+
+                    VerticalLayout {
+                        Label { text: "Chance"; small: true; tone: "faint"; }
+                        HorizontalLayout { spacing: Theme.s1;
+                            Label { text: SeqState.probability + "%"; width: 42px; tone: "bright"; vertical-alignment: center; }
+                            Slider { value: SeqState.probability / 100; enabled: SeqState.ready; changed(v) => { SeqState.action("probability", Math.round(v * 100)); } }
+                        }
+                    }
+
+                    Button { text: "Repeats ×" + SeqState.repeats; enabled: SeqState.ready; clicked => { SeqState.action("repeats", Math.mod(SeqState.repeats, 4) + 1); } }
+                    Button { text: "Copy 1–16 → 17–32"; enabled: SeqState.ready; clicked => { SeqState.action("duplicate", 0); } }
+                }
+            }
+
+            Label { text: SeqState.message; small: true; tone: "dim"; wrap: word-wrap; }
+            Label { text: "Click: toggle · Right-click: select step · Space: play/pause · Esc: stop. Audio continues when this window closes."; small: true; tone: "faint"; wrap: word-wrap; }
+        }
+    }
+}

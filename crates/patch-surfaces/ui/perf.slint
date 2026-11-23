@@ -1,0 +1,222 @@
+// Performance Unit: what Patch costs, next to the native Omarchy audio
+// layer (PipeWire, pipewire-pulse, WirePlumber). Measured once a second in
+// a worker thread, only while this window is open (perf.rs).
+import { Theme, Label, SectionHeading, Button, Scroll } from "@patch-ui/patch-ui.slint";
+
+export struct PerfTile {
+    label: string,
+    patch: string,
+    native: string,
+    // Patch's part of Patch + native, 0…1 (-1: nothing to compare).
+    share: float,
+    // Against the baseline ("" none), e.g. "−1.2 % since 13:02".
+    delta: string,
+    warn: bool,
+}
+
+export struct PerfProc {
+    name: string,
+    role: string,
+    side: string,
+    cpu: string,
+    mem: string,
+    threads: string,
+    gpu: string,
+    warn: bool,
+}
+
+export struct PerfNode {
+    name: string,
+    busy: string,
+    // Busy time as a share of the cycle, 0…1 (drawn as a bar, ×20).
+    load: float,
+    err: string,
+    patch: bool,
+    driver: bool,
+    warn: bool,
+}
+
+export global PerfState {
+    in property <string> headline;
+    // Whether Patch does only the native layer's job right now, and why not.
+    in property <bool> fair;
+    in property <string> fairness;
+    in property <[PerfTile]> tiles;
+    in property <[PerfProc]> procs;
+    in property <[PerfNode]> nodes;
+    in property <string> engine-line;
+    in property <string> system-line;
+    in property <bool> engine-warn;
+    // History, as path commands in a 0…1000 × 0…100 box (older left).
+    in property <string> line-patch;
+    in property <string> line-native;
+    in property <string> line-gpu;
+    in property <string> chart-top;
+    in property <string> baseline;
+    in property <bool> recording;
+    in property <string> note;
+    callback record-baseline();
+    callback clear-baseline();
+    callback copy-report();
+}
+
+component Tile inherits Rectangle {
+    in property <PerfTile> t;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: t.warn ? Theme.warn : Theme.border;
+    VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s1;
+        Label { text: root.t.label; tone: "dim"; small: true; caps: true; }
+        Text {
+            text: root.t.patch;
+            color: root.t.warn ? Theme.warn : Theme.text-bright;
+            font-family: Theme.font;
+            font-size: Theme.fs-large;
+            font-weight: 600;
+            overflow: elide;
+        }
+        Label { text: "native " + root.t.native; tone: "dim"; small: true; }
+        // Patch against native: the accent part is Patch.
+        Rectangle {
+            height: 3px;
+            background: Theme.border;
+            visible: root.t.share >= 0;
+            Rectangle { x: 0; width: parent.width * clamp(root.t.share, 0, 1); height: parent.height; background: Theme.accent; }
+        }
+        Label { text: root.t.delta; tone: "faint"; small: true; visible: root.t.delta != ""; }
+    }
+}
+
+component Chart inherits Rectangle {
+    background: Theme.bg-deeper;
+    border-width: 1px;
+    border-color: Theme.border;
+    for f in [0.25, 0.5, 0.75]: Rectangle { y: parent.height * f; height: 1px; width: parent.width; background: Theme.border; }
+    Path { width: parent.width; height: parent.height; viewbox-width: 1000; viewbox-height: 100; commands: PerfState.line-native; stroke: Theme.text-dim; stroke-width: 1.5px; }
+    Path { width: parent.width; height: parent.height; viewbox-width: 1000; viewbox-height: 100; commands: PerfState.line-gpu; stroke: Theme.warn; stroke-width: 1px; }
+    Path { width: parent.width; height: parent.height; viewbox-width: 1000; viewbox-height: 100; commands: PerfState.line-patch; stroke: Theme.accent; stroke-width: 2px; }
+    HorizontalLayout {
+        y: Theme.s2;
+        x: Theme.s3;
+        height: Theme.row-h - 6px;
+        width: parent.width - 2 * Theme.s3;
+        spacing: Theme.s4;
+        Label { text: "CPU · last 2 minutes"; tone: "dim"; small: true; horizontal-stretch: 0; }
+        Label { text: "— Patch service"; color: Theme.accent; small: true; horizontal-stretch: 0; }
+        Label { text: "— native layer"; tone: "dim"; small: true; horizontal-stretch: 0; }
+        Label { text: "— Patch windows"; tone: "warn"; small: true; horizontal-stretch: 0; }
+        Rectangle { }
+        Label { text: PerfState.chart-top; tone: "faint"; small: true; horizontal-stretch: 0; }
+    }
+}
+
+component ProcRow inherits Rectangle {
+    in property <PerfProc> p;
+    height: Theme.row-h - 4px;
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s3;
+        Label { text: root.p.name; tone: root.p.side == "patch" ? "bright" : "normal"; small: true; width: 150px; }
+        Label { text: root.p.side; tone: root.p.side == "patch" ? "accent" : "faint"; small: true; width: 46px; }
+        Label { text: root.p.cpu; tone: root.p.warn ? "warn" : "normal"; small: true; width: 62px; horizontal-alignment: right; }
+        Label { text: root.p.mem; tone: "dim"; small: true; width: 62px; horizontal-alignment: right; }
+        Label { text: root.p.threads; tone: "faint"; small: true; width: 30px; horizontal-alignment: right; }
+        Label { text: root.p.gpu; tone: "dim"; small: true; horizontal-stretch: 1; horizontal-alignment: right; }
+    }
+}
+
+component NodeRow inherits Rectangle {
+    in property <PerfNode> n;
+    height: Theme.row-h - 4px;
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s3;
+        Label { text: (root.n.driver ? "" : "  ") + root.n.name; tone: root.n.patch ? "bright" : "normal"; small: true; horizontal-stretch: 1; }
+        Label { text: root.n.busy; tone: root.n.warn ? "warn" : "normal"; small: true; width: 64px; horizontal-alignment: right; }
+        // Share of the cycle, magnified ×20 (a full bar is 5 %).
+        VerticalLayout {
+            alignment: center;
+            width: 60px;
+            Rectangle {
+                height: 4px;
+                background: Theme.border;
+                Rectangle { x: 0; width: parent.width * clamp(root.n.load * 20, 0, 1); height: parent.height; background: root.n.patch ? Theme.accent : Theme.text-dim; }
+            }
+        }
+        Label { text: root.n.err; tone: root.n.err == "0" ? "faint" : "warn"; small: true; width: 34px; horizontal-alignment: right; }
+    }
+}
+
+component Head inherits HorizontalLayout {
+    in property <[string]> cols;
+    in property <[length]> widths;
+    padding-left: Theme.s3;
+    padding-right: Theme.s3;
+    spacing: Theme.s3;
+    height: Theme.row-h - 6px;
+    for c[i] in cols: Label { text: c; tone: "faint"; small: true; caps: true; min-width: widths[i] > 0 ? widths[i] : 40px; max-width: widths[i] > 0 ? widths[i] : 100000px; horizontal-stretch: widths[i] > 0 ? 0 : 1; horizontal-alignment: i == 0 ? left : right; }
+}
+
+export component PerfSurface inherits Rectangle {
+    property <bool> wide: self.width >= 1000px;
+    VerticalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s3;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            height: Theme.row-h;
+            Label { text: PerfState.headline; tone: "bright"; horizontal-stretch: 1; }
+            Label { text: PerfState.note; tone: "dim"; small: true; horizontal-stretch: 0; }
+            Button { text: PerfState.recording ? "Recording 10 s…" : PerfState.baseline == "" ? "Set baseline" : "New baseline"; compact: true; enabled: !PerfState.recording; clicked => { PerfState.record-baseline(); } }
+            if PerfState.baseline != "": Button { text: "Clear"; compact: true; clicked => { PerfState.clear-baseline(); } }
+            Button { text: "Copy report"; compact: true; clicked => { PerfState.copy-report(); } }
+        }
+        Rectangle {
+            height: Theme.row-h;
+            background: PerfState.fair ? transparent : Theme.raised;
+            border-width: 1px;
+            border-color: PerfState.fair ? Theme.border : Theme.warn;
+            HorizontalLayout {
+                padding-left: Theme.s3;
+                padding-right: Theme.s3;
+                Label { text: PerfState.fairness; tone: PerfState.fair ? "dim" : "warn"; small: true; }
+            }
+        }
+        HorizontalLayout {
+            spacing: Theme.s3;
+            height: 96px;
+            for t in PerfState.tiles: Tile { t: t; }
+        }
+        Chart { height: 120px; }
+        HorizontalLayout {
+            spacing: Theme.s4;
+            vertical-stretch: 1;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 0px;
+                SectionHeading { text: "Processes"; }
+                Head { cols: ["name", "side", "CPU", "memory", "thr", "GPU"]; widths: [150px, 46px, 62px, 62px, 30px, 0px]; }
+                Scroll {
+                    vertical-stretch: 1;
+                    for p in PerfState.procs: ProcRow { p: p; }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 0px;
+                SectionHeading { text: "Graph · per cycle"; }
+                Head { cols: ["node", "busy", "cycle", "xruns"]; widths: [0px, 64px, 60px, 34px]; }
+                Scroll {
+                    vertical-stretch: 1;
+                    for n in PerfState.nodes: NodeRow { n: n; }
+                }
+            }
+        }
+        Label { text: PerfState.engine-line; tone: PerfState.engine-warn ? "warn" : "dim"; small: true; }
+        Label { text: PerfState.system-line; tone: "dim"; small: true; }
+    }
+}

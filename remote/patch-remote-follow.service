@@ -1,0 +1,6 @@
+[Unit]
+Description=Restart the Patch remote on the release that now runs
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/share/omarchy-patch/patch-remote-launch --follow

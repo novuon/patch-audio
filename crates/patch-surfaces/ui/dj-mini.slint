@@ -1,0 +1,1100 @@
+// Mini Booth: two decks, their channels and the crossfader in one short,
+// wide window, for a small set or an AI DJ set at the edge of the screen.
+// A view onto the same decks as the DJ Booth: every control sends what the
+// Deck and Crossfader windows send, the scrolling waveforms are theirs, and
+// the AI DJ's set controls are the DJ Booth's own (DjWorkspaceState).
+//
+// Red is what is live: the playing deck's letter and Play, Cue held, and
+// the count into the next AI mix. Everything else is Ink, Graphite and
+// Paper.
+import { Knob } from "knob.slint";
+import { Theme, Icon, Meter, MeterKind, Fader, SearchField, Module, Panel, Caption, Button } from "@patch-ui/patch-ui.slint";
+import { DjState, DeckItem, DeckLevels, EqKnobs, BoothKnob } from "dj.slint";
+import { DjWorkspaceState } from "dj-workspace.slint";
+import { AiDjState } from "aidj.slint";
+
+// A hardware key: a label or an icon on Graphite. `lit` is a switch that is
+// on (Paper), `hot` the live red (Play while playing, Cue held). Right-click
+// is `alt` (clears a hot cue).
+component Key inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <length> icon-size: 11px;
+    in property <bool> lit;
+    in property <bool> hot;
+    in property <bool> enabled: true;
+    in property <length> font-size: Theme.fs-small;
+    callback clicked();
+    callback down();
+    callback up();
+    callback alt();
+    min-width: 16px;
+    min-height: 16px;
+    border-radius: Theme.r-control;
+    border-width: 1px;
+    background: !root.enabled ? Theme.bg-deep
+        : root.hot ? Theme.accent
+        : ta.pressed ? Theme.bg-deep
+        : root.lit || ta.has-hover ? Theme.hover : Theme.raised;
+    border-color: !root.enabled ? Theme.border
+        : root.hot ? Theme.accent
+        : root.lit ? Theme.text-bright
+        : ta.has-hover ? Theme.text-faint : Theme.border-strong;
+    property <color> ink: !root.enabled ? Theme.text-faint : root.hot ? Theme.accent-ink : root.lit ? Theme.text-bright : Theme.text;
+    if root.icon != "": Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        size: root.icon-size;
+        name: root.icon;
+        ink: root.ink;
+    }
+    if root.icon == "": Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: root.ink;
+        font-family: Theme.font-ui;
+        font-size: root.font-size;
+        font-weight: root.lit || root.hot ? 700 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: clip;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) { root.down(); }
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) { root.up(); }
+            if (e.button == PointerEventButton.right && e.kind == PointerEventKind.up) { root.alt(); }
+        }
+    }
+}
+
+// A deck's letter in a square, filled red while the deck plays.
+component Letter inherits Rectangle {
+    in property <string> letter;
+    in property <bool> lit;
+    width: 20px;
+    height: 20px;
+    border-radius: Theme.r-control;
+    background: root.lit ? Theme.accent : transparent;
+    border-width: 1px;
+    border-color: root.lit ? Theme.accent : Theme.border-strong;
+    Text {
+        text: root.letter;
+        color: root.lit ? Theme.accent-ink : Theme.text-bright;
+        font-family: Theme.font-display;
+        font-size: Theme.fs;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// The whole track: played and to come, the loop, the hot cues and the
+// playhead. Click to go there.
+component Overview inherits Rectangle {
+    in property <string> deck;
+    in property <DeckItem> d;
+    background: Theme.bg-deeper;
+    border-radius: 2px;
+    clip: true;
+    if root.d.has-wave: Image { width: parent.width; height: parent.height; source: root.d.wave-rest; image-fit: fill; }
+    if root.d.has-wave: Rectangle {
+        x: 0px;
+        width: parent.width * clamp(root.d.progress, 0, 1);
+        height: parent.height;
+        clip: true;
+        Image { x: 0px; width: root.width; height: parent.height; source: root.d.wave-played; image-fit: fill; }
+    }
+    if !root.d.has-wave: Rectangle { y: (parent.height - 1px) / 2; height: 1px; background: Theme.border-strong; }
+    if root.d.loop-on && root.d.loop-from >= 0: Rectangle {
+        x: parent.width * root.d.loop-from;
+        width: Math.max(2px, parent.width * (root.d.loop-to - root.d.loop-from));
+        height: parent.height;
+        background: Theme.text-bright.with-alpha(0.14);
+    }
+    for c in root.d.cues: Rectangle {
+        visible: c >= 0;
+        x: parent.width * c;
+        y: 0px;
+        width: 1px;
+        height: 4px;
+        background: Theme.text-bright;
+    }
+    if root.d.loaded: Rectangle {
+        x: parent.width * clamp(root.d.progress, 0, 1) - 1px;
+        width: 2px;
+        height: parent.height;
+        background: Theme.text-bright;
+    }
+    TouchArea {
+        enabled: root.d.loaded && !root.d.live;
+        mouse-cursor: pointer;
+        clicked => { DjState.seek-to(root.deck, clamp(self.mouse-x / self.width, 0, 1)); }
+    }
+}
+
+// One deck's line above its panel: load, the letter, title and artist, key
+// and time, the overview under them. Deck B is the mirror of A.
+component DeckHead inherits Rectangle {
+    in property <string> deck;
+    in property <bool> mirror;
+    in property <bool> tight;
+    callback load();
+    property <DeckItem> d: DjState.item(root.deck);
+    property <length> wave-h: root.tight ? 10px : 14px;
+    property <length> line-h: root.height - root.wave-h - Theme.s2;
+    property <string> clock: root.d.loaded ? root.d.time + " / " + root.d.length : "0:00 / 0:00";
+    // the identity line
+    HorizontalLayout {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.line-h;
+        spacing: Theme.s3;
+        if root.mirror: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Text { text: root.clock; color: root.d.loaded ? Theme.text-bright : Theme.text-faint; font-family: Theme.font-data; font-weight: Theme.data-weight; font-size: Theme.fs-small; horizontal-alignment: left; }
+            if !root.tight: Text { text: root.d.loaded ? "−" + root.d.remaining : ""; color: Theme.text-faint; font-family: Theme.font-data; font-size: Theme.fs-tiny; horizontal-alignment: left; }
+        }
+        if !root.mirror: VerticalLayout { alignment: center; horizontal-stretch: 0; Key { width: root.line-h; height: root.line-h; icon: "load"; icon-size: 12px; clicked => { root.load(); } } }
+        if !root.mirror: VerticalLayout { alignment: center; horizontal-stretch: 0; Letter { letter: root.deck.to-uppercase(); lit: root.d.playing; } }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            spacing: 0px;
+            title := Text {
+                text: root.d.loaded ? root.d.title : "Load a track";
+                color: root.d.loaded ? Theme.text-bright : Theme.text-faint;
+                font-family: Theme.font-display;
+                font-weight: 700;
+                font-size: root.tight ? Theme.fs : Theme.fs-large;
+                overflow: elide;
+                horizontal-alignment: root.mirror ? right : left;
+            }
+            if !root.tight: Text {
+                text: !root.d.loaded ? "" : root.d.artist + (root.d.key != "—" ? "  ·  " + root.d.key : "") + (root.d.analysing ? "  ·  analysing" : "");
+                color: Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                overflow: elide;
+                horizontal-alignment: root.mirror ? right : left;
+            }
+        }
+        if root.mirror: VerticalLayout { alignment: center; horizontal-stretch: 0; Letter { letter: root.deck.to-uppercase(); lit: root.d.playing; } }
+        if root.mirror: VerticalLayout { alignment: center; horizontal-stretch: 0; Key { width: root.line-h; height: root.line-h; icon: "load"; icon-size: 12px; clicked => { root.load(); } } }
+        if !root.mirror: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Text { text: root.clock; color: root.d.loaded ? Theme.text-bright : Theme.text-faint; font-family: Theme.font-data; font-weight: Theme.data-weight; font-size: Theme.fs-small; horizontal-alignment: right; }
+            if !root.tight: Text { text: root.d.loaded ? "−" + root.d.remaining : ""; color: Theme.text-faint; font-family: Theme.font-data; font-size: Theme.fs-tiny; horizontal-alignment: right; }
+        }
+    }
+    Overview {
+        x: 0px;
+        width: root.width;
+        y: root.height - root.wave-h;
+        height: root.wave-h;
+        deck: root.deck;
+        d: root.d;
+    }
+}
+
+// The deck's scrolling waveform, 8 s around the playhead (the Deck
+// windows' strip). Drag it like a platter.
+component Scope inherits Rectangle {
+    in property <string> deck;
+    in property <bool> below;
+    property <DeckItem> d: DjState.item(root.deck);
+    background: Theme.bg-deeper;
+    clip: true;
+    if root.d.loaded && !root.d.live: Image {
+        source: DjState.scope(root.deck);
+        image-fit: fill;
+        width: parent.width * 2;
+        height: parent.height;
+        x: -parent.width / 2 + (DjState.shift(root.deck)) * parent.width * 2;
+        // See DeckSurface: an unscaled image snaps to whole pixels.
+        transform-scale-x: 1.0001;
+    }
+    if !root.d.loaded || root.d.live: Rectangle { y: (parent.height - 1px) / 2; height: 1px; background: Theme.border; }
+    // What played, veiled.
+    Rectangle { x: 0px; width: parent.width / 2; height: parent.height; background: Theme.bg-deeper; opacity: 0.5; }
+    // The beat being heard, lit on its downbeat and fading to the next.
+    property <float> phase: DjState.phase(root.deck);
+    property <float> beat-w: (DjState.scope-beat(root.deck)) * self.width / 1px;
+    property <float> into: self.phase - Math.floor(self.phase);
+    if self.beat-w > 0 && self.phase >= 0 && root.d.playing: Rectangle {
+        x: parent.width / 2 - parent.into * parent.beat-w * 1px;
+        width: parent.beat-w * 1px;
+        height: parent.height;
+        background: Theme.text-bright;
+        opacity: 0.06 * (1 - parent.into);
+    }
+    Text {
+        x: Theme.s2;
+        y: root.below ? parent.height - self.height - 1px : 1px;
+        text: root.deck.to-uppercase();
+        color: Theme.text-faint;
+        font-family: Theme.font-ui;
+        font-weight: 600;
+        font-size: Theme.fs-tiny;
+    }
+    TouchArea {
+        enabled: root.d.loaded && !root.d.live;
+        mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) { DjState.scrub(root.deck, "start", 0); }
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) { DjState.scrub(root.deck, "end", 0); }
+        }
+        moved => {
+            if (self.pressed) {
+                DjState.scrub(root.deck, "move", (self.pressed-x - self.mouse-x) / self.width * 8.0);
+            }
+        }
+    }
+}
+
+// The platter: a record that spins with the music, a quarter turn a beat
+// (30 rpm at 120 BPM), so its marker stands at twelve on every downbeat; it
+// stops when the deck stops (the clock turns it without a beat grid). The
+// vinyl, its strobe ring and its label with the mark printed on it turn
+// (the user, 2026-11-16: the mark is part of the disc); the light on it
+// stays where it is, so the turning reads. The outer ring is the track
+// played. Drag to scrub, clockwise forward.
+component Platter inherits Rectangle {
+    in property <string> deck;
+    property <DeckItem> d: DjState.item(root.deck);
+    property <length> size: Math.floor(Math.min(self.width, self.height) / 1px) * 1px;
+    // A quarter turn a beat, from the smoothed playhead (DjState.spin).
+    property <angle> turn: DjState.spin(root.deck) * 90deg;
+    disc := Rectangle {
+        x: (parent.width - root.size) / 2;
+        y: (parent.height - root.size) / 2;
+        width: root.size;
+        height: root.size;
+        border-radius: self.width / 2;
+        background: Theme.bg-deep;
+        border-width: 1px;
+        border-color: jog.pressed ? Theme.text-dim : Theme.border-strong;
+        property <float> c: self.width / 1px / 2;
+        property <float> rr: self.c - 2.5;
+        property <float> p: clamp(root.d.progress, 0, 0.9995);
+        property <angle> pa: self.p * 360deg;
+        // the record, turning
+        vinyl := Rectangle {
+            x: parent.width * 0.06;
+            y: self.x;
+            width: parent.width * 0.88;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.bg-deeper;
+            transform-rotation: root.turn;
+            // the strobe ring: dots round the rim, the first one Paper
+            for k in 36: Rectangle {
+                property <angle> a: k * 10deg;
+                width: k == 0 ? 3px : 2px;
+                height: self.width;
+                border-radius: self.width / 2;
+                x: parent.width / 2 + Math.sin(self.a) * parent.width * 0.465 - self.width / 2;
+                y: parent.height / 2 - Math.cos(self.a) * parent.height * 0.465 - self.height / 2;
+                background: k == 0 ? (root.d.playing ? Theme.text-bright : Theme.text-dim) : Theme.text-faint.with-alpha(0.55);
+            }
+            // grooves, a band of them and the run-out
+            for g in [0.86, 0.78, 0.71, 0.64, 0.57]: Rectangle {
+                x: parent.width * (1 - g) / 2;
+                y: self.x;
+                width: parent.width * g;
+                height: self.width;
+                border-radius: self.width / 2;
+                border-width: 1px;
+                border-color: g == 0.86 || g == 0.57 ? Theme.border-strong : Theme.border;
+            }
+            // the label, its print turning with it
+            Rectangle {
+                x: parent.width * 0.29;
+                y: self.x;
+                width: parent.width * 0.42;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.raised;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: 2px;
+                    width: 2px;
+                    height: parent.height * 0.22;
+                    border-radius: 1px;
+                    background: root.d.playing ? Theme.text-bright : Theme.text-dim;
+                }
+                Module {
+                    size: Math.max(6px, Math.round(parent.width * 0.26 / 1px) * 1px);
+                    ground: Theme.raised;
+                    x: Math.round((parent.width - self.width) / 2 / 1px) * 1px;
+                    y: Math.round((parent.height - self.height) / 2 / 1px) * 1px;
+                }
+            }
+        }
+        // light on the record: it stays, the record turns under it
+        Path {
+            width: parent.width;
+            height: parent.height;
+            viewbox-width: parent.c * 2;
+            viewbox-height: parent.c * 2;
+            property <float> r: parent.c * 0.66;
+            stroke: Theme.text-bright.with-alpha(0.07);
+            stroke-width: Math.max(4px, parent.width * 0.16);
+            commands: "M " + (parent.c - 0.707 * self.r) + " " + (parent.c - 0.707 * self.r)
+                + " A " + self.r + " " + self.r + " 0 0 1 " + (parent.c + 0.259 * self.r) + " " + (parent.c - 0.966 * self.r);
+        }
+        Path {
+            width: parent.width;
+            height: parent.height;
+            viewbox-width: parent.c * 2;
+            viewbox-height: parent.c * 2;
+            property <float> r: parent.c * 0.66;
+            stroke: Theme.text-bright.with-alpha(0.04);
+            stroke-width: Math.max(4px, parent.width * 0.16);
+            commands: "M " + (parent.c + 0.707 * self.r) + " " + (parent.c + 0.707 * self.r)
+                + " A " + self.r + " " + self.r + " 0 0 1 " + (parent.c - 0.259 * self.r) + " " + (parent.c + 0.966 * self.r);
+        }
+        // the track played, as an arc from twelve round the platter's edge
+        if root.d.loaded && self.p > 0.002: Path {
+            width: parent.width;
+            height: parent.height;
+            viewbox-width: parent.c * 2;
+            viewbox-height: parent.c * 2;
+            stroke: Theme.text-dim;
+            stroke-width: 2px;
+            commands: "M " + parent.c + " " + (parent.c - parent.rr)
+                + " A " + parent.rr + " " + parent.rr + " 0 " + (parent.p > 0.5 ? 1 : 0) + " 1 "
+                + (parent.c + Math.sin(parent.pa) * parent.rr) + " " + (parent.c - Math.cos(parent.pa) * parent.rr);
+        }
+        jog := TouchArea {
+            enabled: root.d.loaded && !root.d.live;
+            mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+            pointer-event(e) => {
+                if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) { DjState.scrub(root.deck, "start", 0); }
+                if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) { DjState.scrub(root.deck, "end", 0); }
+            }
+            moved => {
+                if (self.pressed) {
+                    let dir = self.pressed-y < self.height / 2 ? 1 : -1;
+                    DjState.scrub(root.deck, "move", dir * (self.mouse-x - self.pressed-x) / self.width * 4.0);
+                }
+            }
+        }
+    }
+}
+
+// The pitch fader: + at the bottom, as on the players; double-click resets.
+component Pitch inherits Rectangle {
+    in property <string> deck;
+    property <DeckItem> d: DjState.item(root.deck);
+    property <length> cap-h: 10px;
+    property <length> travel: root.height - root.cap-h;
+    property <float> held;
+    property <float> shown: ta.pressed ? root.held : 0.5 + clamp(root.d.tempo, -1, 1) / 2;
+    width: 18px;
+    // groove, centre and quarter marks
+    Rectangle { x: (parent.width - 4px) / 2; y: root.cap-h / 2; width: 4px; height: root.travel; border-radius: 2px; background: Theme.bg-deeper; border-width: 1px; border-color: Theme.border; }
+    for m in [0.0, 0.25, 0.5, 0.75, 1.0]: Rectangle {
+        x: m == 0.5 ? 0px : 4px;
+        width: root.width - 2 * self.x;
+        y: root.cap-h / 2 + root.travel * m;
+        height: 1px;
+        background: m == 0.5 ? Theme.text-dim : Theme.border;
+    }
+    Rectangle {
+        y: root.travel * clamp(root.shown, 0, 1);
+        height: root.cap-h;
+        border-radius: 2px;
+        background: ta.pressed ? Theme.text-bright : root.d.tempo != 0 ? Theme.text : Theme.raised;
+        border-width: 1px;
+        border-color: ta.has-hover ? Theme.text-faint : Theme.border-strong;
+        Rectangle { x: 3px; width: parent.width - 6px; y: (parent.height - 2px) / 2; height: 2px; background: Theme.bg-deeper; }
+    }
+    ta := TouchArea {
+        enabled: root.d.loaded && !root.d.live;
+        mouse-cursor: ns-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.held = clamp((self.mouse-y - root.cap-h / 2) / root.travel, 0, 1);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.held = clamp((self.mouse-y - root.cap-h / 2) / root.travel, 0, 1);
+                DjState.set-tempo(root.deck, abs(root.held - 0.5) < 0.02 ? 0 : (root.held - 0.5) * 2);
+            }
+        }
+        double-clicked => { DjState.reset-tempo(root.deck); }
+    }
+}
+
+// Tempo: the deck's BPM and pitch, step, nudge, sync and key lock.
+component Tempo inherits VerticalLayout {
+    in property <string> deck;
+    in property <bool> tight;
+    // One key row's height, the cue rows' beside it (DeckControls).
+    in property <length> key-row;
+    property <DeckItem> d: DjState.item(root.deck);
+    property <bool> local: root.d.loaded && !root.d.live;
+    width: 64px;
+    spacing: root.tight ? Theme.s3 : Theme.s2;
+    alignment: root.tight ? space-between : start;
+    // Compact: BPM and pitch in one row, level with the first cue row.
+    if root.tight: VerticalLayout {
+        alignment: center;
+        height: root.key-row;
+        Text {
+            text: root.d.loaded ? root.d.bpm : "—";
+            color: root.d.synced ? Theme.text-bright : Theme.text;
+            font-family: Theme.font-data;
+            font-weight: Theme.data-weight;
+            font-size: Theme.fs-large;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.d.loaded ? root.d.tempo-text : "0.00 %";
+            color: root.d.tempo != 0 ? Theme.text : Theme.text-faint;
+            font-family: Theme.font-data;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: center;
+        }
+    }
+    // Full size: they take the first two cue rows; the keys follow level
+    // with cues 5–8.
+    if !root.tight: VerticalLayout {
+        alignment: center;
+        spacing: Theme.s2;
+        height: 2 * root.key-row + Theme.s2;
+        Text {
+            text: root.d.loaded ? root.d.bpm : "—";
+            color: root.d.synced ? Theme.text-bright : Theme.text;
+            font-family: Theme.font-data;
+            font-weight: Theme.data-weight;
+            font-size: Theme.fs-large;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.d.loaded ? root.d.tempo-text : "0.00 %";
+            color: root.d.tempo != 0 ? Theme.text : Theme.text-faint;
+            font-family: Theme.font-data;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: center;
+        }
+    }
+    HorizontalLayout {
+        spacing: root.tight ? Theme.s3 : Theme.s2;
+        height: root.key-row;
+        Key { horizontal-stretch: 1; text: "−"; enabled: root.local; clicked => { DjState.tempo-step(root.deck, -0.1); } }
+        Key { horizontal-stretch: 1; text: "+"; enabled: root.local; clicked => { DjState.tempo-step(root.deck, 0.1); } }
+    }
+    HorizontalLayout {
+        spacing: root.tight ? Theme.s3 : Theme.s2;
+        height: root.key-row;
+        Key { horizontal-stretch: 1; text: "‹"; enabled: root.local && root.d.playing; down => { DjState.nudge(root.deck, -0.04); } up => { DjState.nudge(root.deck, 0); } }
+        Key { horizontal-stretch: 1; text: "›"; enabled: root.local && root.d.playing; down => { DjState.nudge(root.deck, 0.04); } up => { DjState.nudge(root.deck, 0); } }
+    }
+    Key { height: root.key-row; text: "KEY"; font-size: Theme.fs-tiny; lit: root.d.keylock; enabled: root.local; clicked => { DjState.toggle-keylock(root.deck); } }
+}
+
+// Hot cues (click: go, or set where empty; right-click clears), the beat
+// loop and beat jump, one row each under the cues. Full size: cues 1–8;
+// compact (the window's own height): cues 1–4, the rows filling the deck's
+// full height with room between them.
+component Cues inherits VerticalLayout {
+    in property <string> deck;
+    in property <bool> tight;
+    in property <length> key-row;
+    property <DeckItem> d: DjState.item(root.deck);
+    property <bool> local: root.d.loaded && !root.d.live;
+    // The loop length the next loop takes (while none runs).
+    property <float> beats: 4;
+    property <length> gap: root.tight ? Theme.s3 : Theme.s2;
+    width: root.tight ? 2 * 34px + Theme.s3 : 2 * 30px + Theme.s2;
+    spacing: root.gap;
+    alignment: root.tight ? space-between : start;
+    for row in (root.tight ? [0, 1] : [0, 1, 2, 3]): HorizontalLayout {
+        spacing: root.gap;
+        height: root.key-row;
+        for col in [0, 1]: Key {
+            property <int> i: row * 2 + col;
+            horizontal-stretch: 1;
+            text: self.i + 1;
+            enabled: root.local;
+            lit: self.i < root.d.cues.length && root.d.cues[self.i] >= 0;
+            clicked => { DjState.hot-cue(root.deck, self.i, false); }
+            alt => { DjState.hot-cue(root.deck, self.i, true); }
+        }
+    }
+    HorizontalLayout {
+        spacing: 1px;
+        height: root.key-row;
+        Key { width: 18px; text: "‹"; enabled: root.local; clicked => { if (root.d.loop-on) { DjState.loop-scale(root.deck, 0.5); } else { root.beats = Math.max(0.25, root.beats / 2); } } }
+        Key {
+            horizontal-stretch: 1;
+            property <float> b: root.d.loop-on ? root.d.loop-beats : root.beats;
+            text: self.b >= 1 ? "" + Math.round(self.b) : "1/" + Math.round(1 / self.b);
+            lit: root.d.loop-on;
+            enabled: root.local;
+            clicked => { DjState.loop(root.deck, root.d.loop-on ? root.d.loop-beats : root.beats); }
+        }
+        Key { width: 18px; text: "›"; enabled: root.local; clicked => { if (root.d.loop-on) { DjState.loop-scale(root.deck, 2.0); } else { root.beats = Math.min(32, root.beats * 2); } } }
+    }
+    HorizontalLayout {
+        spacing: root.gap;
+        height: root.key-row;
+        Key { horizontal-stretch: 1; icon: "back"; icon-size: 9px; enabled: root.local; clicked => { DjState.jump(root.deck, -4); } }
+        Key { horizontal-stretch: 1; icon: "fwd"; icon-size: 9px; enabled: root.local; clicked => { DjState.jump(root.deck, 4); } }
+    }
+}
+
+// The deck's controls in its panel: pitch, tempo, cues, the platter and
+// Cue/Play. The order mirrors for deck B.
+component DeckControls inherits HorizontalLayout {
+    in property <string> deck;
+    in property <bool> mirror;
+    in property <bool> platter;
+    in property <bool> cues;
+    in property <bool> tempo;
+    in property <bool> tight;
+    // One key row: compact, a quarter of the deck's height (Cue and Play
+    // are the last row's height, level with it); full size, 24 px.
+    in property <length> key-row: 24px;
+    property <DeckItem> d: DjState.item(root.deck);
+    spacing: Theme.s3;
+    // Tempo and cues run the deck's full height (beside Cue and Play too).
+    if !root.mirror && root.tempo: Pitch { deck: root.deck; }
+    if !root.mirror && root.tempo: Tempo { deck: root.deck; tight: root.tight; key-row: root.key-row; }
+    if !root.mirror && root.cues: Cues { deck: root.deck; tight: root.tight; key-row: root.key-row; }
+    VerticalLayout {
+        horizontal-stretch: 1;
+        min-width: 0px;
+        spacing: root.tight ? Theme.s2 : Theme.s3;
+        if root.platter: Platter { deck: root.deck; vertical-stretch: 1; }
+        if !root.platter: Rectangle { vertical-stretch: 1; }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            height: root.tight ? root.key-row : 32px;
+            if !root.mirror: Key { horizontal-stretch: 1; icon: "cue"; icon-size: 12px; enabled: root.d.loaded && !root.d.live; hot: root.d.previewing; down => { DjState.cue(root.deck); } up => { DjState.cue-release(root.deck); } }
+            Key { horizontal-stretch: 1; icon: root.d.playing ? "pause" : "play"; icon-size: 12px; enabled: root.d.loaded; hot: root.d.playing; clicked => { DjState.toggle(root.deck); } }
+            if root.mirror: Key { horizontal-stretch: 1; icon: "cue"; icon-size: 12px; enabled: root.d.loaded && !root.d.live; hot: root.d.previewing; down => { DjState.cue(root.deck); } up => { DjState.cue-release(root.deck); } }
+        }
+    }
+    if root.mirror && root.cues: Cues { deck: root.deck; tight: root.tight; key-row: root.key-row; }
+    if root.mirror && root.tempo: Tempo { deck: root.deck; tight: root.tight; key-row: root.key-row; }
+    if root.mirror && root.tempo: Pitch { deck: root.deck; }
+}
+
+// The deck's channel: its meter, EQ and filter, trim, fader and PFL (the
+// headphones cue, as the Crossfader's CUE).
+component Channel inherits HorizontalLayout {
+    in property <string> deck;
+    in property <bool> mirror;
+    in property <bool> tight;
+    property <DeckItem> d: DjState.item(root.deck);
+    property <DeckLevels> lv: DjState.levels(root.deck);
+    property <EqKnobs> k: !DjState.eq-live ? { high: root.d.eq-high, mid: root.d.eq-mid, low: root.d.eq-low, filter: root.d.filter, high-text: root.d.eq-high-text, mid-text: root.d.eq-mid-text, low-text: root.d.eq-low-text, filter-text: root.d.filter-text } : DjState.knobs(root.deck);
+    property <float> trim: DjState.input-trims[DjState.index(root.deck)];
+    property <length> knob: root.tight ? 18px : 24px;
+    // Each knob's name, or its value while it is off centre ("−12.0 dB").
+    property <length> label-w: root.tight ? 46px : 52px;
+    // Names off: the narrowest windows.
+    in property <bool> bare;
+    // TRIM's values are shorter ("+3.0 dB").
+    property <length> trim-w: root.tight ? 40px : 52px;
+    spacing: root.tight ? Theme.s2 : Theme.s3;
+    if !root.mirror: HorizontalLayout {
+        spacing: 1px;
+        Meter { kind: MeterKind.System; width: 4px; value: root.lv.level-l; peak: root.lv.peak; }
+        Meter { kind: MeterKind.System; width: 4px; value: root.lv.level-r; peak: root.lv.peak; }
+    }
+    if root.mirror: VerticalLayout {
+        spacing: Theme.s2;
+        Knob { size: root.knob; label-w: root.trim-w; label: "TRIM"; bare: root.bare; value: root.trim / 24; readout: (round(root.trim * 10) > 0 ? "+" : "") + (round(root.trim * 10) / 10 + 0) + " dB"; moved(v) => { DjState.set-input-trim(root.deck, v); } }
+        HorizontalLayout { alignment: center; vertical-stretch: 1; Fader { width: root.tight ? 14px : 18px; value: DjState.gain(root.deck); changed(v) => { DjState.set-gain(root.deck, v); } } }
+        // PFL: this deck in the headphones.
+        Key { height: root.tight ? 16px : 22px; icon: "phones"; icon-size: 12px; lit: DjState.pfl(root.deck); clicked => { DjState.toggle-pfl(root.deck); } }
+    }
+    VerticalLayout {
+        alignment: space-between;
+        Knob { size: root.knob; label-w: root.label-w; label: "HIGH"; value: root.k.high; bare: root.bare; readout: root.k.high-text; moved(v) => { DjState.set-eq(root.deck, "high", v); } }
+        Knob { size: root.knob; label-w: root.label-w; label: "MID"; value: root.k.mid; bare: root.bare; readout: root.k.mid-text; moved(v) => { DjState.set-eq(root.deck, "mid", v); } }
+        Knob { size: root.knob; label-w: root.label-w; label: "LOW"; value: root.k.low; bare: root.bare; readout: root.k.low-text; moved(v) => { DjState.set-eq(root.deck, "low", v); } }
+        Knob { size: root.knob; label-w: root.label-w; label: "FILTER"; filter: true; value: root.k.filter; bare: root.bare; readout: root.k.filter-text; moved(v) => { DjState.set-deck-filter(root.deck, v); } }
+    }
+    if !root.mirror: VerticalLayout {
+        spacing: Theme.s2;
+        Knob { size: root.knob; label-w: root.trim-w; label: "TRIM"; bare: root.bare; value: root.trim / 24; readout: (round(root.trim * 10) > 0 ? "+" : "") + (round(root.trim * 10) / 10 + 0) + " dB"; moved(v) => { DjState.set-input-trim(root.deck, v); } }
+        HorizontalLayout { alignment: center; vertical-stretch: 1; Fader { width: root.tight ? 14px : 18px; value: DjState.gain(root.deck); changed(v) => { DjState.set-gain(root.deck, v); } } }
+        // PFL: this deck in the headphones.
+        Key { height: root.tight ? 16px : 22px; icon: "phones"; icon-size: 12px; lit: DjState.pfl(root.deck); clicked => { DjState.toggle-pfl(root.deck); } }
+    }
+    if root.mirror: HorizontalLayout {
+        spacing: 1px;
+        Meter { kind: MeterKind.System; width: 4px; value: root.lv.level-l; peak: root.lv.peak; }
+        Meter { kind: MeterKind.System; width: 4px; value: root.lv.level-r; peak: root.lv.peak; }
+    }
+}
+
+// Four beats of a deck: the beat being heard filled, the bar's first
+// brighter.
+component Phase inherits Rectangle {
+    in property <string> deck;
+    property <float> phase: DjState.phase(root.deck);
+    property <bool> playing: DjState.item(root.deck).playing;
+    property <int> beat: root.phase < 0 ? -1 : Math.mod(Math.floor(root.phase), 4);
+    for i in 4: Rectangle {
+        x: parent.width * i / 4 + (i == 0 ? 0px : 1px);
+        width: parent.width / 4 - (i == 0 || i == 3 ? 1px : 2px);
+        height: parent.height;
+        border-radius: 1px;
+        background: i != root.beat ? Theme.bg-deeper : !root.playing ? Theme.border-strong : i == 0 ? Theme.text-bright : Theme.text-dim;
+    }
+}
+
+// The centre's top: each deck's sync, the tempo that leads, and both
+// decks' beats.
+component CentreHead inherits VerticalLayout {
+    in property <bool> tight;
+    property <DeckItem> a: DjState.item("a");
+    property <DeckItem> b: DjState.item("b");
+    property <DeckItem> lead: DjState.item(DjState.now-deck);
+    // Both beat lines the same height, inside the head (compact: the keys
+    // take 20 px of 30).
+    property <length> beat-h: root.tight ? 3px : 4px;
+    spacing: root.tight ? 2px : Theme.s2;
+    HorizontalLayout {
+        spacing: Theme.s3;
+        vertical-stretch: 1;
+        Key { width: 56px; text: "SYNC"; font-size: Theme.fs-tiny; lit: root.a.synced; enabled: root.a.loaded && !root.a.live && root.a.can-sync; clicked => { DjState.sync("a"); } }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: Theme.s2;
+            Text {
+                text: root.lead.loaded && root.lead.bpm != "—" ? root.lead.bpm : "—";
+                color: Theme.text-bright;
+                font-family: Theme.font-data;
+                font-weight: Theme.data-weight;
+                font-size: root.tight ? Theme.fs-large : Theme.fs-title;
+                vertical-alignment: center;
+            }
+            Text { text: "BPM " + DjState.now-deck.to-uppercase(); color: Theme.text-faint; font-family: Theme.font-ui; font-weight: 600; font-size: Theme.fs-tiny; letter-spacing: Theme.caps-track; vertical-alignment: center; }
+        }
+        Key { width: 56px; text: "SYNC"; font-size: Theme.fs-tiny; lit: root.b.synced; enabled: root.b.loaded && !root.b.live && root.b.can-sync; clicked => { DjState.sync("b"); } }
+    }
+    Phase { deck: "a"; height: root.beat-h; }
+    Phase { deck: "b"; height: root.beat-h; }
+}
+
+// The crossfader: a slot with a centre detent and a Paper cap. Drag or
+// click to move, double-click to centre.
+component XFader inherits Rectangle {
+    property <float> drag;
+    property <float> shown: ta.pressed ? root.drag : DjState.xfader;
+    property <length> cap-w: 16px;
+    property <length> travel: root.width - root.cap-w;
+    Rectangle { x: root.cap-w / 2; width: root.travel; y: (parent.height - 4px) / 2; height: 4px; border-radius: 2px; background: Theme.bg-deeper; border-width: 1px; border-color: Theme.border; }
+    Rectangle { x: (parent.width - 1px) / 2; width: 1px; y: 2px; height: parent.height - 4px; background: Theme.border-strong; }
+    Rectangle {
+        x: root.travel * clamp(root.shown, 0, 1);
+        animate x { duration: ta.pressed ? 0ms : 60ms; easing: ease-out; }
+        width: root.cap-w;
+        height: parent.height;
+        border-radius: 2px;
+        background: ta.pressed || ta.has-hover ? Theme.text-bright : Theme.text;
+        Rectangle { x: (parent.width - 2px) / 2; width: 2px; y: 4px; height: parent.height - 8px; background: Theme.bg-deeper; }
+    }
+    ta := TouchArea {
+        mouse-cursor: ew-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.drag = clamp((self.mouse-x - root.cap-w / 2) / root.travel, 0, 1);
+                DjState.set-xfader(root.drag);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.drag = clamp((self.mouse-x - root.cap-w / 2) / root.travel, 0, 1);
+                DjState.set-xfader(abs(root.drag - 0.5) < 0.02 ? 0.5 : root.drag);
+            }
+        }
+        double-clicked => { DjState.set-xfader(0.5); }
+    }
+}
+
+// A level on the centre's bottom line: its name (or icon), the dial and,
+// with room, its value. Double-click: the default.
+component Level inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> icon;
+    in property <string> readout;
+    in property <float> value;
+    in property <length> size;
+    in property <bool> live: true;
+    in property <bool> show-readout;
+    callback moved(float);
+    horizontal-stretch: 0;
+    spacing: Theme.s2;
+    if root.icon != "": VerticalLayout { alignment: center; Icon { size: 11px; name: root.icon; ink: Theme.text-faint; } }
+    if root.label != "": Text { text: root.label; color: Theme.text-faint; font-family: Theme.font-ui; font-weight: 600; font-size: Theme.fs-tiny; letter-spacing: Theme.caps-track; vertical-alignment: center; }
+    VerticalLayout { alignment: center; Knob { bare: true; size: root.size; value: root.value; live: root.live; moved(v) => { root.moved(v); } } }
+    // A fixed width: a changing value never moves what follows it.
+    if root.show-readout: Text { text: root.readout; color: Theme.text-dim; font-family: Theme.font-data; font-size: Theme.fs-tiny; vertical-alignment: center; width: 40px; overflow: clip; }
+}
+
+// The centre: both decks' waveforms, one playhead through them, the AI
+// DJ's next mix, the crossfader and the set's control.
+component Centre inherits VerticalLayout {
+    in property <bool> tight;
+    // Room on the bottom line for the levels' values and wider keys.
+    property <bool> roomy: self.width >= 420px;
+    callback ai-open();
+    spacing: Theme.s2;
+    // the waveforms, one playhead through both
+    Rectangle {
+        vertical-stretch: 1;
+        border-radius: 3px;
+        clip: true;
+        background: Theme.bg-deeper;
+        Scope { y: 0px; height: (parent.height - 1px) / 2; deck: "a"; }
+        Rectangle { y: (parent.height - 1px) / 2; height: 1px; background: Theme.border; }
+        Scope { y: (parent.height + 1px) / 2; height: (parent.height - 1px) / 2; deck: "b"; below: true; }
+        Rectangle { x: (parent.width - 2px) / 2; width: 2px; background: Theme.text-bright; }
+    }
+    // the next AI mix, while a set plays
+    if DjState.set-on && !root.tight: HorizontalLayout {
+        spacing: Theme.s3;
+        height: Theme.fs-small + 2px;
+        Text {
+            text: (DjWorkspaceState.paused ? "PAUSED  ·  " : "") + (DjState.mix-next != "" ? "NEXT  " + DjState.mix-next : "Auto Mix  choosing the next track");
+            color: DjState.mix-next != "" ? Theme.text : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            min-width: 0px;
+        }
+        Text {
+            text: DjState.mix-bar != "" ? "MIXING " + DjState.mix-bar
+                : DjState.mix-beats >= 0 ? Math.ceil(DjState.mix-beats / 4) + " BARS" : "";
+            color: DjState.mix-bar != "" || (DjState.mix-beats >= 0 && DjState.mix-beats <= 16) ? Theme.accent : Theme.text-dim;
+            font-family: Theme.font-ui;
+            font-weight: 700;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
+    // the set's control, the crossfader, the headphones' level and the
+    // booth output's (the user, 2026-11-17: beside the PFL level)
+    HorizontalLayout {
+        spacing: root.roomy ? Theme.s3 : Theme.s2;
+        height: root.tight ? 20px : 26px;
+        if !DjState.set-on: Key { width: root.roomy && !root.tight ? 96px : 78px; text: "Auto Mix"; font-size: Theme.fs-tiny; clicked => { root.ai-open(); } }
+        if DjState.set-on: Key {
+            width: 32px;
+            icon: DjWorkspaceState.paused ? "play" : "pause";
+            lit: !DjWorkspaceState.paused;
+            enabled: !DjWorkspaceState.busy && DjWorkspaceState.live;
+            clicked => { DjWorkspaceState.action(DjWorkspaceState.paused ? "resume" : "pause", ""); }
+        }
+        if DjState.set-on: Key { width: 48px; text: "Auto"; font-size: Theme.fs-tiny; lit: true; clicked => { root.ai-open(); } }
+        XFader { horizontal-stretch: 1; min-width: 60px; }
+        Rectangle { width: 1px; background: Theme.border; }
+        // The PFL level, as the Crossfader's LEVEL.
+        Level {
+            icon: "phones";
+            size: root.tight ? 18px : 22px;
+            show-readout: root.roomy && !root.tight;
+            live: DjState.phones-on;
+            value: DjState.cue-level;
+            readout: DjState.cue-level-text;
+            moved(v) => { DjState.set-cue-level(v); }
+        }
+        // The booth output, as the Crossfader's BOOTH OUT (0 dB at twelve).
+        Level {
+            label: "BOOTH";
+            size: root.tight ? 18px : 22px;
+            show-readout: root.roomy && !root.tight;
+            value: BoothKnob.to-knob(DjState.master);
+            readout: DjState.master-text;
+            moved(v) => { DjState.set-master(BoothKnob.from-knob(v)); }
+        }
+    }
+}
+
+// Load a deck: search the library and pick a track (enter loads the
+// highlighted one, esc closes).
+component LoadPicker inherits Rectangle {
+    in property <string> deck;
+    callback close();
+    background: Theme.bg-deep;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: #00000080;
+    init => { DjState.lib-attach(); search.start-edit(); }
+    VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s2;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            height: Theme.row-h - 4px;
+            Caption { text: "LOAD DECK " + root.deck.to-uppercase(); strong: true; horizontal-stretch: 0; }
+            Caption { text: DjState.lib-count + " TRACKS"; horizontal-stretch: 1; }
+            Key { width: self.height; text: "×"; clicked => { root.close(); } }
+        }
+        search := SearchField {
+            placeholder: "title, artist, bpm or key";
+            edited(t) => { DjState.set-filter(t); }
+            accepted => { DjState.load(root.deck, DjState.lib-cursor); root.close(); }
+            cancelled => { root.close(); }
+            navigate(n) => { DjState.move-lib(n); }
+        }
+        list := Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+            property <length> rh: Theme.row-h;
+            property <int> cur: DjState.lib-cursor;
+            function report() { DjState.lib-scrolled(Math.floor(-lfl.content-y / self.rh), Math.ceil(self.height / self.rh) + 2); }
+            changed height => { self.report(); }
+            init => { self.report(); }
+            changed cur => {
+                if (self.cur * self.rh < -lfl.content-y) {
+                    lfl.content-y = -self.cur * self.rh;
+                } else if ((self.cur + 1) * self.rh > -lfl.content-y + self.height) {
+                    lfl.content-y = -((self.cur + 1) * self.rh - self.height);
+                }
+            }
+            if DjState.lib-count == 0: Text {
+                text: "No tracks match";
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-small;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            lfl := Flickable {
+                content-height: Math.max(self.height, DjState.lib-count * list.rh);
+                changed content-y => { list.report(); }
+                for it[j] in DjState.library: Rectangle {
+                    y: (DjState.lib-first + j) * list.rh;
+                    width: lfl.width;
+                    height: list.rh;
+                    border-radius: Theme.r-control;
+                    background: it.selected ? Theme.selection : row.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: Theme.s3;
+                        padding-right: Theme.s3;
+                        spacing: Theme.s3;
+                        Text { text: it.title; color: Theme.text-bright; font-family: Theme.font-ui; font-weight: Theme.ui-weight; font-size: Theme.fs-small; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: 0px; }
+                        Text { text: it.bpm; color: Theme.text-dim; font-family: Theme.font-data; font-size: Theme.fs-tiny; vertical-alignment: center; horizontal-alignment: right; width: 44px; }
+                        Text { text: it.key; color: Theme.text-dim; font-family: Theme.font-data; font-size: Theme.fs-tiny; vertical-alignment: center; horizontal-alignment: right; width: 28px; }
+                    }
+                    row := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { DjState.load(root.deck, DjState.lib-first + j); root.close(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The AI DJ: what to play from and Start, or the running set's pause,
+// resume and end. The DJ Booth's own set commands; a set started here
+// plays on Auto (the AI mixes by itself; touching a deck takes over).
+component AiSheet inherits Rectangle {
+    callback close();
+    background: Theme.bg-deep;
+    border-radius: Theme.r-panel;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: #00000080;
+    property <bool> ok: DjWorkspaceState.live && !DjWorkspaceState.busy;
+    VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s2;
+        HorizontalLayout {
+            spacing: Theme.s3;
+            height: Theme.row-h - 4px;
+            VerticalLayout { alignment: center; horizontal-stretch: 0; Module { size: 12px; ground: Theme.bg-deep; } }
+            Caption { text: "Auto Mix"; strong: true; horizontal-stretch: 0; }
+            Caption {
+                text: !DjWorkspaceState.live ? "ENGINE NOT RUNNING" : !DjState.set-on ? "CHOOSE WHAT IT PLAYS" : DjWorkspaceState.paused ? "SET PAUSED" : "SET PLAYING";
+                horizontal-stretch: 1;
+            }
+            Key { width: self.height; text: "×"; clicked => { root.close(); } }
+        }
+        if !DjState.set-on: Flickable {
+            vertical-stretch: 1;
+            content-height: picks.preferred-height;
+            picks := VerticalLayout {
+                spacing: Theme.s1;
+                for c in DjWorkspaceState.collections: Key {
+                    height: Theme.row-h - 2px;
+                    text: (c.selected ? "✓  " : "") + c.title + "  ·  " + c.detail;
+                    lit: c.selected;
+                    clicked => { DjWorkspaceState.action("collection", c.id); }
+                }
+                Key {
+                    height: Theme.row-h - 2px;
+                    property <bool> all: DjWorkspaceState.collection-display == "Next set: all library tracks";
+                    text: (self.all ? "✓  " : "") + "All library tracks";
+                    lit: self.all;
+                    clicked => { DjWorkspaceState.action("all_collections", ""); }
+                }
+            }
+        }
+        if DjState.set-on: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: Theme.s1;
+            Text { text: DjState.mix-next != "" ? "Next: " + DjState.mix-next : "Choosing the next track"; color: Theme.text-bright; font-family: Theme.font; font-size: Theme.fs-small; overflow: elide; }
+            Text { text: DjState.mix-technique; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; overflow: elide; }
+            if AiDjState.mode != "act": Text { text: "The AI is not on Auto: it suggests, and you mix."; color: Theme.warn; font-family: Theme.font; font-size: Theme.fs-tiny; overflow: elide; }
+            Rectangle { vertical-stretch: 1; }
+        }
+        if DjWorkspaceState.message != "": Text { text: DjWorkspaceState.message; color: Theme.text-dim; font-family: Theme.font; font-size: Theme.fs-tiny; overflow: elide; }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            alignment: end;
+            if !DjState.set-on: Button {
+                text: "Start Auto Mix";
+                primary: true;
+                compact: true;
+                enabled: root.ok;
+                clicked => { DjWorkspaceState.mode = "act"; DjWorkspaceState.action("start", ""); }
+            }
+            if DjState.set-on && AiDjState.mode != "act": Button { text: "Auto"; compact: true; enabled: AiDjState.live; clicked => { AiDjState.set-mode("act"); } }
+            if DjState.set-on: Button {
+                text: DjWorkspaceState.paused ? "Resume" : "Pause";
+                compact: true;
+                primary: DjWorkspaceState.paused;
+                enabled: root.ok;
+                clicked => { DjWorkspaceState.action(DjWorkspaceState.paused ? "resume" : "pause", ""); }
+            }
+            if DjState.set-on: Button { text: "End set"; compact: true; enabled: !DjWorkspaceState.busy; clicked => { DjWorkspaceState.action("end", ""); } }
+        }
+    }
+}
+
+export component MiniBoothSurface inherits Rectangle {
+    background: Theme.bg;
+    // What lies over the controls: "" (nothing), "a" / "b" (loading that
+    // deck) or "ai" (the AI DJ's set).
+    in-out property <string> overlay;
+    // Compact below 236 px (the window's own 1130 x 240 leaves ~165 px
+    // under the header): 4 hot cues, bare knobs, tighter spacing.
+    property <bool> tight: root.height < 236px;
+    property <length> pad: root.tight ? Theme.s2 : Theme.s3;
+    property <length> gap: root.tight ? Theme.s2 : Theme.s3;
+    property <length> ppad: root.tight ? Theme.s2 : Theme.s3;
+    property <length> head-h: root.tight ? 30px : 44px;
+    property <length> body-y: root.pad + root.head-h + root.gap;
+    property <length> body-h: root.height - root.body-y - root.pad;
+    property <length> centre-w: Math.round((root.tight ? Math.max(240px, Math.min(460px, (root.width - 2 * root.pad) * 0.28)) : Math.max(260px, Math.min(620px, (root.width - 2 * root.pad) * 0.33))) / 1px) * 1px;
+    property <length> side-w: Math.floor((root.width - 2 * root.pad - root.centre-w - 2 * root.gap) / 2 / 1px) * 1px;
+    // Compact: the knobs keep their names (the meters, the EQ column for
+    // "−12.0 dB" and TRIM's) while the decks have room, else they go bare
+    // so the hot cues stay.
+    property <bool> names: !root.tight || root.side-w >= 360px;
+    property <length> ch-w: !root.tight ? 116px : root.names ? 104px : 72px;
+    // The deck's own room inside its panel (padding, the channel, a rule).
+    property <length> deck-w: root.side-w - 4 * root.ppad - root.ch-w - 1px;
+    property <bool> show-tempo: root.deck-w >= (root.tight ? 130px : 150px);
+    // Each column only with room left for Cue and Play (48 px) beside it.
+    property <bool> show-cues: root.deck-w >= (root.tight ? 224px : 240px);
+    property <bool> show-platter: root.deck-w >= (root.tight ? 262px : 340px) && root.body-h >= 80px;
+    // A key row in the decks: compact, four rows fill the panel.
+    property <length> key-row: root.tight ? Math.max(16px, Math.floor((root.body-h - 2 * root.ppad - 3 * Theme.s3) / 4 / 1px) * 1px) : 24px;
+    property <length> centre-x: root.pad + root.side-w + root.gap;
+    property <length> right-x: root.centre-x + root.centre-w + root.gap;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Escape && root.overlay != "") { root.overlay = ""; return accept; }
+            if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) { return reject; }
+            if (e.text == " " && DjState.set-on) {
+                DjWorkspaceState.action(DjWorkspaceState.paused ? "resume" : "pause", "");
+                return accept;
+            }
+            if (e.text == Key.LeftArrow) { DjState.set-xfader(Math.max(0, DjState.xfader - 0.05)); return accept; }
+            if (e.text == Key.RightArrow) { DjState.set-xfader(Math.min(1, DjState.xfader + 0.05)); return accept; }
+            if (e.text == "0") { DjState.set-xfader(0.5); return accept; }
+            return reject;
+        }
+    }
+    // the decks' lines
+    DeckHead { x: root.pad; y: root.pad; width: root.side-w; height: root.head-h; deck: "a"; tight: root.tight; load => { root.overlay = "a"; } }
+    CentreHead { x: root.centre-x; y: root.pad; width: root.centre-w; height: root.head-h; tight: root.tight; }
+    DeckHead { x: root.right-x; y: root.pad; width: root.side-w; height: root.head-h; deck: "b"; mirror: true; tight: root.tight; load => { root.overlay = "b"; } }
+    // deck A and its channel
+    Panel {
+        x: root.pad;
+        y: root.body-y;
+        width: root.side-w;
+        height: root.body-h;
+        HorizontalLayout {
+            padding: root.ppad;
+            spacing: root.ppad;
+            DeckControls { horizontal-stretch: 1; deck: "a"; platter: root.show-platter; cues: root.show-cues; tempo: root.show-tempo; tight: root.tight; key-row: root.key-row; }
+            Rectangle { width: 1px; background: Theme.border; }
+            Channel { width: root.ch-w; deck: "a"; tight: root.tight; bare: !root.names; }
+        }
+    }
+    Panel {
+        x: root.centre-x;
+        y: root.body-y;
+        width: root.centre-w;
+        height: root.body-h;
+        Centre {
+            padding: root.ppad;
+            tight: root.tight;
+            ai-open => { root.overlay = "ai"; }
+        }
+    }
+    // deck B and its channel, mirrored
+    Panel {
+        x: root.right-x;
+        y: root.body-y;
+        width: root.side-w;
+        height: root.body-h;
+        HorizontalLayout {
+            padding: root.ppad;
+            spacing: root.ppad;
+            Channel { width: root.ch-w; deck: "b"; mirror: true; tight: root.tight; bare: !root.names; }
+            Rectangle { width: 1px; background: Theme.border; }
+            DeckControls { horizontal-stretch: 1; deck: "b"; mirror: true; platter: root.show-platter; cues: root.show-cues; tempo: root.show-tempo; tight: root.tight; key-row: root.key-row; }
+        }
+    }
+    // What lies over the controls: a click beside it closes it.
+    if root.overlay != "": TouchArea { clicked => { root.overlay = ""; keys.focus(); } }
+    if root.overlay == "a" || root.overlay == "b": LoadPicker {
+        deck: root.overlay;
+        width: Math.min(root.width - 2 * root.pad, Math.max(360px, root.side-w + root.gap + root.centre-w / 2));
+        height: root.height - 2 * root.pad;
+        x: root.overlay == "a" ? root.pad : root.width - root.pad - self.width;
+        y: root.pad;
+        close => { root.overlay = ""; keys.focus(); }
+    }
+    if root.overlay == "ai": AiSheet {
+        width: Math.min(root.width - 2 * root.pad, Math.max(380px, root.centre-w + 2 * root.gap));
+        height: root.height - 2 * root.pad;
+        x: (root.width - self.width) / 2;
+        y: root.pad;
+        close => { root.overlay = ""; keys.focus(); }
+    }
+}

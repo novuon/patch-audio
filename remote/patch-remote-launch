@@ -1,0 +1,28 @@
+#!/bin/sh
+# Start the phone remote from the Patch release that runs: the folder that
+# ~/.local/bin/omarchy-patch points into. A release folder without a remote
+# falls back to the newest one that has it, so an engine-only ship or a
+# deleted folder never keeps the remote from starting.
+set -eu
+releases="$HOME/.local/share/omarchy-patch/releases"
+current=$(dirname "$(readlink -f "$HOME/.local/bin/omarchy-patch")")
+bin="$current/patch-remote"
+if [ ! -x "$bin" ]; then
+    bin=$(ls -td "$releases"/*/patch-remote 2>/dev/null | head -n 1)
+fi
+if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+    echo "patch-remote: no Patch release holds a patch-remote binary" >&2
+    exit 1
+fi
+# --follow (patch-remote-follow.service): restart the running remote only
+# when the release it should run has changed.
+if [ "${1:-}" = "--follow" ]; then
+    pid=$(systemctl --user show -p MainPID --value patch-remote.service)
+    running=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+    if [ "$running" != "$(readlink -f "$bin")" ]; then
+        exec systemctl --user try-restart patch-remote.service
+    fi
+    exit 0
+fi
+echo "patch-remote: $bin" >&2
+exec "$bin" "$@"

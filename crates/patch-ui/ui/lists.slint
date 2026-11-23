@@ -1,0 +1,180 @@
+import { Theme } from "theme.slint";
+import { Label, MockBadge } from "primitives.slint";
+
+// Selectable row. Selection = subtle fill + 2px accent bar at the left edge.
+export component ListRow inherits Rectangle {
+    out property <bool> hovered: ta.has-hover;
+    in property <bool> selected;
+    in property <bool> muted;
+    in property <length> pad: Theme.s4;
+    in property <length> row-height: Theme.row-h;
+    callback clicked();
+    callback double-clicked();
+    height: row-height;
+    background: selected ? Theme.selection : ta.has-hover ? Theme.hover : transparent;
+    opacity: muted ? 0.55 : 1.0;
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        double-clicked => { root.double-clicked(); }
+    }
+    Rectangle {
+        x: 0px;
+        width: 2px;
+        background: root.selected ? Theme.accent : transparent;
+    }
+    HorizontalLayout {
+        padding-left: root.pad;
+        padding-right: root.pad;
+        spacing: Theme.s3;
+        @children
+    }
+}
+
+// Section heading: CAPS label, optional right-aligned detail, thin rule.
+export component SectionHeading inherits Rectangle {
+    in property <string> text;
+    in property <string> detail;
+    in property <length> pad: Theme.s4;
+    height: Theme.row-h + 4px;
+    HorizontalLayout {
+        padding-left: root.pad;
+        padding-right: root.pad;
+        padding-bottom: 2px;
+        spacing: Theme.s3;
+        Label {
+            text: root.text;
+            tone: "bright";
+            font-family: Theme.font-ui;
+            font-size: Theme.fs-heading;
+            font-weight: Theme.ui-weight;
+            horizontal-stretch: 0;
+            min-width: self.preferred-width;
+        }
+        if root.detail != "": Label {
+            text: root.detail;
+            tone: "faint";
+            small: true;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            horizontal-alignment: right;
+        }
+    }
+    Rectangle {
+        x: root.pad;
+        y: parent.height - 1px;
+        width: parent.width - 2 * root.pad;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+// Label / value pair.
+export component KV inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> tone: "normal";
+    in property <length> pad: Theme.s4;
+    in property <float> label-share: 0.4;
+    height: Theme.row-h - 2px;
+    HorizontalLayout {
+        padding-left: root.pad;
+        padding-right: root.pad;
+        spacing: Theme.s3;
+        Label {
+            text: root.label;
+            tone: "dim";
+            width: root.width * root.label-share;
+        }
+        Label {
+            text: root.value;
+            tone: root.tone;
+            horizontal-alignment: right;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// Table header cell / body cell. Width is set by the caller.
+export component HeaderCell inherits Label {
+    tone: "faint";
+    small: true;
+    caps: true;
+}
+
+export component Cell inherits Label { }
+
+export component EmptyState inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <string> badge;
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.s3;
+        padding: Theme.s5;
+        Label {
+            text: root.title;
+            tone: "dim";
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        if root.detail != "": Label {
+            text: root.detail;
+            tone: "faint";
+            small: true;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        if root.badge != "": HorizontalLayout {
+            alignment: center;
+            MockBadge { text: root.badge; }
+        }
+    }
+}
+
+// Vertical scroll container with a hairline position indicator.
+export component Scroll inherits Rectangle {
+    in property <length> spacing: 0px;
+    // Off where the content has knobs: a vertical drag turns them, and a
+    // drag-scrolling Flickable takes it first. The wheel scrolls either way.
+    in property <bool> drag-scroll: true;
+    clip: true;
+    fl := Flickable {
+        interactive: root.drag-scroll;
+        content-width: self.width;
+        content-height: max(self.height, inner.preferred-height);
+        inner := VerticalLayout {
+            width: fl.width;
+            alignment: start;
+            spacing: root.spacing;
+            @children
+        }
+    }
+    // The scrollbar: a faint track the full height and a thumb that shows
+    // where you are (a 2 px line in the border colour could not be seen:
+    // the user, 2026-11-16, "you cannot really see where the scroll is").
+    if fl.content-height > fl.height + 1px: Rectangle {
+        x: root.width - 5px;
+        width: 4px;
+        height: root.height;
+        border-radius: 2px;
+        background: Theme.border;
+    }
+    if fl.content-height > fl.height + 1px: Rectangle {
+        x: root.width - 5px;
+        width: 4px;
+        border-radius: 2px;
+        height: max(24px, root.height * root.height / fl.content-height);
+        y: (root.height - self.height) * (-fl.content-y / max(1px, fl.content-height - fl.height));
+        background: Theme.text-faint;
+    }
+    public function ensure-visible(top: length, h: length) {
+        if (top < -fl.content-y) {
+            fl.content-y = -top;
+        } else if (top + h > -fl.content-y + fl.height) {
+            fl.content-y = -(top + h - fl.height);
+        }
+    }
+    public function scroll-by(dy: length) {
+        fl.content-y = clamp(fl.content-y - dy, -(fl.content-height - fl.height), 0px);
+    }
+}

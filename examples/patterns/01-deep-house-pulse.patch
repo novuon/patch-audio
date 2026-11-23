@@ -1,0 +1,13 @@
+// Deep house pulse: four on the floor with a swung, Euclidean hat line,
+// ghost rims that drift, and a clap that flams every fourth bar.
+// Visuals: the "pulse" rings, intensity breathing over 8 bars.
+// Safe: drums and visuals only. Try: Visualiser in hybrid (m).
+cycle 4
+kick:  s("bd*4")
+hats:  s("~ hh ~ hh, hh(5,16,3)?0.3").every(8, fast(2))
+rims:  s("<rim(3,8) rim(3,8,2) rim(3,8,4)>").degradeBy(0.2)
+clap:  s("~ cp ~ cp").lastOf(4, ply(2))
+shake: s("sh*16?0.4").within(0.5, 1, fast(2))
+scene("pulse")
+visual.intensity("<0.3 0.4 0.5 0.6 0.7 0.8 0.9 1>")
+visual.feedback("0.7 0.4 0.6 0.3")

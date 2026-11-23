@@ -1,0 +1,17 @@
+post_install() {
+  echo ">> Real-time audio:  sudo usermod -aG realtime \$USER  (then log out and in)"
+  echo ">> Start Patch with your session:  systemctl --user enable --now omarchy-patch"
+  echo ">> Omarchy's bar audio menu:       omarchy-patch bar install"
+  echo ">> Themes:  ln -sfn /usr/share/omarchy-patch/themes/patch-{light,dark} ~/.config/omarchy/themes/"
+  echo ">> Open it:                        omarchy-patch   (the DJ booth: omarchy-patch layout live-dj)"
+  echo ">> Install stem separator:         omarchy-patch setup stems install  (or Ctrl+K → Setup)"
+}
+
+post_upgrade() {
+  echo ">> A running Patch takes over the new version without stopping the music:"
+  echo ">>   omarchy-patch engine upgrade"
+}
+
+pre_remove() {
+  echo ">> Your library and settings stay in ~/.config and ~/.local/share/omarchy-patch."
+}

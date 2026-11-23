@@ -1,0 +1,130 @@
+// The contract between a surface window and its Unit session host (Rust).
+// Every window of a Unit gets its own instance of this global; the session
+// keeps them in sync.
+
+export struct SurfaceItem {
+    id: string,
+    title: string,
+    unit: string,
+    key: string,
+    open: bool,
+    // "Audio", "DJ Booth", "Tools" or "Planned"; the first row of its
+    // group, and how many groups start at or before it.
+    group: string,
+    first: bool,
+    section: int,
+}
+
+export struct UnitItem {
+    name: string,
+    scope: string,
+    // "live", "mock" or "planned"
+    status: string,
+    open: bool,
+}
+
+export struct TileItem {
+    surface: string,
+    title: string,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    planned: bool,
+}
+
+export struct LayoutItem {
+    id: string,
+    name: string,
+    summary: string,
+    available: bool,
+    note: string,
+    tiles: [TileItem],
+}
+
+// An app setting the controller offers (a switch).
+export struct SettingItem {
+    id: string,
+    label: string,
+    // What it does, in one line.
+    detail: string,
+    // "Setup", or the Unit it belongs to.
+    group: string,
+    on: bool,
+    // A button that opens something, not a switch.
+    action: bool,
+}
+
+// A ready-made setup (Full, Patch DJ, Mixer, Minimal).
+export struct ProfileItem {
+    id: string,
+    name: string,
+    about: string,
+    active: bool,
+}
+
+export struct KeyHint {
+    key: string,
+    label: string,
+}
+
+export global Host {
+    // Identity of this window
+    // The application (Patch) and the Unit this window belongs to.
+    in property <string> app-name: "Patch";
+    in property <string> app-label: "PATCH";
+    in property <string> app-kind: "audio";
+    in property <string> unit-name;
+    in property <string> unit-scope;
+    in property <string> surface-id;
+    // This window's id: the surface id, or an instance id (`plugin#3`).
+    in property <string> window-id;
+    in property <string> surface-title;
+    in property <string> heading;
+    in property <string> window-title: "Patch";
+
+    in property <[UnitItem]> units;
+    // Units grouped by status: key = "live" | "mock" | "planned", label = names.
+    in property <[KeyHint]> unit-groups;
+
+    // Session state mirrored into every window
+    in property <[SurfaceItem]> surfaces;
+    in property <[LayoutItem]> layouts;
+    in property <string> active-layout;
+    in property <[KeyHint]> hints;
+    in property <[KeyHint]> common-hints;
+    // The shared grammar (patch_core::keys::GLOBAL), the help's "Everywhere".
+    in property <[KeyHint]> global-hints;
+    in property <[KeyHint]> surface-keys;
+    in property <string> provenance: "SIMULATED";
+    // Header stamp: LIVE for real data, MOCK for simulated, PLANNED, PLUGIN
+    // MOCK, PREVIEW (a Unit that shows what it will do, not working yet).
+    in property <string> badge: "MOCK";
+    in property <string> version: "v0.0.0";
+    in property <bool> hyprland;
+
+    in-out property <bool> help-visible;
+
+    // Commands, implemented by the Rust session host
+    callback toggle-surface(string);
+    callback focus-surface(string);
+    callback open-layout(string);
+    callback show-controller();
+    callback close-window();
+    callback quit-session();
+    // App settings, shown as switches in the controller.
+    in property <[SettingItem]> settings;
+    in property <[ProfileItem]> profiles;
+    callback choose-profile(string);
+    callback toggle-setting(string);
+    // Unconsumed key press → shared grammar (Tab, Ctrl+K, surface mnemonics …)
+    callback key(string, bool, bool) -> bool;
+    // The window is smaller than the surface needs to show everything:
+    // what to say ("" = it fits), and the two answers.
+    in property <string> size-note;
+    callback make-room();
+    // Room for a surface that knows what it needs (the Mixer's console):
+    // the window to this size (logical px), floating in the middle.
+    callback make-room-for(int, int);
+    callback keep-small();
+}

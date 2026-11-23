@@ -1,0 +1,22 @@
+[package]
+name = "patch-host"
+description = "Session host: real Wayland windows per surface, Hyprland integration, control socket, headless screenshots"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = "1"
+patch-core.workspace = true
+patch-ui.workspace = true
+slint.workspace = true
+anyhow.workspace = true
+image.workspace = true
+tikv-jemalloc-sys = { version = "0.6", optional = true, features = ["stats", "unprefixed_malloc_on_supported_platforms"] }
+
+[features]
+jemalloc = ["dep:tikv-jemalloc-sys"]
+
+[lints]
+workspace = true

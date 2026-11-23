@@ -1,0 +1,1684 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Patch user manual</title><style>
+:root { --accent: #F0243B; }
+* { box-sizing: border-box; }
+html { background: #f2f3f2; }
+body { margin: 0 auto; max-width: 960px; padding: 48px 64px; background: white; color: #252b27; font-family: "DejaVu Sans", sans-serif; font-size: 15px; line-height: 1.6; }
+h1 { font-size: 36px; line-height: 1.2; margin: 0 0 28px; border-top: 6px solid var(--accent); padding-top: 20px; letter-spacing: -1px; }
+h2 { font-size: 24px; line-height: 1.3; margin: 42px 0 16px; border-bottom: 2px solid var(--accent); padding-bottom: 10px; }
+h3 { font-size: 18px; line-height: 1.35; margin: 26px 0 12px; }
+a { color: #962137; text-decoration: underline; text-underline-offset: 2px; }
+p { margin: 0 0 13px; }
+ul, ol { padding-left: 25px; margin: 10px 0 18px; }
+li { margin-bottom: 6px; }
+li p { margin-bottom: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 17px 0 22px; }
+thead { background: #ecefec; }
+th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid #d7dcd8; }
+th { border-top: 2px solid var(--accent); }
+code { font-family: "DejaVu Sans Mono", monospace; font-size: .85em; background: #edf0ed; padding: 2px 4px; overflow-wrap: anywhere; }
+pre { background: #edf0ed; padding: 13px 15px; border-left: 3px solid var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+pre code { background: none; padding: 0; font-size: 11px; }
+@media(max-width: 650px) { body { padding: 25px 20px; } h1 {font-size: 30px;} table {font-size:12px;} th,td {padding:7px;} }
+@page { size: A4; margin: 20mm 18mm 20mm; @top-left { content: "PATCH / USER MANUAL"; font-family: "DejaVu Sans"; font-size: 8pt; color: #6a726c; } @bottom-left { content: "Patch · 28 October 2026"; font-family: "DejaVu Sans"; font-size: 8pt; color: #6a726c; } @bottom-right { content: counter(page) " / " counter(pages); font-family: "DejaVu Sans"; font-size: 8pt; color: #6a726c; } }
+@media print {
+ html { background: white; }
+ body { max-width: none; margin: 0; padding: 0; font-size: 10pt; line-height: 1.48; }
+ h1 { font-size: 28pt; }
+ h2 { font-size: 17pt; margin-top: 25px; break-after: avoid; }
+ h3 { font-size: 12pt; break-after: avoid; }
+ p { orphans: 3; widows: 3; }
+ table { font-size: 8.7pt; }
+ table, tr, pre { break-inside: avoid; }
+ th,td { padding: 6px 8px; }
+ thead { display: table-header-group; }
+ a { text-decoration: none; }
+}
+</style></head><body><main><h1 id="patch-user-manual">Patch user manual</h1>
+<p>Patch brings your computer's audio into one place. Use it to choose where sound
+goes, balance applications and microphones, play music, mix DJ sets, record and
+broadcast.</p>
+<p>Each part of Patch is called a <strong>Unit</strong>. Mixer, Router, Library and Recorder are
+Units. You can open one on its own or use a <strong>layout</strong> that opens several together.
+The audio service runs separately from those windows.</p>
+<p><strong>Start from the bar’s audio menu to open a layout. Press Ctrl+K in any Patch
+window to open the controller and choose Units, layouts or Setup.</strong></p>
+<p><strong>Closing a window does not stop its audio.</strong> Decks, Player, recording and
+broadcasting have their own stop controls. At login, the audio service starts;
+Patch does not open windows automatically.</p>
+<p>This first edition covers everyday use on Omarchy. Some Units depend on the
+modules you selected during setup. The detailed guides linked throughout cover
+advanced controls.</p>
+<p>Patch’s main pink/red accent in Patch Dark is <strong><code>#F0243B</code></strong> (RGB <strong>240, 36, 59</strong>).</p>
+<h2 id="contents">Contents</h2>
+<ol>
+<li><a href="#1-open-patch-and-choose-a-workspace">Open Patch and choose a workspace</a></li>
+<li><a href="#2-get-sound-to-your-speakers-or-headphones">Get sound to your speakers or headphones</a></li>
+<li><a href="#3-balance-sound-in-the-mixer">Balance sound in the Mixer</a></li>
+<li><a href="#4-play-a-file-or-stream">Play a file or stream</a></li>
+<li><a href="#5-build-your-music-library">Build your music library</a></li>
+<li><a href="#6-mix-two-tracks-yourself">Mix two tracks yourself</a></li>
+<li><a href="#7-use-auto-mix">Use the Auto Mix</a></li>
+<li><a href="#8-record-and-listen-back">Record and listen back</a></li>
+<li><a href="#9-set-up-a-microphone">Set up a microphone</a></li>
+<li><a href="#10-show-visuals-and-broadcast">Show visuals and broadcast</a></li>
+<li><a href="#11-save-your-workspace-and-settings">Save your workspace and settings</a></li>
+<li><a href="#12-solve-common-problems">Solve common problems</a></li>
+<li><a href="#13-find-more-help">Find more help</a></li>
+<li><a href="#14-keyboard-reference">Keyboard reference</a></li>
+</ol>
+<h2 id="1-open-patch-and-choose-a-workspace">1. Open Patch and choose a workspace</h2>
+<h3 id="open-a-layout-from-the-menu-bar">Open a layout from the menu bar</h3>
+<p>The bar's audio menu is the everyday starting point for Patch. A layout opens
+and arranges the Units you need for a particular job.</p>
+<ol>
+<li>Click the <strong>audio/volume icon in the Omarchy bar</strong>.</li>
+<li>Find the <strong>Patch</strong> section above the output devices.</li>
+<li>Choose a layout. Start with <strong>Simple</strong> for everyday audio: Mixer, Router
+   and Player open together.</li>
+<li>Patch opens the layout on the next empty workspace.</li>
+</ol>
+<p>Choosing a layout from this menu closes the existing Patch windows and opens
+the chosen arrangement. <strong>The audio keeps playing while you change layouts.</strong>
+You can switch from mixing to DJing without stopping the service.</p>
+<p>The menu highlights the layout currently on screen. For that layout, use its
+actions to go to its workspace, <strong>Reset</strong> the window positions, <strong>Close</strong> its
+windows or save your arrangement. A dot indicates that the window arrangement
+has changed. <strong>Close all Patch windows</strong> closes Patch windows across workspaces;
+it does not stop playback, recording or broadcasting.</p>
+<p>If the Patch section is missing, the bar integration may not be installed.
+See <a href="layouts.md#the-bars-audio-menu">the bar's audio menu</a>. You can still open
+Patch from the launcher as described below.</p>
+<h3 id="use-ctrlk-to-open-the-controller">Use Ctrl+K to open the controller</h3>
+<p>With a Patch window focused, hold <strong>Ctrl</strong> and press <strong>K</strong>. This opens the
+<strong>Patch controller</strong>, your central place to:</p>
+<ul>
+<li>Open an individual Unit, such as Mixer, Library or Recorder.</li>
+<li>Choose a layout for the task you want to do.</li>
+<li>Close Units or layouts.</li>
+<li>Open <strong>Setup</strong> to choose modules and the default layout.</li>
+<li>Check the audio engine's state.</li>
+</ul>
+<p>For example, if you are DJing and want to check a recording, press <strong>Ctrl+K</strong>
+and choose <strong>Recorder</strong>. You do not need to replace the whole layout just to
+open another Unit. In the controller the arrow keys move and <strong>Enter</strong> opens;
+each Unit's letter, shown beside it, opens it directly (<strong>R</strong> for Recorder).
+<strong>Ctrl+Q</strong> closes all Patch windows; the music keeps playing. See
+<a href="#14-keyboard-reference">Keyboard reference</a> for every key.</p>
+<p>Ctrl+K works inside Patch windows; it is not a desktop-wide shortcut. When no
+Patch window is open, use the bar's audio menu, or press <strong>Super+Space</strong> and
+choose <strong>Patch</strong> to open the controller. Layout launchers such as <strong>Patch Audio</strong>
+and <strong>Patch Auto Mix</strong> open their layouts directly.</p>
+<h3 id="choose-a-layout">Choose a layout</h3>
+<table>
+<thead>
+<tr>
+<th>You want to…</th>
+<th>Choose this layout</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Control everyday computer audio</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>Mix with two decks</td>
+<td>Basic DJ</td>
+</tr>
+<tr>
+<td>Order and crossfade your own tracks</td>
+<td>Auto Mix</td>
+</tr>
+<tr>
+<td>Use decks, mixing controls and visuals across workspaces</td>
+<td>Performance DJ</td>
+</tr>
+<tr>
+<td>Work with microphones, recording and streaming</td>
+<td>Podcast &amp; Broadcast</td>
+</tr>
+<tr>
+<td>Work with detailed mixing and analysis</td>
+<td>Pro</td>
+</tr>
+</tbody>
+</table>
+<p>Layouts open on the next empty workspace. You can also open individual Units
+from the controller. A layout missing from the list may need a module enabled
+in <strong>Setup</strong>.</p>
+<p>Terminal equivalents:</p>
+<pre><code class="language-sh">omarchy-patch                      # open the controller
+omarchy-patch layout               # open your chosen default layout
+omarchy-patch layout simple
+omarchy-patch open mixer
+</code></pre>
+<p>Press <strong>?</strong> for the current window's help. Shortcuts depend on which window has
+focus; follow the controls and help shown there. Text fields keep their normal
+typing behaviour.</p>
+<p>If a window says it is too small, choose <strong>Make room</strong> to float and enlarge it,
+or <strong>Keep small</strong> to accept its current size. Keeping it small can leave some
+controls out of view.</p>
+<p>See <a href="layouts.md">Layouts</a> for the full list and custom arrangements.</p>
+<h2 id="2-get-sound-to-your-speakers-or-headphones">2. Get sound to your speakers or headphones</h2>
+<p>Start with a familiar audio source, such as a music file in Player or a song in
+your usual music application.</p>
+<ol>
+<li>Open the bar's audio menu.</li>
+<li>Choose the physical output you want: speakers, headphones or an audio interface.</li>
+<li>Check that the main volume is raised and unmuted.</li>
+<li>Start playback. Open Mixer and check for activity on the source's meter.</li>
+</ol>
+<p>Patch follows the output selected in the bar. Choosing a physical device gives
+you the plain mixer. Choosing <strong>Patch</strong> exposes the full console and professional
+routing controls, retaining the current hardware output path.</p>
+<p>Use <strong>Router</strong> to inspect connections. Routing means choosing a sound's source
+and destination; Mixer sets how much of that sound you hear. With Patch managing
+system audio, application sound continues through Patch even when a physical
+output is selected in the bar.</p>
+<h3 id="main-output-and-headphone-cue">Main output and headphone cue</h3>
+<p><strong>Main</strong> is the mix sent to your audience or speakers. <strong>Cue</strong> lets you check a
+track in headphones before bringing it into Main.</p>
+<p>Independent Main and Cue need separate output ports. In Patch routing mode,
+assign Main and Headphone Cue to different ports or stereo pairs. They can use
+different pairs on the same audio interface. Cue needs a stereo pair, and its
+ports cannot overlap Main's.</p>
+<p>Choosing a normal physical output in the bar disables the professional Cue
+routes. If you have only one stereo output, do not expect an independent
+headphone mix from it.</p>
+<p>See <a href="core-routing.md">Core routing</a> for port assignments and capture routing.</p>
+<h2 id="3-balance-sound-in-the-mixer">3. Balance sound in the Mixer</h2>
+<p>A <strong>channel strip</strong> contains the controls for one sound source. Strips appear for
+actual application streams, assigned inputs and active Patch sources. A browser
+can supply several separate streams; Patch can control only the streams the
+browser makes available.</p>
+<ol>
+<li>Play the source you want to adjust and find its moving meter.</li>
+<li>Move that channel's fader to change its level in the mix.</li>
+<li>Use <strong>Mute</strong> to silence it. Check for active <strong>Solo</strong> controls if other sources
+   unexpectedly disappear.</li>
+<li>Adjust Main for the overall listening level.</li>
+</ol>
+<p>A meter shows signal level; a raised fader alone does not mean a source is
+playing. If levels clip or sound distorted, reduce the source or channel level.
+Making everything louder does not fix distortion already present in the source.</p>
+<p>In the full console, Main, AUX and the effects returns sit at the right edge.
+An effects return carries processed sound back into the mix. Start with the
+source faders and Main before adjusting sends and returns.</p>
+<p>Open <strong>EQ</strong> to change the tonal balance of an available channel. Select the
+channel you intend to change before adjusting it. Use bypass to compare the
+processed and unprocessed sound. Routing connections belong in Router.</p>
+<h3 id="reading-the-meters">Reading the meters</h3>
+<ul>
+<li><strong>Peak</strong> shows short, high signal levels. Watch it for overloads.</li>
+<li><strong>RMS</strong> describes average signal level over a short period.</li>
+<li><strong>LUFS</strong> describes perceived loudness. Integrated LUFS covers the measured
+  passage or take rather than just the latest instant.</li>
+<li><strong>dBFS</strong> measures digital level, with 0 dBFS at full scale.</li>
+</ul>
+<p>Meter and Analyzer provide more detail than a strip's level meter. Use them
+when checking levels, stereo balance or frequency content.</p>
+<h2 id="4-play-a-file-or-stream">4. Play a file or stream</h2>
+<p>Use <strong>Player</strong> for a file, a saved recording or an HTTP(S) audio stream. Use the
+DJ decks when you need cue points, beat matching or transitions between tracks.</p>
+<ol>
+<li>Open Player from the controller.</li>
+<li>Choose <strong>Open file</strong>, or enter a file path or stream URL.</li>
+<li>Use Play/Pause, seek and volume as needed.</li>
+<li>Enable repeat if you want a timed file to loop.</li>
+</ol>
+<p>Player's shortcuts include <strong>Space</strong> for play/pause, <strong>O</strong> for the file chooser
+and <strong>L</strong> for repeat. Seeking requires a source with a known duration.</p>
+<p><strong>Stop</strong> rewinds a timed file; for a stream without a known duration, it closes
+the stream. Closing the Player window leaves playback running. Reopen Player
+to control it again.</p>
+<p>See <a href="recording-playback.md">Recorder and Player</a>.</p>
+<h2 id="5-build-your-music-library">5. Build your music library</h2>
+<p>The Library is your catalogue for DJing. Patch finds and analyses music in
+<code>~/Music</code>. You can add other folders and removable drives as <strong>sources</strong>.</p>
+<ol>
+<li>Open Library.</li>
+<li>For a connected removable drive, use <strong>Add to library</strong> in Sources.</li>
+<li>Select a source to browse its collection, or browse all tracks.</li>
+<li>Let analysis finish before relying on automatic beat matching.</li>
+</ol>
+<p>To add another folder from a terminal:</p>
+<pre><code class="language-sh">omarchy-patch library add &quot;/path/to/music&quot; &quot;My music&quot;
+omarchy-patch library rescan
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Track status</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ready</strong></td>
+<td>Ready for deck, sync and AI use; listen and check important tracks before a performance.</td>
+</tr>
+<tr>
+<td><strong>Check</strong></td>
+<td>Read the reason and check the analysis, especially the beat grid. The file can still play.</td>
+</tr>
+<tr>
+<td><strong>Waiting</strong></td>
+<td>Leave Patch time to analyse it.</td>
+</tr>
+<tr>
+<td><strong>Failed</strong></td>
+<td>Read the error and check that the file is available and readable.</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>beat grid</strong> marks where Patch thinks the beats and downbeats fall. Sync
+follows that grid. If the grid is wrong, two synced decks can still sound out of
+time. A confidence or readiness label does not replace listening.</p>
+<p>Use Library search to narrow the list. In its keyboard controls, <strong>A/B</strong> load
+the selected track onto a deck (<strong>C/D</strong> onto decks C and D), <strong>Q</strong> queues it
+and <strong>Shift+C</strong> adds it to a collection. Confirm the destination deck
+before loading a track during a set.</p>
+<p>Unplugged sources remain listed with their tracks offline. Reconnecting the
+drive makes those files available again. Removing a source from Library does
+not delete its music files. Patch does not write its analysis into those files.</p>
+<p>See <a href="library.md">Library</a> for file moves, duplicate copies and analysis storage.</p>
+<h2 id="6-mix-two-tracks-yourself">6. Mix two tracks yourself</h2>
+<p>Open the <strong>Basic DJ</strong> layout. It puts Deck A, Crossfader, Deck B and Library
+together. Start at a comfortable listening level.</p>
+<ol>
+<li>Load a track onto Deck A and another onto Deck B.</li>
+<li>Set the crossfader towards A and start Deck A.</li>
+<li>If you have a separate headphone Cue output, cue Deck B in headphones.</li>
+<li>Find a suitable starting point on B. Check its tempo and beat grid.</li>
+<li>Use Sync if appropriate, then listen to the alignment.</li>
+<li>Start B at your chosen phrase and bring it into the mix with its level,
+   EQ and crossfader controls.</li>
+<li>When B has taken over, pause A before loading its next track.</li>
+</ol>
+<p>The <strong>crossfader</strong> balances the decks: left favours A, centre allows both and
+right favours B. Channel levels and EQ also affect what you hear.</p>
+<p><strong>Keylock</strong> keeps pitch steady while tempo changes. <strong>Cue</strong> returns to a saved
+starting point; hot cues recall other saved positions. <strong>Loop</strong> repeats a section.
+Check the window's help for the current controls before using them in a live set.</p>
+<p>During a synced overlap, the incoming deck follows the outgoing deck. Once the
+handover finishes, the new lead deck does not need to remain synced to the
+paused deck. Its Sync button being off at that point is expected.</p>
+<p>If Auto Mix is in Auto, moving a deck or mixing control takes over from it and
+returns it to Suggest. Check the mode before expecting automatic mixing to resume.</p>
+<p>See <a href="dj-booth.md">DJ Booth</a> for cueing, loops, EQ, effects and transport details.</p>
+<h2 id="7-use-auto-mix">7. Use the Auto Mix</h2>
+<p>Open the <strong>Auto Mix</strong> layout, or open the DJ workspace from the controller. Its
+main tabs are <strong>Play</strong>, <strong>Prepare</strong>, <strong>Recordings</strong> and <strong>Reports</strong>. In narrow
+windows, Prepare and Recordings may be labelled Sets and Takes.</p>
+<p>The Auto Mix orders and crossfades tracks from your library, beat-matched and in key. It does not generate, compose or create music. It uses the library's analysis to choose the order and plan each transition. You choose how much control it has.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Observe</strong></td>
+<td>You operate the decks. Auto Mix listens and does not suggest or change playback.</td>
+</tr>
+<tr>
+<td><strong>Suggest</strong></td>
+<td>Auto Mix ranks tracks. You choose, load and mix.</td>
+</tr>
+<tr>
+<td><strong>Prepare</strong></td>
+<td>Auto Mix loads, cues and plans the next mix, then waits for your approval.</td>
+</tr>
+<tr>
+<td><strong>Auto</strong></td>
+<td>Auto Mix chooses the order and runs the transitions. Some detail views call this <strong>ACT</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>Start with <strong>Suggest</strong> to learn what it chooses and why. Expand <strong>Auto Mix detail</strong> to
+inspect candidates, reasons and the transition plan.</p>
+<h3 id="prepare-and-start-a-set">Prepare and start a set</h3>
+<ol>
+<li>Open <strong>Prepare</strong> and name the set.</li>
+<li>Select its source collections. Selecting none makes the whole library
+   available; selecting several combines them.</li>
+<li>Add an ordered track list if you want those tracks to play before automatic
+   selections.</li>
+<li>Choose the duration, energy arc, tempo corridor and Auto Mix mode.</li>
+<li>Read the readiness checks, resolve missing files and <strong>Save</strong>.</li>
+<li>Choose <strong>Start set</strong> explicitly when you are ready to play.</li>
+</ol>
+<p>Saving a draft does not start playback. Editing another draft while a set plays
+does not change the current queue.</p>
+<h3 id="steer-the-set-while-it-plays">Steer the set while it plays</h3>
+<ul>
+<li><strong>Build / Hold / Release</strong> steer the energy direction. They do not directly
+  set the tempo; an active set arc also guides the journey.</li>
+<li><strong>Change next</strong> rejects the current next choice and requests another.</li>
+<li><strong>Mix now / Skip</strong> requests a transition into the next track on a bar.
+  It is not an immediate cut.</li>
+<li>Queue arrows reorder pending tracks. Remove offers Undo.</li>
+</ul>
+<p>Watch the actual loaded decks and next-track display. A Library row selection
+is a browsing choice, not proof of what Auto Mix will play next.</p>
+<h3 id="pause-finish-or-take-over">Pause, finish or take over</h3>
+<table>
+<thead>
+<tr>
+<th>Action in the DJ workspace</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pause</strong></td>
+<td>Pauses both decks and freezes the set arc, including an active transition.</td>
+</tr>
+<tr>
+<td><strong>Resume</strong></td>
+<td>Continues the paused set.</td>
+</tr>
+<tr>
+<td><strong>End set</strong></td>
+<td>Fades out and stops both decks.</td>
+</tr>
+<tr>
+<td><strong>Stop now</strong></td>
+<td>Stops immediately.</td>
+</tr>
+<tr>
+<td>Close the window</td>
+<td>Playback continues.</td>
+</tr>
+</tbody>
+</table>
+<p>Touching deck or mixer controls takes over from Auto. Select Auto again when
+you want Auto Mix to resume. In Prepare, approve the prepared plan when you are
+ready for that mix.</p>
+<h3 id="report-a-mix-that-went-wrong">Report a mix that went wrong</h3>
+<p>Select the transition and choose <strong>Report</strong>. Describe what you heard, such as
+poor timing, a clash or a level change, and add a note if useful. Reports retain
+information about that transition for review.</p>
+<p>Replay and improvement evaluation belong in a review session with live playback
+paused or ended. A replay reconstructs the transition; a recording preserves
+what actually happened. Review and audition evaluated changes before activating
+them.</p>
+<p>See <a href="dj-workspace.md">DJ workspace</a> and <a href="ai-dj.md">Auto Mix</a>.</p>
+<h2 id="8-record-and-listen-back">8. Record and listen back</h2>
+<h3 id="record-a-source-with-recorder">Record a source with Recorder</h3>
+<ol>
+<li>Open Recorder and select the source you want to capture.</li>
+<li>Choose a format. Use 24-bit PCM for a conventional high-quality WAV take;
+   Float32 is also available.</li>
+<li>Start recording and check that its meter responds to the intended sound.</li>
+<li>Pause and resume if needed. Paused audio is omitted from the same take.</li>
+<li>Stop to save and finalise the recording.</li>
+<li>Open the saved take in Player and listen back.</li>
+</ol>
+<p>Source and format stay fixed during a take. Closing Recorder does not stop
+capture. Check the take's clips, dropouts and any reported error after stopping.
+Do not assume a file is complete just because it appears in the folder.</p>
+<p>Takes are saved in <strong>Patch Recordings</strong> under your Music directory, normally
+<code>~/Music/Patch Recordings</code>. In a compact Recorder window, use <strong>Takes</strong> to find
+the saved files.</p>
+<h3 id="choose-the-right-source">Choose the right source</h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Program · Patch engine</strong></td>
+<td>Patch's program mix before device/listening volume.</td>
+</tr>
+<tr>
+<td><strong>Patch bus</strong></td>
+<td>Sound routed through the Patch bus.</td>
+</tr>
+<tr>
+<td><strong>What you hear · output</strong></td>
+<td>The selected output device's monitor.</td>
+</tr>
+<tr>
+<td><strong>An application</strong></td>
+<td>One available application's stream monitor.</td>
+</tr>
+<tr>
+<td><strong>Processed microphones · Patch Input</strong></td>
+<td>The processed microphone capture mix.</td>
+</tr>
+</tbody>
+</table>
+<p>These sources can contain different sound. Make a short test take and listen
+back before recording a full session.</p>
+<h3 id="record-a-dj-set">Record a DJ set</h3>
+<p>Use <strong>Record program</strong> in the DJ workspace to capture the program mix with
+linked set and transition information. Set pause/resume coordinates that
+recording; ending the set finalises it. Find linked takes and export tracklists
+in <strong>Recordings</strong>. Pause live decks before playing back a take or rehearsal
+from that workspace.</p>
+<p>See <a href="recording-playback.md">Recorder and Player</a> and
+<a href="dj-workspace.md#recordings">DJ workspace recordings</a>.</p>
+<h2 id="9-set-up-a-microphone">9. Set up a microphone</h2>
+<p>Use headphones before enabling microphone monitoring through the main mix.
+Sending a microphone to nearby speakers can cause feedback.</p>
+<ol>
+<li>Open <strong>Mic</strong> and assign the physical microphone or interface input.</li>
+<li>New inputs start muted and unmonitored. Unmute the intended input when ready.</li>
+<li>Speak at your normal distance and watch the input meter.</li>
+<li>Start with a profile such as <strong>Natural</strong>, <strong>Podcast</strong> or <strong>Broadcast</strong>.</li>
+<li>Adjust software trim and processing while listening or checking a test take.</li>
+<li>In a calling or streaming application, choose <strong>Patch Input</strong> as its microphone.</li>
+</ol>
+<p>To bring the far end of a call or an X Space into Patch, press <strong>+ Call far end</strong> in
+<strong>Mic</strong> while it plays. The voice moves from its own strip into a <strong>Remote</strong>
+lane with the <strong>Remote voice</strong> profile. It stays out of Patch Input and every
+send (mix-minus), so the people in the call never hear themselves.</p>
+<h3>Use a browser voice as a mic</h3>
+<ol>
+<li>Start playing the voice in Chromium.</li>
+<li>In <strong>Mic</strong>, click <strong>+ Voice source</strong>. The Chromium strip in the Mixer shows which <strong>Voice</strong> lane now carries its sound.</li>
+<li>On that lane, turn the <strong>Aux1</strong> send up to 0 dB.</li>
+<li>In the other browser, choose <strong>Patch AUX 1</strong> as the microphone.</li>
+</ol>
+<p>If Patch warns about a loop, use a different browser for the session that records AUX 1.</p>
+<p>Speaker monitoring is a separate choice, <strong>Monitor in main mix</strong>. Leave it off
+unless you want to hear the microphone through Main. Turning down the speaker
+volume does not turn down Patch Input's capture mix.</p>
+<p>The voice chain includes a high-pass filter, noise suppression, de-essing, gate,
+expander and compressor, followed by channel EQ. Start gently: too much gating
+or suppression can cut off quiet speech. Profiles are starting points and do
+not set an unidentified microphone's hardware gain.</p>
+<p>Use <strong>Calibrate</strong> for a recorded comparison. Include room silence and normal
+speech, stop the take, then analyse it. Advice does not change the sound until
+you apply it. Save a named profile once the result suits your voice and room.</p>
+<p>See <a href="mic.md">Mic</a> for profiles, calibration and processing controls.</p>
+<h2 id="10-show-visuals-and-broadcast">10. Show visuals and broadcast</h2>
+<h3 id="visualiser">Visualiser</h3>
+<p>Open <strong>Visualiser</strong> from the controller, or use a layout that includes it.
+It follows the playing tracks, musical sections and DJ transitions.</p>
+<p>Press <strong>F</strong> for fullscreen. <strong>L</strong> opens Layers for composable visual layers,
+including Decks &amp; Signal and Performer. Use the window's help for scene, hold
+and mode controls. Visualiser generates its picture live; it is separate from
+recording or broadcasting audio.</p>
+<p>See <a href="visualiser.md">Visualiser</a> and
+<a href="visualiser-performance-layers.md">performance layers</a>.</p>
+<h3 id="broadcast">Broadcast</h3>
+<p>Open Broadcast to send an audio source to an Icecast server, an RTMP endpoint
+or a file.</p>
+<ol>
+<li>Select the source and destination type.</li>
+<li>Enter the destination details and credentials.</li>
+<li>Choose the encoding settings. RTMP uses AAC even if another codec is selected.</li>
+<li>Test with a file destination or your intended receiving service.</li>
+<li>Start and check for <strong>ON AIR</strong>, signal on the meter and successful reception.</li>
+<li>Stop explicitly when finished. Closing the window leaves it broadcasting.</li>
+</ol>
+<p><strong>RECONNECTING</strong> means Patch is trying to restore a previously working network
+stream. Audio during the outage is not sent. <strong>FAILED</strong> requires checking the
+reported error, destination and credentials.</p>
+<p>Broadcast sends audio. To stream the Visualiser's picture as well, capture its
+window with a video application such as OBS. Keep stream keys private; the
+current encoder's destination credentials can be visible in its process arguments.</p>
+<p>See <a href="broadcast.md">Broadcast</a>.</p>
+<h3 id="network">Network</h3>
+<p>Open Network (key <strong>Z</strong>) to send Patch's audio to other machines on your
+local network, or to play theirs through Patch.</p>
+<ol>
+<li>To send, pick the feed (Program, AUX 1 or AUX 2) and <strong>RTP</strong> or <strong>VBAN</strong>.
+Leave <strong>To</strong> empty to send to every machine on this network, or type one
+machine's address. VBAN always needs an address.</li>
+<li>Choose <strong>Send to everyone</strong> (or <strong>Send to …</strong>). The send shows
+<strong>SENDING</strong> once Patch's feed is linked to it.</li>
+<li>Streams other machines announce appear under <strong>Receive</strong>. Choose
+<strong>Listen</strong>: the stream plays in the Mixer like an app.</li>
+<li>Choose a higher <strong>Latency</strong> if a received stream crackles on Wi-Fi.</li>
+</ol>
+<p>If a yellow box says the firewall drops network audio, choose
+<strong>Let it in from …</strong> and type your password in the terminal that opens. It
+opens Patch's ports to your own network only.</p>
+<p>Sends and receives keep running when the window closes and start again with
+Patch's audio service. <strong>WAITING</strong> means Patch's engine is not running; the
+link continues when it is back. Stop a link with <strong>Stop</strong>, remove it with
+<strong>✕</strong>.</p>
+<p>See <a href="network.md">Network</a>.</p>
+<h2 id="11-save-your-workspace-and-settings">11. Save your workspace and settings</h2>
+<p>To change enabled modules or your default layout, open <strong>Ctrl+K → Setup</strong>.</p>
+<p>To save your window arrangement, arrange the Units first, then run:</p>
+<pre><code class="language-sh">omarchy-patch layout save Night set
+</code></pre>
+<p>Reopen it with:</p>
+<pre><code class="language-sh">omarchy-patch layout night-set
+</code></pre>
+<p>Saving a built-in layout creates your own copy. <strong>Reset</strong> returns an arrangement
+to its saved positions. Closing a layout closes its windows and leaves audio
+running. A layout stores window placement; a saved DJ set stores your set's
+choices. They are separate.</p>
+<p>Typical locations, with the default XDG directories:</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Recordings</td>
+<td><code>~/Music/Patch Recordings</code></td>
+</tr>
+<tr>
+<td>Music catalogue</td>
+<td><code>~/.local/share/omarchy-patch/library.patchdj/</code></td>
+</tr>
+<tr>
+<td>Analysis cache</td>
+<td><code>~/.cache/omarchy-patch/analysis/</code></td>
+</tr>
+<tr>
+<td>Configuration and custom layouts</td>
+<td><code>~/.config/omarchy-patch/</code></td>
+</tr>
+<tr>
+<td>Session state and transition reports</td>
+<td><code>~/.local/state/omarchy-patch/</code></td>
+</tr>
+</tbody>
+</table>
+<p>Keep your original music and recordings backed up. The analysis cache can be
+rebuilt; it is not a backup of those files.</p>
+<h2 id="12-solve-common-problems">12. Solve common problems</h2>
+<h3 id="no-sound">No sound</h3>
+<ol>
+<li>Confirm that Player or a deck is actually playing.</li>
+<li>Look for signal on its Mixer channel.</li>
+<li>Check the channel's mute and fader, any active solos, and Main mute/volume.</li>
+<li>For decks, check channel levels and the crossfader position.</li>
+<li>Check the physical output selected in the bar and any professional port
+   assignments in Router.</li>
+<li>If there is no live state, check the service from the controller or run
+   <code>omarchy-patch engine status</code>.</li>
+</ol>
+<h3 id="a-microphone-works-in-patch-but-not-in-a-call">A microphone works in Patch but not in a call</h3>
+<p>Choose <strong>Patch Input</strong> in the calling application's input settings. Check that
+the assigned microphone is unmuted and the capture mode is <strong>Inputs</strong>, rather
+than Main mix. Main listening volume and microphone capture volume are independent.</p>
+<h3 id="two-synced-tracks-sound-out-of-time">Two synced tracks sound out of time</h3>
+<p>Check the beat grids and downbeats, especially tracks marked <strong>Check</strong>. During
+an overlap, check Sync on the incoming deck. Listen for half- or double-tempo
+analysis. Sync aligns the analysed grids; it cannot establish that the detected
+grid matches the audible drums.</p>
+<h3 id="the-ai-does-not-mix-the-next-track">Auto Mix does not mix the next track</h3>
+<p>Check its mode first. Suggest waits for you; Prepare waits for approval. Manual
+deck or mixer movement may have taken over from Auto. Check for available,
+analysed tracks and read the displayed plan or readiness message. Enabling
+Auto-mix alone does not necessarily start a stopped deck; use Play or Start set.</p>
+<h3 id="audio-continues-after-closing-patch">Audio continues after closing Patch</h3>
+<p>Reopen the relevant Unit and stop its transport. For a DJ set, use Pause,
+End set or Stop now as appropriate. Stop Recorder and Broadcast separately
+when you finish those tasks.</p>
+<h3 id="audio-crackles-or-drops-out">Audio crackles or drops out</h3>
+<p>Check the device connection and lower unnecessary background load. Inspect
+Patch's engine status and health report:</p>
+<pre><code class="language-sh">omarchy-patch engine status
+omarchy-patch health
+</code></pre>
+<p>The optional bar health dot is green when healthy, amber after a recent skip
+or a busy cycle, red after a very recent skip, and an empty ring when the engine
+is not running. Its tooltip identifies the condition. Enable it with
+<code>omarchy-patch bar health on</code>.</p>
+<p>Keep the report and note what was playing, the output device and what happened
+just before the fault. See <a href="performance.md">Performance</a> for deeper checks.</p>
+<h3 id="a-controller-is-detected-but-its-controls-do-nothing">A controller is detected but its controls do nothing</h3>
+<p>Open <strong>MIDI &amp; HID</strong>, check whether a profile matched, and inspect its event
+monitor. Detection does not guarantee support for the device's protocol or
+mapping. The MIDI &amp; HID Unit is different from the Patch controller opened by
+Ctrl+K.</p>
+<p>Follow <a href="controllers-workflow.md">Controller setup</a> for mapping and device checks.</p>
+<h2 id="13-find-more-help">13. Find more help</h2>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Installation and setup</td>
+<td><a href="getting-started.md">Getting started</a></td>
+</tr>
+<tr>
+<td>Layouts and the bar</td>
+<td><a href="layouts.md">Layouts</a></td>
+</tr>
+<tr>
+<td>Routing and output ports</td>
+<td><a href="core-routing.md">Core routing</a></td>
+</tr>
+<tr>
+<td>DJ controls</td>
+<td><a href="dj-booth.md">DJ Booth</a></td>
+</tr>
+<tr>
+<td>Saved sets and reports</td>
+<td><a href="dj-workspace.md">DJ workspace</a></td>
+</tr>
+<tr>
+<td>Auto Mix modes and transition explanations</td>
+<td><a href="ai-dj.md">Auto Mix</a></td>
+</tr>
+<tr>
+<td>Music sources and analysis</td>
+<td><a href="library.md">Library</a></td>
+</tr>
+<tr>
+<td>Recording and playback</td>
+<td><a href="recording-playback.md">Recorder and Player</a></td>
+</tr>
+<tr>
+<td>Microphones</td>
+<td><a href="mic.md">Mic</a></td>
+</tr>
+<tr>
+<td>Controller setup</td>
+<td><a href="controllers-workflow.md">Controller workflow</a></td>
+</tr>
+<tr>
+<td>Stem separation</td>
+<td><a href="stems.md">Stems</a></td>
+</tr>
+<tr>
+<td>Visuals</td>
+<td><a href="visualiser.md">Visualiser</a></td>
+</tr>
+<tr>
+<td>Broadcasting</td>
+<td><a href="broadcast.md">Broadcast</a></td>
+</tr>
+<tr>
+<td>Live coding</td>
+<td><a href="tidal.md">Tidal</a></td>
+</tr>
+<tr>
+<td>Sequencing</td>
+<td><a href="sequencer.md">Sequencer</a></td>
+</tr>
+</tbody>
+</table>
+<p>Run <code>omarchy-patch help</code> for the command-line reference. For window shortcuts,
+use that window's help (<strong>?</strong>) or the keyboard reference below rather than
+assuming a key does the same thing everywhere.</p>
+<h2 id="14-keyboard-reference">14. Keyboard reference</h2>
+<p>A window's own keys come first. A letter the window does not use opens that
+Unit, so in the Mixer <strong>S</strong> solos rather than opening the Sequencer. <strong>Tab</strong>
+moves to the next open Patch window, whichever Unit it belongs to.
+Diagnostics, Club Booth, the Visualiser's Controls, the Performer and decks C
+and D have no letter: open them from the controller or their Unit.</p>
+<!-- keys:begin (generated from crates/patch-core/src/keys.rs) -->
+<p><strong>Everywhere (keys a window does not use itself)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a–z</td>
+<td>open or focus that Unit's window</td>
+</tr>
+<tr>
+<td>⇧ + letter</td>
+<td>another window of that Unit</td>
+</tr>
+<tr>
+<td>tab ⇧tab</td>
+<td>next / previous open Patch window</td>
+</tr>
+<tr>
+<td>^k</td>
+<td>controller (open · close)</td>
+</tr>
+<tr>
+<td>^= ^- ^0</td>
+<td>zoom in · out · 100 %</td>
+</tr>
+<tr>
+<td>?</td>
+<td>help for this window</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>close the help · the controller</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Unit letters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Opens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a</td>
+<td>Deck A</td>
+</tr>
+<tr>
+<td>b</td>
+<td>Deck B</td>
+</tr>
+<tr>
+<td>c</td>
+<td>Broadcast</td>
+</tr>
+<tr>
+<td>d</td>
+<td>Device</td>
+</tr>
+<tr>
+<td>e</td>
+<td>Inspector</td>
+</tr>
+<tr>
+<td>f</td>
+<td>Tidal</td>
+</tr>
+<tr>
+<td>g</td>
+<td>Router</td>
+</tr>
+<tr>
+<td>h</td>
+<td>MIDI &amp; HID</td>
+</tr>
+<tr>
+<td>i</td>
+<td>Mic</td>
+</tr>
+<tr>
+<td>j</td>
+<td>DJ Booth</td>
+</tr>
+<tr>
+<td>k</td>
+<td>EQ</td>
+</tr>
+<tr>
+<td>l</td>
+<td>Library</td>
+</tr>
+<tr>
+<td>m</td>
+<td>Mixer</td>
+</tr>
+<tr>
+<td>n</td>
+<td>Analyzer</td>
+</tr>
+<tr>
+<td>o</td>
+<td>Performance</td>
+</tr>
+<tr>
+<td>p</td>
+<td>Session</td>
+</tr>
+<tr>
+<td>q</td>
+<td>Plugins</td>
+</tr>
+<tr>
+<td>r</td>
+<td>Recorder</td>
+</tr>
+<tr>
+<td>s</td>
+<td>Sequencer</td>
+</tr>
+<tr>
+<td>t</td>
+<td>Pattern</td>
+</tr>
+<tr>
+<td>u</td>
+<td>Tune</td>
+</tr>
+<tr>
+<td>v</td>
+<td>Meter</td>
+</tr>
+<tr>
+<td>w</td>
+<td>Visualiser</td>
+</tr>
+<tr>
+<td>x</td>
+<td>Crossfader</td>
+</tr>
+<tr>
+<td>y</td>
+<td>Player</td>
+</tr>
+<tr>
+<td>z</td>
+<td>Network</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Controller (Ctrl+K)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>move</td>
+</tr>
+<tr>
+<td>enter space</td>
+<td>open · close · change</td>
+</tr>
+<tr>
+<td>a–z</td>
+<td>open that Unit</td>
+</tr>
+<tr>
+<td>1–4</td>
+<td>Units · Layouts · Setup · About</td>
+</tr>
+<tr>
+<td>tab ⇧tab</td>
+<td>next / previous tab</td>
+</tr>
+<tr>
+<td>^q</td>
+<td>close all windows (audio plays on)</td>
+</tr>
+<tr>
+<td>esc ^k</td>
+<td>close the controller</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Router</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>drag ▸</td>
+<td>patch</td>
+</tr>
+<tr>
+<td>←↑↓→</td>
+<td>move</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>inspect</td>
+</tr>
+<tr>
+<td>r</td>
+<td>through Patch</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mixer</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>←→</td>
+<td>strip</td>
+</tr>
+<tr>
+<td>↑↓</td>
+<td>gain</td>
+</tr>
+<tr>
+<td>space</td>
+<td>mute</td>
+</tr>
+<tr>
+<td>s</td>
+<td>solo</td>
+</tr>
+<tr>
+<td>o</td>
+<td>output device</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Device</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>device</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>expand</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Inspector</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>scroll</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Meter</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x</td>
+<td>reset I · LRA · TP</td>
+</tr>
+<tr>
+<td>o</td>
+<td>output / engine</td>
+</tr>
+<tr>
+<td>, .</td>
+<td>sync ∓10 ms</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Analyzer</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>f</td>
+<td>bars fast / slow</td>
+</tr>
+<tr>
+<td>x</td>
+<td>reset hold</td>
+</tr>
+<tr>
+<td>z</td>
+<td>scope auto-gain</td>
+</tr>
+<tr>
+<td>l</td>
+<td>measure latency</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Session</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>preset</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>apply</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Deck A and Deck B</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>space</td>
+<td>play</td>
+</tr>
+<tr>
+<td>c</td>
+<td>cue</td>
+</tr>
+<tr>
+<td>1–8</td>
+<td>hot cue (⇧ clears)</td>
+</tr>
+<tr>
+<td>←→</td>
+<td>jump</td>
+</tr>
+<tr>
+<td>o</td>
+<td>loop</td>
+</tr>
+<tr>
+<td>↑↓</td>
+<td>tempo</td>
+</tr>
+<tr>
+<td>s</td>
+<td>sync</td>
+</tr>
+<tr>
+<td>k</td>
+<td>keylock</td>
+</tr>
+<tr>
+<td>[ ]</td>
+<td>key</td>
+</tr>
+<tr>
+<td>, .</td>
+<td>nudge</td>
+</tr>
+<tr>
+<td>x</td>
+<td>sample</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Crossfader</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>←→</td>
+<td>crossfader</td>
+</tr>
+<tr>
+<td>0</td>
+<td>centre</td>
+</tr>
+<tr>
+<td>f</td>
+<td>fx</td>
+</tr>
+<tr>
+<td>4</td>
+<td>two · four decks</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Performance</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SUPER+ALT+P</td>
+<td>open · close (your Omarchy binding)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Tidal</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>^⏎</td>
+<td>run block</td>
+</tr>
+<tr>
+<td>^⇧⏎</td>
+<td>run all</td>
+</tr>
+<tr>
+<td>^.</td>
+<td>hush</td>
+</tr>
+<tr>
+<td>^␣</td>
+<td>play · stop</td>
+</tr>
+<tr>
+<td>^B</td>
+<td>backdrop</td>
+</tr>
+<tr>
+<td>^H</td>
+<td>help</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Visualiser</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>space</td>
+<td>next scene</td>
+</tr>
+<tr>
+<td>h</td>
+<td>hold this one</td>
+</tr>
+<tr>
+<td>a</td>
+<td>Ambient on · off</td>
+</tr>
+<tr>
+<td>x</td>
+<td>switch this scene off</td>
+</tr>
+<tr>
+<td>m</td>
+<td>choreography · generative · hybrid</td>
+</tr>
+<tr>
+<td>g</td>
+<td>next generative scene</td>
+</tr>
+<tr>
+<td>d</td>
+<td>DJ · booth · off</td>
+</tr>
+<tr>
+<td>l</td>
+<td>controls window</td>
+</tr>
+<tr>
+<td>f</td>
+<td>fullscreen</td>
+</tr>
+</tbody>
+</table>
+<p><strong>EQ</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1–8</td>
+<td>band</td>
+</tr>
+<tr>
+<td>←→ ↑↓</td>
+<td>freq · gain</td>
+</tr>
+<tr>
+<td>[ ]</td>
+<td>Q</td>
+</tr>
+<tr>
+<td>f g Q</td>
+<td>set Hz · dB · Q</td>
+</tr>
+<tr>
+<td>t</td>
+<td>type</td>
+</tr>
+<tr>
+<td>space</td>
+<td>band on/off</td>
+</tr>
+<tr>
+<td>b</td>
+<td>bypass</td>
+</tr>
+<tr>
+<td>- =</td>
+<td>input gain</td>
+</tr>
+<tr>
+<td>s</td>
+<td>spectrum on · off</td>
+</tr>
+<tr>
+<td>m</td>
+<td>next: master · apps · DJ booth · mics</td>
+</tr>
+<tr>
+<td>p P</td>
+<td>preset</td>
+</tr>
+</tbody>
+</table>
+<p><strong>DJ Booth</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>space</td>
+<td>pause/resume</td>
+</tr>
+<tr>
+<td>n</td>
+<td>mix now</td>
+</tr>
+<tr>
+<td>1–4</td>
+<td>observe · suggest · prepare · act</td>
+</tr>
+<tr>
+<td>a s d</td>
+<td>pick 1–3</td>
+</tr>
+<tr>
+<td>x</td>
+<td>drop 1</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>approve</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>cancel</td>
+</tr>
+<tr>
+<td>v</td>
+<td>overview · why</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mini Booth</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>space</td>
+<td>pause · resume Auto Mix</td>
+</tr>
+<tr>
+<td>←→</td>
+<td>crossfader</td>
+</tr>
+<tr>
+<td>0</td>
+<td>centre</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>close the picker</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Library</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>/</td>
+<td>filter</td>
+</tr>
+<tr>
+<td>↑↓</td>
+<td>move</td>
+</tr>
+<tr>
+<td>space</td>
+<td>pre-listen</td>
+</tr>
+<tr>
+<td>1–5</td>
+<td>start · drop 1 · break · drop 2 · outro</td>
+</tr>
+<tr>
+<td>s</td>
+<td>set prep</td>
+</tr>
+<tr>
+<td>a</td>
+<td>load A</td>
+</tr>
+<tr>
+<td>b</td>
+<td>load B</td>
+</tr>
+<tr>
+<td>c d</td>
+<td>load C · D</td>
+</tr>
+<tr>
+<td>q</td>
+<td>queue</td>
+</tr>
+<tr>
+<td>⇧c</td>
+<td>add to collection</td>
+</tr>
+<tr>
+<td>del</td>
+<td>out of collection</td>
+</tr>
+<tr>
+<td>← →</td>
+<td>previous · next part</td>
+</tr>
+<tr>
+<td>⇧← ⇧→</td>
+<td>8 bars back · on</td>
+</tr>
+<tr>
+<td>o</td>
+<td>plays in order · DJ decides</td>
+</tr>
+<tr>
+<td>⇧↑ ⇧↓</td>
+<td>move (in order)</td>
+</tr>
+<tr>
+<td>h</td>
+<td>HUD: track, waveform, set prep fit</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>hide HUD · stop pre-listening</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Pattern</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ctrl+enter</td>
+<td>evaluate · next cycle</td>
+</tr>
+<tr>
+<td>ctrl+shift+enter</td>
+<td>now</td>
+</tr>
+<tr>
+<td>ctrl+space</td>
+<td>play · stop</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Sequencer</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>space</td>
+<td>play/pause</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>stop</td>
+</tr>
+<tr>
+<td>right-click</td>
+<td>select step</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Player</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>space</td>
+<td>play/pause</td>
+</tr>
+<tr>
+<td>1 … =</td>
+<td>play a cart (again: stop it)</td>
+</tr>
+<tr>
+<td>[ ]</td>
+<td>cart bank</td>
+</tr>
+<tr>
+<td>f</td>
+<td>fade the carts out</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>stop the carts</td>
+</tr>
+<tr>
+<td>e</td>
+<td>edit the pads</td>
+</tr>
+<tr>
+<td>right-click</td>
+<td>edit a pad</td>
+</tr>
+<tr>
+<td>o</td>
+<td>open file</td>
+</tr>
+<tr>
+<td>c</td>
+<td>cue</td>
+</tr>
+<tr>
+<td>p</td>
+<td>PFL</td>
+</tr>
+<tr>
+<td>←→</td>
+<td>seek</td>
+</tr>
+<tr>
+<td>, .</td>
+<td>back 10 s · on 30 s</td>
+</tr>
+<tr>
+<td>n b</td>
+<td>next · back in the queue</td>
+</tr>
+<tr>
+<td>q</td>
+<td>carts, queue or marks</td>
+</tr>
+<tr>
+<td>m</td>
+<td>mark this place</td>
+</tr>
+<tr>
+<td>; '</td>
+<td>the mark before · after</td>
+</tr>
+<tr>
+<td>l</td>
+<td>repeat: this one, all, off</td>
+</tr>
+<tr>
+<td>a</td>
+<td>A-B loop: A, B, clear</td>
+</tr>
+<tr>
+<td>&lt; &gt;</td>
+<td>slower · faster</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recorder</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>source</td>
+</tr>
+<tr>
+<td>f</td>
+<td>format</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>record / stop</td>
+</tr>
+<tr>
+<td>space</td>
+<td>pause / resume</td>
+</tr>
+<tr>
+<td>t</td>
+<td>takes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Performer</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>f</td>
+<td>fullscreen</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Network</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>announced stream</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>listen / stop</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Broadcast</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>↑↓</td>
+<td>source</td>
+</tr>
+<tr>
+<td>enter</td>
+<td>go live / stop</td>
+</tr>
+<tr>
+<td>esc</td>
+<td>stop</td>
+</tr>
+</tbody>
+</table>
+<!-- keys:end -->
+</main></body></html>

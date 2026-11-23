@@ -1,0 +1,8 @@
+/target
+/screenshots/*.png
+/screenshots/**/*.png
+__pycache__/
+
+# External engine adapters: their packages are installed, never committed.
+adapters/*/node_modules/
+/dist

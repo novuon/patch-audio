@@ -1,0 +1,12 @@
+[package]
+name = "patch-model"
+description = "Domain types and provider traits: the boundary between Unit UIs and their data sources"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

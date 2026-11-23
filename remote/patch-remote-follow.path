@@ -1,0 +1,11 @@
+[Unit]
+Description=Restart the Patch remote when a new Patch release is installed
+
+[Path]
+# Shipping a release re-points ~/.local/bin/omarchy-patch. systemd does not
+# see a link replaced by rename on the link's own path, so watch its folder.
+PathChanged=%h/.local/bin
+Unit=patch-remote-follow.service
+
+[Install]
+WantedBy=default.target

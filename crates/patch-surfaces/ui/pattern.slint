@@ -1,0 +1,162 @@
+import { Theme, Label, Button, SectionHeading, Scroll, Dot } from "@patch-ui/patch-ui.slint";
+
+// The Pattern Unit's window: code on the left, the running pattern's state
+// on the right. Keyboard first: Ctrl+Enter evaluates on the next cycle,
+// Ctrl+Shift+Enter now, Ctrl+Space plays or stops. Everything comes from
+// the engine's `pattern` op; the window keeps no pattern of its own.
+
+export struct PatEvent { cycle: string, target: string, value: string }
+export struct PatError { line: int, col: int, message: string }
+
+export global PatternState {
+    in-out property <string> code;
+    in-out property <string> language: "patch";
+    in property <string> engine;
+    in property <string> capabilities;
+    in property <bool> playing;
+    in property <string> cycle: "–";
+    in property <string> tempo;
+    in property <string> origin;
+    in property <[PatError]> errors;
+    in property <[PatEvent]> events;
+    in property <[string]> layers;
+    in property <string> metrics;
+    in property <string> delivery;
+    in property <string> message: "Connecting to the Patch engine…";
+    // "evaluate" (on the next cycle) or "now"; "play", "stop",
+    // "follow" (lead deck), "own" (own tempo), "language", "engine".
+    callback action(string);
+    callback edited(string);
+}
+
+// A label and its value; the label column is fixed (no width loop).
+component Row inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: Theme.s3;
+    height: Theme.row-h - 4px;
+    Label { width: 88px; tone: "faint"; small: true; text: root.label; }
+    Label { text: root.value; }
+}
+
+component CodeEditor inherits Rectangle {
+    background: Theme.bg-deep;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent.with-alpha(0.5) : Theme.border;
+    clip: true;
+    forward-focus: input;
+    fl := Flickable {
+        x: Theme.s3;
+        y: Theme.s3;
+        width: parent.width - 2 * Theme.s3;
+        height: parent.height - 2 * Theme.s3;
+        content-height: max(self.height, input.preferred-height);
+        content-width: max(self.width, input.preferred-width);
+        input := TextInput {
+            text <=> PatternState.code;
+            width: max(fl.width, self.preferred-width);
+            height: max(fl.height, self.preferred-height);
+            single-line: false;
+            wrap: no-wrap;
+            color: Theme.text-bright;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+            selection-background-color: Theme.selection;
+            selection-foreground-color: Theme.text-bright;
+            edited => { PatternState.edited(self.text); }
+            key-pressed(e) => {
+                if (e.modifiers.control && (e.text == Key.Return || e.text == "\n")) {
+                    PatternState.action(e.modifiers.shift ? "now" : "evaluate");
+                    return accept;
+                }
+                if (e.modifiers.control && e.text == " ") {
+                    PatternState.action(PatternState.playing ? "stop" : "play");
+                    return accept;
+                }
+                return reject;
+            }
+        }
+    }
+    if PatternState.code == "": Label {
+        x: Theme.s3;
+        y: Theme.s3;
+        tone: "faint";
+        vertical-alignment: top;
+        text: PatternState.language == "strudel"
+            ? "s(\"bd*4, [~ hh]*2, ~ sd\")\nviz: visual.intensity(\"<0.2 1>\")"
+            : "s(\"bd*4, [~ hh]*2, ~ sd\")\ndeck(a).filter(\"<0 -0.3>\")\nvisual.intensity(\"<0.2 1>\")";
+    }
+}
+
+export component PatternSurface inherits Rectangle {
+    property <bool> narrow: self.width < 760px;
+    forward-focus: editor;
+    HorizontalLayout {
+        padding: Theme.s4;
+        spacing: Theme.s4;
+        VerticalLayout {
+            horizontal-stretch: 3;
+            spacing: Theme.s3;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                alignment: start;
+                Button { text: PatternState.playing ? "Stop" : "Play"; key: "^␣"; primary: !PatternState.playing; clicked => { PatternState.action(PatternState.playing ? "stop" : "play"); } }
+                Button { text: "Evaluate"; key: "^⏎"; clicked => { PatternState.action("evaluate"); } }
+                Button { text: "Now"; key: "^⇧⏎"; compact: true; clicked => { PatternState.action("now"); } }
+                Button { text: PatternState.language == "strudel" ? "Strudel" : "Patch"; compact: true; clicked => { PatternState.action("language"); } }
+            }
+            editor := CodeEditor { vertical-stretch: 1; }
+            if PatternState.errors.length > 0: VerticalLayout {
+                spacing: Theme.s1;
+                for e in PatternState.errors: HorizontalLayout {
+                    spacing: Theme.s3;
+                    Label { horizontal-stretch: 0; tone: "error"; small: true; text: e.line > 0 ? e.line + ":" + e.col : "error"; }
+                    Label { tone: "error"; small: true; text: e.message; wrap: word-wrap; overflow: clip; }
+                }
+                Label { tone: "faint"; small: true; text: PatternState.playing ? "the previous pattern keeps playing" : "nothing changed"; }
+            }
+            Label { tone: "dim"; small: true; text: PatternState.message; }
+        }
+        if !root.narrow: VerticalLayout {
+            horizontal-stretch: 2;
+            min-width: 260px;
+            spacing: Theme.s2;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                height: Theme.row-h;
+                Dot { state: PatternState.playing ? "accent" : "off"; y: (parent.height - self.height) / 2; }
+                Label { tone: "bright"; text: PatternState.playing ? "playing · cycle " + PatternState.cycle : "stopped"; }
+            }
+            Row { label: "tempo"; value: PatternState.tempo; }
+            HorizontalLayout {
+                spacing: Theme.s3;
+                alignment: start;
+                Button { compact: true; text: "Follow deck"; clicked => { PatternState.action("follow"); } }
+                Button { compact: true; text: "Own tempo"; clicked => { PatternState.action("own"); } }
+            }
+            Row { label: "engine"; value: PatternState.engine; }
+            HorizontalLayout {
+                alignment: start;
+                Button { compact: true; text: "Switch engine"; clicked => { PatternState.action("engine"); } }
+            }
+            if PatternState.capabilities != "": Label { tone: "faint"; small: true; text: PatternState.capabilities; wrap: word-wrap; overflow: clip; }
+            if PatternState.origin != "": Row { label: "written by"; value: PatternState.origin; }
+            SectionHeading { text: "Layers"; detail: PatternState.layers.length; }
+            for l in PatternState.layers: Label { small: true; text: l; }
+            SectionHeading { text: "Next events"; }
+            Scroll {
+                vertical-stretch: 1;
+                for e in PatternState.events: HorizontalLayout {
+                    spacing: Theme.s3;
+                    height: Theme.row-h - 6px;
+                    Label { width: 64px; small: true; tone: "faint"; text: e.cycle; }
+                    Label { small: true; text: e.target; }
+                    Label { horizontal-stretch: 0; small: true; tone: "accent"; text: e.value; }
+                }
+            }
+            SectionHeading { text: "Timing"; }
+            Label { tone: "faint"; small: true; text: PatternState.metrics; wrap: word-wrap; overflow: clip; }
+            Label { tone: "faint"; small: true; text: PatternState.delivery; wrap: word-wrap; overflow: clip; }
+        }
+    }
+}

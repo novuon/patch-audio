@@ -1,0 +1,12 @@
+// Vocal chops from deck A — needs a track with stems on deck A.
+// Patch cuts two clips from it when you evaluate: a one-beat chop from
+// the last vocal phrase and a one-bar drum loop from bar 16. The chop
+// stutters on an Euclidean pattern, the loop keeps a groove alive even
+// after deck A stops (that's the point: transitions).
+// Plays through Patch's sampler; deck A itself isn't touched.
+cycle 4
+chop: sample("derived:deck-a:vocals:phrase-last:beats-1", "<1(3,8) 1(3,8,3)>").every(4, ply(2))
+loop: sample("derived:deck-a:drums:bar-16", "1")
+kick: s("bd*4")
+scene("pulse")
+visual.intensity("<1(3,8) 1(3,8,3)>")

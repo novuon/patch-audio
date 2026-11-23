@@ -1,0 +1,15 @@
+[package]
+name = "patch-stems"
+description = "Background stem preparation, model-neutral separator contracts and leased audio cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+[dependencies]
+patch-core.workspace = true
+serde.workspace = true
+serde_json = "1"
+sha2 = "0.10"
+libc = "0.2"
+[lints]
+workspace = true

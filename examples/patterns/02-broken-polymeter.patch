@@ -1,0 +1,13 @@
+// Broken polymeter: kick in 4, toms in 3, rims in 5, all inside one bar;
+// the snare line iterates (starts a step later each cycle) and an echo
+// trails it an eighth behind, played twice as fast.
+// Visuals: "lattice", its density following the polymeter's tension.
+// Safe: drums and visuals only.
+cycle 4
+kick:  s("bd ~ ~ bd ~ ~ bd ~").every(3, rev)
+poly:  s("{lt ~ lt, rim rim ~ rim ~}%8")
+snare: s("~ sd ~ [~ sd]").iter(4).off(1/8, fast(2))
+hats:  s("hh*8").sometimesBy(0.3, degrade).palindrome
+scene("lattice")
+visual.density("<0.2 0.5 0.8 0.5>")
+visual.motion("0.2 0.8")

@@ -1,0 +1,412 @@
+import { Theme, Label, Tag, SectionHeading, ListRow, Scroll, Host } from "@patch-ui/patch-ui.slint";
+import { AudioState, GNode, GEdge } from "state.slint";
+
+component NodeBox inherits Rectangle {
+    in property <GNode> node;
+    in property <bool> dim;
+    // Cable dragging: true while a cable hovers this node.
+    in property <bool> drop-hot;
+    callback drag-start(string, length, length);
+    callback drag-move(length, length);
+    callback drag-end();
+    // One line, always inside the border. A short destination row uses a
+    // smaller size; a normal source row keeps the theme size.
+    property <length> label-size: Math.min(Theme.fs, Math.max(8px, root.height * 0.62));
+    property <length> meta-size: Math.min(root.label-size * 0.85, Math.max(7px, root.height * 0.42));
+    property <length> pad-x: root.height < 24px ? 4px : Theme.s3;
+    property <length> nest-x: node.nest ? (root.height < 24px ? 10px : 16px) : 0px;
+    background: drop-hot ? Theme.accent-soft : node.selected ? Theme.selection : ta.has-hover ? Theme.hover : node.nest ? Theme.bg : Theme.raised;
+    border-width: drop-hot ? 2px : 1px;
+    border-color: drop-hot || node.selected ? Theme.accent : node.related ? Theme.text-faint : node.nest ? Theme.border : Theme.border-strong;
+    opacity: node.muted ? 0.5 : dim ? 0.7 : 1.0;
+    // port stubs
+    if node.col > 0: Rectangle {
+        x: -2px;
+        y: (parent.height - Math.min(8px, parent.height * 0.45)) / 2;
+        width: 3px;
+        height: Math.min(8px, parent.height * 0.45);
+        background: node.selected ? Theme.accent : Theme.text-faint;
+    }
+    // Output port: drag from here to patch. The hit area is wider than the mark.
+    if node.col < 2 && node.routeable: Rectangle {
+        x: parent.width - 1px;
+        y: (parent.height - Math.min(8px, parent.height * 0.45)) / 2;
+        width: port-ta.has-hover || port-ta.pressed ? 5px : 3px;
+        height: Math.min(8px, parent.height * 0.45);
+        background: port-ta.has-hover || port-ta.pressed || node.selected ? Theme.accent : Theme.text-faint;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if root.node.id == "patch.plugins" { Host.focus-surface("plugins"); }
+            else { AudioState.select(root.node.id); }
+        }
+        double-clicked => {
+            if root.node.id == "patch.plugins" { Host.focus-surface("plugins"); }
+            else {
+                AudioState.select(root.node.id);
+                Host.focus-surface("inspector");
+            }
+        }
+    }
+    port-ta := TouchArea {
+        x: root.width - 14px;
+        width: 22px;
+        mouse-cursor: crosshair;
+        enabled: root.node.col < 2 && root.node.routeable;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.drag-start(root.node.id, root.x + self.x + self.mouse-x, root.y + self.mouse-y);
+            } else if (e.kind == PointerEventKind.up) {
+                root.drag-end();
+            }
+        }
+        moved => { if (self.pressed) { root.drag-move(root.x + self.x + self.mouse-x, root.y + self.mouse-y); } }
+    }
+    HorizontalLayout {
+        padding-left: root.nest-x + root.pad-x;
+        padding-right: root.pad-x + (root.height < 24px ? 4px : 8px);
+        spacing: root.height < 24px ? 2px : Theme.s2;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.node.name;
+                color: root.node.selected || root.node.head ? Theme.text-bright : Theme.text;
+                font-family: Theme.font;
+                font-size: root.label-size;
+                font-weight: root.node.head ? 700 : 400;
+                vertical-alignment: center;
+                overflow: elide;
+                wrap: no-wrap;
+                min-width: 0px;
+                horizontal-stretch: 1;
+            }
+            if root.height > 32px && root.node.detail != "": Text {
+                text: root.node.detail;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: root.meta-size;
+                vertical-alignment: center;
+                overflow: elide;
+                wrap: no-wrap;
+                min-width: 0px;
+                horizontal-stretch: 1;
+            }
+        }
+        // The channel name already says Left / Left + Right. The count stays
+        // on the device row, where it is the only width clue.
+        if !root.node.nest && root.width >= 160px && root.height >= 16px: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Text {
+                text: root.node.channels + "ch";
+                color: root.node.channels > 2 ? Theme.text : Theme.text-faint;
+                font-family: Theme.font;
+                font-size: root.meta-size;
+                vertical-alignment: center;
+                horizontal-stretch: 0;
+            }
+        }
+    }
+}
+
+component Edge inherits Path {
+    in property <float> x1;
+    in property <float> y1;
+    in property <float> x2;
+    in property <float> y2;
+    // A processor chain: an orthogonal rail in the gutter, not a line through the boxes.
+    // x1 and x2 are the rail; port-x is the node's port the stubs leave from.
+    in property <bool> orthogonal: false;
+    in property <float> port-x;
+    property <float> span: x2 - x1;
+    property <float> dx: Math.abs(span) < 1 ? 0 : Math.max(Math.min(span * 0.42, 140), 28);
+    property <string> curve: "M " + x1 + " " + y1 + " C " + (x1 + dx) + " " + y1 + " " + (x2 - dx) + " " + y2 + " " + x2 + " " + y2;
+    property <string> elbow: "M " + port-x + " " + y1 + " L " + x1 + " " + y1 + " L " + x2 + " " + y2 + " L " + port-x + " " + y2;
+    commands: orthogonal ? elbow : curve;
+    fill: transparent;
+    // Only the cable's own box (its control points, plus the stroke), not
+    // the whole canvas: every path is rasterised over its area each frame.
+    property <float> pad: 4;
+    property <float> lo-x: Math.floor((orthogonal ? Math.min(port-x, Math.min(x1, x2)) : Math.min(x1, x2 - dx)) - pad);
+    property <float> hi-x: Math.ceil((orthogonal ? Math.max(port-x, Math.max(x1, x2)) : Math.max(x1 + dx, x2)) + pad);
+    property <float> lo-y: Math.floor(Math.min(y1, y2) - pad);
+    property <float> hi-y: Math.ceil(Math.max(y1, y2) + pad);
+    x: lo-x * 1px;
+    y: lo-y * 1px;
+    width: (hi-x - lo-x) * 1px;
+    height: (hi-y - lo-y) * 1px;
+    viewbox-x: lo-x;
+    viewbox-y: lo-y;
+    viewbox-width: hi-x - lo-x;
+    viewbox-height: hi-y - lo-y;
+}
+
+// Node canvas: three columns (sources → processing → destinations).
+component GraphCanvas inherits Rectangle {
+    // Sources and processors share a row height taken from their own count.
+    // Destinations are a much longer list and must not squash the other two
+    // columns into hairlines.
+    property <int> side-rows: Math.max(AudioState.col-rows[0], AudioState.col-rows[1]);
+    property <int> dest-rows: AudioState.col-rows[2];
+    property <length> pad: root.dest-rows > 16 ? Theme.s2 : Theme.s4;
+    property <length> head: Theme.row-h;
+    property <length> avail-h: self.height - head - 2 * pad;
+    property <length> side-pitch: Math.min(root.avail-h / Math.max(root.side-rows, 1), 52px);
+    property <length> side-gap: Math.min(Math.max(root.side-pitch * 0.18, 4px), 10px);
+    property <length> side-h: Math.min(Math.max(root.side-pitch - root.side-gap, 0px), 40px);
+    property <length> dest-pitch: Math.min(root.avail-h / Math.max(root.dest-rows, 1), 32px);
+    property <length> dest-gap: Math.min(Math.max(root.dest-pitch * 0.14, 2px), 6px);
+    property <length> dest-h: Math.min(Math.max(root.dest-pitch - root.dest-gap, 0px), 28px);
+    // The output names are the long ones, so that column takes the spare width.
+    property <length> inner: self.width - 2 * pad;
+    property <length> lane: Math.min(Math.max(root.inner * 0.05, 32px), 64px);
+    property <length> side-w: Math.min(Math.max((root.inner - 2 * root.lane) * 0.26, 140px), 260px);
+    property <length> dest-w: Math.max((root.inner - 2 * root.lane) - 2 * root.side-w, 120px);
+    property <length> group-w: 2 * root.side-w + root.dest-w + 2 * root.lane;
+    property <length> origin: root.pad + Math.max(root.inner - root.group-w, 0px) / 2;
+    property <bool> any-selected: AudioState.selected != "";
+    // Cable being dragged
+    property <string> drag-from;
+    property <length> drag-x0;
+    property <length> drag-y0;
+    property <length> drag-x;
+    property <length> drag-y;
+    property <bool> dragging: drag-from != "";
+
+    function drop() {
+        if (root.dragging) {
+            AudioState.drop-at(root.drag-from, root.hit-col(root.drag-x), root.hit-row(root.drag-x, root.drag-y));
+        }
+        root.drag-from = "";
+    }
+    // Column / row under a point, or -1 when it's not on a node box.
+    pure function hit-col(x: length) -> int {
+        if (x >= root.col-x(0) && x <= root.col-x(0) + root.col-w(0)) { return 0; }
+        if (x >= root.col-x(1) && x <= root.col-x(1) + root.col-w(1)) { return 1; }
+        if (x >= root.col-x(2) && x <= root.col-x(2) + root.col-w(2)) { return 2; }
+        return -1;
+    }
+    pure function hit-row(x: length, y: length) -> int {
+        if (root.hit-col(x) < 0) { return -1; }
+        return Math.floor((y - root.row-y(root.hit-col(x), 0)) / root.pitch-of(root.hit-col(x)));
+    }
+    pure function col-w(c: int) -> length {
+        return c == 2 ? root.dest-w : root.side-w;
+    }
+    pure function col-x(c: int) -> length {
+        if (c <= 0) { return root.origin; }
+        if (c == 1) { return root.origin + root.side-w + root.lane; }
+        return root.origin + 2 * root.side-w + 2 * root.lane;
+    }
+    pure function pitch-of(c: int) -> length {
+        return c == 2 ? root.dest-pitch : root.side-pitch;
+    }
+    pure function node-h-of(c: int) -> length {
+        return c == 2 ? root.dest-h : root.side-h;
+    }
+    // Each column is top-aligned on its own pitch. A long destination list
+    // stays grouped, and a cable to it may arc.
+    pure function row-y(c: int, r: int) -> length {
+        return root.head + root.pad + r * root.pitch-of(c) + (root.pitch-of(c) - root.node-h-of(c)) / 2;
+    }
+
+    // column titles
+    for title[c] in ["Sources", "Processing", "Destinations"]: Label {
+        x: root.col-x(c);
+        y: Theme.s3;
+        width: root.col-w(c);
+        height: Theme.row-h;
+        text: title;
+        tone: "faint";
+        small: true;
+        caps: true;
+        font-weight: 700;
+        horizontal-alignment: c == 0 ? left : c == 1 ? center : right;
+    }
+
+    // Routes. Mono: hairline. Stereo: 1.5px. Multichannel: hollow bus line.
+    for e in AudioState.edges: Rectangle {
+        // A processor chain leaves the port and runs down the gutter. A line
+        // through the column center used to strike every box it skipped.
+        property <bool> chain: e.a-col == e.b-col;
+        property <bool> rail-left: e.a-col == 2;
+        property <float> box-x: root.col-x(e.a-col) / 1px;
+        property <float> box-w: root.col-w(e.a-col) / 1px;
+        property <float> port: rail-left ? self.box-x : self.box-x + self.box-w;
+        property <float> rail: rail-left ? self.port - 12 : self.port + 12;
+        property <float> y1: (root.row-y(e.a-col, e.a-row) + root.node-h-of(e.a-col) / 2) / 1px;
+        property <float> y2: (root.row-y(e.b-col, e.b-row) + root.node-h-of(e.b-col) / 2) / 1px;
+        property <float> x1: chain ? self.rail : (root.col-x(e.a-col) + root.col-w(e.a-col) + 1px) / 1px;
+        property <float> x2: chain ? self.rail : (root.col-x(e.b-col) - 1px) / 1px;
+        property <color> c: e.selected ? Theme.accent
+            : e.muted ? Theme.border
+            : root.any-selected ? Theme.border-strong : Theme.text-faint;
+        Edge {
+            x1: parent.x1; y1: parent.y1; x2: parent.x2; y2: parent.y2;
+            orthogonal: parent.chain;
+            port-x: parent.port;
+            stroke: parent.c;
+            stroke-width: e.channels > 2 ? 4px : e.channels == 2 ? 1.5px : 1px;
+        }
+        if e.channels > 2: Edge {
+            x1: parent.x1; y1: parent.y1; x2: parent.x2; y2: parent.y2;
+            orthogonal: parent.chain;
+            port-x: parent.port;
+            stroke: Theme.bg;
+            stroke-width: 1.5px;
+        }
+        if e.channels > 2: Rectangle {
+            x: ((parent.x1 + parent.x2) / 2) * 1px - self.width / 2;
+            y: ((parent.y1 + parent.y2) / 2) * 1px - self.height / 2;
+            width: lbl.preferred-width + 6px;
+            height: Theme.fs-tiny + 4px;
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: parent.c;
+            lbl := Text {
+                text: e.channels + "ch";
+                color: e.selected ? Theme.accent : Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    // A hairline in the gap above each device, so the channels under it read as one block.
+    for n in AudioState.nodes: Rectangle {
+        x: root.col-x(n.col);
+        y: root.row-y(n.col, n.row) - (root.pitch-of(n.col) - root.node-h-of(n.col)) / 2;
+        width: root.col-w(n.col);
+        height: n.head && n.row > 0 ? 1px : 0px;
+        background: Theme.border-strong;
+    }
+
+    for n in AudioState.nodes: NodeBox {
+        node: n;
+        dim: root.any-selected && !n.selected && !n.related && !root.dragging;
+        x: root.col-x(n.col);
+        y: root.row-y(n.col, n.row);
+        width: root.col-w(n.col);
+        height: root.node-h-of(n.col);
+        drop-hot: root.dragging && n.id != root.drag-from && n.col > 0
+            && root.drag-x >= self.x && root.drag-x <= self.x + self.width
+            && root.drag-y >= self.y && root.drag-y <= self.y + self.height;
+        drag-start(id, x, y) => {
+            root.drag-from = id;
+            root.drag-x0 = x;
+            root.drag-y0 = y;
+            root.drag-x = x;
+            root.drag-y = y;
+            AudioState.select(id);
+        }
+        drag-move(x, y) => {
+            root.drag-x = x;
+            root.drag-y = y;
+        }
+        drag-end() => {
+            root.drop();
+        }
+    }
+
+    // The cable under the pointer while patching.
+    if root.dragging: Edge {
+        x1: root.drag-x0 / 1px;
+        y1: root.drag-y0 / 1px;
+        x2: root.drag-x / 1px;
+        y2: root.drag-y / 1px;
+        stroke: Theme.accent;
+        stroke-width: 2px;
+    }
+    if root.dragging: Label {
+        x: root.drag-x + 12px;
+        y: root.drag-y - 18px;
+        text: "drop on a destination to patch";
+        tone: "accent";
+        small: true;
+    }
+}
+
+// Narrow fallback: the same graph as an indented route list.
+component RouteList inherits Rectangle {
+    Scroll {
+        for title[c] in ["Sources", "Processing", "Destinations"]: VerticalLayout {
+            SectionHeading { text: title; }
+            for n in AudioState.nodes: VerticalLayout {
+                if n.col == c && n.head && n.row > 0: Rectangle {
+                    height: 7px;
+                    Rectangle {
+                        y: 3px;
+                        height: 1px;
+                        background: Theme.border-strong;
+                    }
+                }
+                Rectangle {
+                    height: n.col == c ? Theme.row-h : 0px;
+                    visible: n.col == c;
+                    ListRow {
+                        selected: n.selected;
+                        muted: n.muted;
+                        clicked => { AudioState.select(n.id); }
+                        double-clicked => {
+                            AudioState.select(n.id);
+                            Host.focus-surface("inspector");
+                        }
+                        Rectangle { width: n.nest ? 14px : 0px; }
+                        Label {
+                            text: n.name;
+                            tone: n.selected || n.head ? "bright" : "normal";
+                            min-width: 90px;
+                            horizontal-stretch: 0;
+                        }
+                        if !n.nest: Label {
+                            text: n.channels + "ch";
+                            tone: "faint";
+                            small: true;
+                            horizontal-stretch: 0;
+                        }
+                        Label {
+                            text: n.targets;
+                            tone: n.selected ? "accent" : "dim";
+                            small: true;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component GraphSurface inherits Rectangle {
+    init => { keys.focus(); }
+    property <bool> compact: self.width < 560px || self.height < 300px;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.UpArrow || e.text == "k") { AudioState.move-selection(0, -1); return accept; }
+            if (e.text == Key.DownArrow || e.text == "j") { AudioState.move-selection(0, 1); return accept; }
+            if (e.text == Key.LeftArrow || e.text == "h") { AudioState.move-selection(-1, 0); return accept; }
+            if (e.text == Key.RightArrow || e.text == "l") { AudioState.move-selection(1, 0); return accept; }
+            if (e.text == Key.Return) { Host.focus-surface("inspector"); return accept; }
+            if (e.text == " ") { AudioState.toggle-mute(AudioState.selected); return accept; }
+            if (e.text == "r") { AudioState.toggle-through-patch(AudioState.selected); return accept; }
+            return reject;
+        }
+        if !root.compact: GraphCanvas { }
+        if root.compact: RouteList { }
+        if AudioState.toast != "": Rectangle {
+            x: Theme.s4;
+            y: root.height - self.height - Theme.s3;
+            width: t.preferred-width + 2 * Theme.s3;
+            height: Theme.row-h;
+            background: Theme.bg-deep;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            t := Label { text: AudioState.toast; tone: "dim"; small: true; horizontal-alignment: center; }
+        }
+    }
+}

@@ -1,0 +1,1700 @@
+import { Knob } from "knob.slint";
+import { Theme, Label, Meter, MeterScale, MeterKind, Fader, VLine, Host, ListRow, Scroll } from "@patch-ui/patch-ui.slint";
+import { AudioState, StripItem, OutputItem, BusItem, TargetItem } from "state.slint";
+
+component MSButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    // A slot the strip has no use for: drawn, so the desks line up, but dead.
+    in property <bool> enabled: true;
+    callback clicked();
+    width: 30px;
+    height: 24px;
+    border-radius: Theme.r-control;
+    // Mute lit solid; solo outlined, as a console's buttons are.
+    background: !root.enabled ? transparent
+        : root.active ? (text == "S" ? Theme.accent-soft : Theme.accent)
+        : ta.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: !root.enabled ? Theme.border : root.active ? Theme.accent : Theme.border-strong;
+    Text {
+        text: root.text;
+        color: !root.enabled ? Theme.text-faint
+            : root.active ? (root.text == "S" ? Theme.accent : Theme.accent-ink) : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Where the main output plays: the device, one click to change it. The
+// same choice as the menu bar's output list (Patch stays the system's
+// output; only the device behind it changes).
+component OutputPicker inherits Rectangle {
+    // Bumped by the Mixer's `o` key: open the list.
+    in property <int> open-req;
+    property <length> list-w: 300px;
+    changed open-req => { picker.show(); }
+    height: Theme.row-h - 4px;
+    background: ta.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: ta.has-hover ? Theme.text-faint : Theme.border-strong;
+    HorizontalLayout {
+        padding-left: Theme.s2;
+        padding-right: Theme.s2;
+        spacing: Theme.s2;
+        Label {
+            text: AudioState.main-output != "" ? AudioState.main-output : "Choose output";
+            tone: "bright";
+            small: true;
+            overflow: elide;
+            horizontal-stretch: 1;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "▾";
+            color: Theme.text-faint;
+            font-size: Theme.fs-small;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { picker.show(); }
+    }
+    picker := PopupWindow {
+        x: (root.width - root.list-w) / 2;
+        y: root.height + 2px;
+        width: root.list-w;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            FocusScope {
+                init => { self.focus(); }
+                key-pressed(e) => {
+                    if (e.text == Key.Escape) { picker.close(); return accept; }
+                    // 1…9: the row with that number.
+                    if (e.text.character-count == 1 && e.text >= "1" && e.text <= "9") {
+                        AudioState.pick-output(e.text.to-float() - 1);
+                        picker.close();
+                        return accept;
+                    }
+                    return reject;
+                }
+                VerticalLayout {
+                    padding-top: Theme.s2;
+                    padding-bottom: Theme.s2;
+                    HorizontalLayout {
+                        padding-left: Theme.s4;
+                        padding-right: Theme.s4;
+                        height: Theme.row-h;
+                        Label { text: "Main output"; tone: "faint"; small: true; caps: true; letter-spacing: 2px; vertical-alignment: center; horizontal-stretch: 1; }
+                        Label { text: "1–9 · esc"; tone: "faint"; small: true; vertical-alignment: center; }
+                    }
+                    for o[i] in AudioState.outputs: Rectangle {
+                        height: Theme.row-h + Theme.fs-small;
+                        background: row-ta.has-hover ? Theme.hover : o.current ? Theme.selection : transparent;
+                        Rectangle { x: 0px; width: 2px; background: o.current ? Theme.accent : transparent; }
+                        row-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                AudioState.pick-output(i);
+                                picker.close();
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: Theme.s4;
+                            padding-right: Theme.s4;
+                            spacing: Theme.s3;
+                            Label { text: i < 9 ? i + 1 : ""; tone: "faint"; small: true; width: 10px; vertical-alignment: center; }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Label { text: o.name; tone: o.current ? "bright" : "normal"; overflow: elide; }
+                                Label {
+                                    text: o.kind != "" && o.detail != "" ? o.kind + " · " + o.detail : o.kind + o.detail;
+                                    tone: "faint";
+                                    small: true;
+                                    overflow: elide;
+                                }
+                            }
+                            Label { text: o.current ? "now" : ""; tone: "accent"; small: true; vertical-alignment: center; horizontal-stretch: 0; }
+                        }
+                    }
+                    if AudioState.outputs.length == 0: HorizontalLayout {
+                        padding-left: Theme.s4;
+                        height: Theme.row-h;
+                        Label { text: "No output devices"; tone: "faint"; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One column width for every channel, return and the main, so the rows
+// line up however many strips are on the desk.
+// The bank is 168 px (console_fit::UPPER_FULL): trim and EQ dials, then four
+// sends, on the same rows for every column (see StripUpper and MainBank).
+// The cap is 68 px (console_fit::HEADER): pan, solo and mute, the dB.
+global Console {
+    out property <length> strip: 96px;
+    out property <length> col: 104px;
+    out property <length> name: 20px;
+    out property <length> sub: Theme.row-h - 4px;
+    out property <length> head: 16px;
+    out property <length> row: 18px;
+    out property <length> tone-h: 108px;
+    out property <length> y-sends: Console.tone-h;
+    out property <length> y-s1: Console.y-sends + Console.head;
+    out property <length> y-s2: Console.y-s1 + Console.row;
+    out property <length> y-s3: Console.y-s2 + Console.row;
+    out property <length> y-s4: Console.y-s3 + Console.row;
+    out property <length> grid: Console.y-s4 + Console.row;
+    out property <length> pan-h: 32px;
+    out property <length> sm-h: 30px;
+    out property <length> db-h: 22px;
+    // MAIN: the output strip, where the mix leaves Patch. It has neither EQ
+    // nor sends, so its bank is the master section instead (MainBank).
+    public pure function main-strip(s: StripItem) -> bool {
+        return s.master || s.id == "output";
+    }
+    public pure function volume-strip(s: StripItem) -> bool {
+        return main-strip(s) || s.id == "system-sounds" || s.id.starts-with("application:");
+    }
+    // A live engine's Program mix is internal (a gain at unity, not another
+    // output fader): the console shows the Main output in its place.
+    public pure function hidden(s: StripItem) -> bool {
+        return s.id == "master" && !s.master;
+    }
+}
+
+// A section name and the hairline under it. Every strip draws the line at
+// the same y, so it reads straight across the desk.
+component Sec inherits Rectangle {
+    in property <string> text;
+    height: Console.head;
+    Text {
+        x: 6px;
+        width: parent.width - 10px;
+        height: parent.height - 1px;
+        text: root.text;
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        letter-spacing: 1px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+}
+
+// A readout, not a control: MAIN's destinations and its metering, on the
+// same rows and the same columns as the knobs beside them.
+component InfoRow inherits Rectangle {
+    in property <string> k;
+    in property <string> v;
+    in property <bool> lit: false;
+    // A destination row: the dot shows whether the mix reaches it.
+    in property <bool> mark: false;
+    height: Console.row;
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 4px;
+        if root.mark: Text {
+            text: "●";
+            width: 10px;
+            color: root.lit ? Theme.text-bright : Theme.border-strong;
+            font-family: Theme.font;
+            font-size: 8px;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.k;
+            width: root.mark ? 54px : 36px;
+            color: root.mark && root.lit ? Theme.text-bright : Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: root.v;
+            color: root.lit ? Theme.text-bright : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+}
+
+component PanBar inherits Rectangle {
+    in property <string> strip-id;
+    in property <float> value;
+    in property <bool> enabled: true;
+    property <length> track-x: 40px;
+    property <length> track-w: Math.max(8px, root.width - 48px);
+    height: Console.pan-h;
+    Text {
+        x: 6px;
+        width: 30px;
+        height: parent.height;
+        text: "PAN";
+        color: root.enabled ? Theme.text-dim : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        x: root.track-x;
+        y: (parent.height - 2px) / 2;
+        width: root.track-w;
+        height: 2px;
+        border-radius: 1px;
+        background: root.enabled ? Theme.border-strong : Theme.border;
+        // The rail stays; the cap only appears on a strip that has a pan.
+        if root.enabled: Rectangle { x: parent.width / 2; y: -3px; width: 1px; height: 8px; background: Theme.text-faint; }
+        if root.enabled: Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            x: (parent.width - self.width) * ((clamp(root.value, -1, 1) + 1) / 2);
+            y: -3px;
+            background: root.value == 0 ? Theme.text : Theme.text-bright;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? ew-resize : default;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && root.enabled) {
+                let v = clamp((self.mouse-x - root.track-x) / root.track-w * 2 - 1, -1, 1);
+                AudioState.set-knob(root.strip-id, "pan", abs(v) < 0.06 ? 0 : v);
+            }
+        }
+        moved => {
+            if (self.pressed && root.enabled) {
+                let v = clamp((self.mouse-x - root.track-x) / root.track-w * 2 - 1, -1, 1);
+                AudioState.set-knob(root.strip-id, "pan", abs(v) < 0.06 ? 0 : v);
+            }
+        }
+        double-clicked => { if (root.enabled) { AudioState.set-knob(root.strip-id, "pan", 0); } }
+    }
+}
+
+component SendRow inherits Rectangle {
+    in property <string> strip-id;
+    in property <int> bus;
+    in property <string> k;
+    in property <float> value;
+    in property <bool> pre;
+    in property <bool> enabled: true;
+    property <bool> send-active: root.enabled && root.value > -1.0;
+    property <float> db: (root.value + 1) / 2 * 66 - 60;
+    // Whole dB: "−60" … "+6" fits the slot beside the knob.
+    property <int> db-r: Math.round(root.db);
+    property <string> readout: root.value <= -1.0 ? "−∞" : (root.db-r > 0 ? "+" : root.db-r < 0 ? "−" : "") + abs(root.db-r);
+    height: Console.row;
+    // Dead rows are really greyed — only where the strip has no sends at
+    // all. A send parked at −∞ is a live control, so it stays at full
+    // strength like the rest of the row.
+    opacity: root.enabled ? 1 : 0.45;
+    Text {
+        x: 4px;
+        y: 0px;
+        width: 26px;
+        height: parent.height;
+        text: root.k;
+        color: root.enabled ? Theme.text-dim : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    // The send is a real rotary control, visibly adjustable even while
+    // off. It uses the same drag and double-click behavior as the DJ EQ
+    // knobs; the readout makes the send level explicit. Every knob in a
+    // strip shares one centre line (the strip's centre), so the dials run
+    // straight down the column with the EQ and trim above them.
+    Knob {
+        x: 41px;
+        y: (parent.height - 14px) / 2;
+        width: 14px;
+        height: 14px;
+        size: 14px;
+        label: root.k;
+        readout: root.readout;
+        bare: true;
+        pack: true;
+        unipolar: true;
+        enabled: root.enabled;
+        live: root.enabled;
+        value: root.value;
+        reset-value: -1;
+        moved(v) => { AudioState.set-knob(root.strip-id, "send" + root.bus, v); }
+    }
+    Text {
+        x: 56px;
+        y: 0px;
+        width: 19px;
+        height: parent.height;
+        text: root.readout;
+        color: root.enabled && root.value > -0.98 ? Theme.text-bright : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    // The PRE slot is always drawn: a strip with no sends keeps the row
+    // and the chip, greyed, rather than a gap where the others have one.
+    Rectangle {
+        x: 76px;
+        y: (parent.height - 14px) / 2;
+        width: 20px;
+        height: 14px;
+        border-width: 1px;
+        border-color: root.send-active ? Theme.text-faint : Theme.border;
+        background: root.send-active && root.pre ? Theme.hover : transparent;
+        Text {
+            text: root.pre ? "PRE" : "POST";
+            color: root.send-active ? Theme.text-bright : Theme.text-dim;
+            font-family: Theme.font;
+            font-size: 7px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => { AudioState.set-knob(root.strip-id, "pre" + root.bus, root.pre ? 0 : 1); }
+        }
+    }
+}
+
+// Trim is a rotary gain control, like a channel's EQ dials. The three EQ
+// bands keep their own row so every control has a clear name and value.
+component TrimDial inherits Rectangle {
+    in property <string> strip-id;
+    in property <string> k;
+    in property <string> readout;
+    in property <float> value: 0;
+    in property <bool> enabled: true;
+    height: 58px;
+    // Patch style: the strip's large knob on its centre line, its name and
+    // value under it. A strip with no trim keeps the slot, really greyed.
+    opacity: root.enabled ? 1 : 0.45;
+    Knob {
+        x: (parent.width - 30px) / 2;
+        y: 4px;
+        width: 30px;
+        height: 30px;
+        size: 30px;
+        label: root.k;
+        readout: root.readout;
+        bare: true;
+        pack: true;
+        enabled: root.enabled;
+        live: root.enabled;
+        value: root.value;
+        reset-value: 0;
+        moved(v) => { AudioState.set-knob(root.strip-id, "gain", v); }
+    }
+    Text {
+        y: 35px;
+        width: parent.width;
+        height: 10px;
+        text: root.k;
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        letter-spacing: 1.5px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Text {
+        y: 45px;
+        width: parent.width;
+        height: 10px;
+        text: root.enabled ? root.readout : "—";
+        color: root.enabled && root.value != 0 ? Theme.text-bright : Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// A mixer EQ dial keeps its band name and dB value visible at rest. The
+// rotary's centre detent is exactly 0 dB; double-click also returns to 0.
+component EqDial inherits Rectangle {
+    in property <string> k;
+    in property <string> readout;
+    in property <float> value: 0;
+    in property <string> control;
+    in property <string> strip-id;
+    in property <bool> enabled: true;
+    height: 50px;
+    // A strip with no EQ keeps the slot, really greyed.
+    opacity: root.enabled ? 1 : 0.45;
+    Text {
+        x: 0px;
+        y: 29px;
+        width: 32px;
+        height: 9px;
+        text: root.k;
+        color: root.enabled ? Theme.text-dim : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: 8px;
+        letter-spacing: 0.4px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Knob {
+        x: 4px;
+        y: 4px;
+        width: 24px;
+        height: 24px;
+        size: 24px;
+        label: root.k;
+        readout: root.readout;
+        bare: true;
+        pack: true;
+        enabled: root.enabled;
+        live: root.enabled;
+        value: root.value;
+        reset-value: 0;
+        moved(v) => { AudioState.set-knob(root.strip-id, root.control, v); }
+    }
+    Text {
+        x: 0px;
+        y: 39px;
+        width: 32px;
+        height: 9px;
+        text: root.enabled ? root.readout : "—";
+        color: root.enabled && root.value != 0 ? Theme.text-bright : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: 8px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Trim has a compact rail; low, mid and high have proper rotary controls.
+// A strip without EQ keeps the same slots, greyed and unavailable.
+component ToneBand inherits Rectangle {
+    in property <bool> live: true;
+    in property <bool> gain-live: false;
+    in property <string> strip-id;
+    in property <float> k-gain: 0;
+    in property <float> k-high: 0;
+    in property <float> k-mid: 0;
+    in property <float> k-low: 0;
+    function eq-db(v: float) -> float { return v < 0 ? v * 24 : v * 6; }
+    function db-text(db: float) -> string { return (Math.round(db) > 0 ? "+" : "") + (Math.round(db) + 0) + " dB"; }
+    // The EQ dials' values without the unit (their 32 px column), as the
+    // design shows them.
+    function eq-text(db: float) -> string { return (Math.round(db) > 0 ? "+" : "") + (Math.round(db) + 0); }
+    height: Console.tone-h;
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        spacing: 0px;
+        TrimDial {
+            k: "TRIM";
+            strip-id: root.strip-id;
+            enabled: root.live && root.gain-live;
+            value: root.k-gain;
+            readout: root.db-text(root.k-gain * 24);
+        }
+        Rectangle {
+            height: Console.tone-h - 58px;
+            EqDial {
+                x: 0px;
+                y: 0px;
+                width: 32px;
+                k: "LOW";
+                enabled: root.live;
+                value: root.k-low;
+                control: "low";
+                strip-id: root.strip-id;
+                readout: root.eq-text(root.eq-db(root.k-low));
+            }
+            EqDial {
+                x: 32px;
+                y: 0px;
+                width: 32px;
+                k: "MID";
+                enabled: root.live;
+                value: root.k-mid;
+                control: "mid";
+                strip-id: root.strip-id;
+                readout: root.eq-text(root.eq-db(root.k-mid));
+            }
+            EqDial {
+                x: 64px;
+                y: 0px;
+                width: 32px;
+                k: "HIGH";
+                enabled: root.live;
+                value: root.k-high;
+                control: "high";
+                strip-id: root.strip-id;
+                readout: root.eq-text(root.eq-db(root.k-high));
+            }
+        }
+    }
+}
+
+// The meters and fader. In the console the row's height is the throw;
+// on the hardware desk this stretch takes whatever is left in the column.
+component FaderBay inherits HorizontalLayout {
+    in property <float> level;
+    in property <float> peak;
+    // Each side. Callers without a stereo reading leave these on `level`.
+    in property <float> level-l: root.level;
+    in property <float> level-r: root.level;
+    in property <float> peak-l: root.peak;
+    in property <float> peak-r: root.peak;
+    in property <float> vu: -1;
+    in property <bool> clipping;
+    in property <bool> mute;
+    in property <float> gain;
+    in property <bool> selected;
+    in property <float> unity: 0.909;
+    in property <bool> enabled: true;
+    in property <bool> gain-headroom: false;
+    in property <bool> gain-volume: false;
+    in property <bool> gain-stream-volume: false;
+    in property <bool> compact: false;
+    in property <MeterKind> kind;
+    callback changed(float);
+    vertical-stretch: 1;
+    min-height: 40px;
+    alignment: center;
+    spacing: root.compact ? 2px : Theme.s2;
+    MeterScale { width: 18px; kind: root.kind; }
+    for side[i] in [0, 1]: Meter {
+        width: root.compact ? 6px : 7px;
+        segmented: false;
+        kind: root.kind;
+        value: i == 0 ? root.level-l : root.level-r;
+        peak: i == 0 ? root.peak-l : root.peak-r;
+        avg: root.vu;
+        clipping: root.clipping;
+        muted: root.mute;
+    }
+    Rectangle { width: root.compact ? 0px : Theme.s2; }
+    Fader {
+        width: root.compact ? 22px : 26px;
+        value: root.gain;
+        selected: root.selected;
+        enabled: root.enabled;
+        unity: root.unity;
+        changed(v) => { root.changed(v); }
+    }
+}
+
+// A hardware channel strip: name, route, then a fader that fills the column.
+component StripColumn inherits Rectangle {
+    in property <StripItem> s;
+    in property <int> output-req;
+    property <MeterKind> meter-kind: MeterKind.System;
+    property <bool> soloable: !Console.main-strip(root.s);
+    // The strip's card, inset so neighbours stand apart on the ground.
+    Rectangle {
+        x: 2px;
+        width: parent.width - 4px;
+        height: parent.height;
+        background: Theme.panel;
+        border-radius: Theme.r-panel;
+        border-width: 1px;
+        border-color: root.s.selected ? Theme.accent : Theme.border;
+    }
+    TouchArea {
+        clicked => { AudioState.select(root.s.id); }
+        double-clicked => {
+            AudioState.select(root.s.id);
+            Host.focus-surface("inspector");
+        }
+    }
+    VerticalLayout {
+        padding: Theme.s3;
+        padding-top: Theme.s3 + 2px;
+        spacing: Theme.s2;
+        Label {
+            text: root.s.name;
+            tone: root.s.selected || Console.main-strip(root.s) ? "bright" : "normal";
+            font-family: Theme.font-ui;
+            font-weight: 600;
+            overflow: elide;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            height: Console.name;
+        }
+        if Console.main-strip(root.s) && AudioState.outputs.length > 0: OutputPicker { height: Console.sub; open-req: root.output-req; }
+        if !Console.main-strip(root.s) || AudioState.outputs.length == 0: Label {
+            text: Console.main-strip(root.s) && AudioState.mix-out != "" ? AudioState.mix-out : root.s.channels + "ch";
+            tone: "faint";
+            small: true;
+            caps: true;
+            letter-spacing: 1px;
+            overflow: elide;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            height: Console.sub;
+        }
+        FaderBay {
+            kind: root.meter-kind;
+            enabled: root.s.available;
+            compact: true;
+            gain-headroom: root.s.headroom;
+            gain-volume: root.s.id == "output" || root.s.id == "system-sounds";
+            gain-stream-volume: root.s.id.starts-with("application:");
+            level: root.s.level;
+            peak: root.s.peak;
+            level-l: root.s.level-l;
+            level-r: root.s.level-r;
+            peak-l: root.s.peak-l;
+            peak-r: root.s.peak-r;
+            vu: root.s.vu;
+            clipping: root.s.clip;
+            mute: root.s.mute;
+            gain: root.s.gain;
+            selected: root.s.selected;
+            unity: root.s.headroom ? 0.909 : 1.0;
+            changed(v) => { AudioState.set-gain(root.s.id, v); }
+        }
+        Label {
+            text: Console.volume-strip(root.s)
+                ? (root.width >= 100px ? "VOL " : "") + root.s.db
+                : (root.width >= 100px ? "GAIN " : "") + root.s.db;
+            tone: root.s.mute ? "faint" : "bright";
+            overflow: elide;
+            horizontal-alignment: center;
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: Theme.s2;
+            MSButton {
+                text: "M";
+                active: root.s.mute;
+                clicked => { AudioState.toggle-mute(root.s.id); }
+            }
+            MSButton {
+                text: "S";
+                enabled: root.soloable;
+                active: root.soloable && root.s.solo;
+                clicked => { AudioState.toggle-solo(root.s.id); }
+            }
+        }
+    }
+}
+
+// Where an AUX plays: its own physical pair, or its source only.
+component BusOutput inherits Rectangle {
+    in property <BusItem> b;
+    background: ta.has-hover && root.b.routable ? Theme.hover : transparent;
+    border-width: root.b.routable ? 1px : 0px;
+    border-color: ta.has-hover ? Theme.text-faint : Theme.border;
+    Label { x: 4px; width: parent.width - 8px; height: parent.height; text: root.b.output; tone: "faint"; small: true; overflow: elide; horizontal-alignment: center; vertical-alignment: center; }
+    ta := TouchArea {
+        enabled: root.b.routable;
+        mouse-cursor: pointer;
+        clicked => { AudioState.open-bus-targets(root.b.id); picker.show(); }
+    }
+    picker := PopupWindow {
+        x: (root.width - 300px) / 2;
+        y: root.height + 2px;
+        width: 300px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.bg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            VerticalLayout {
+                padding-top: Theme.s2;
+                padding-bottom: Theme.s2;
+                HorizontalLayout {
+                    padding-left: Theme.s4;
+                    height: Theme.row-h;
+                    Label { text: root.b.name + " plays to"; tone: "faint"; small: true; caps: true; letter-spacing: 2px; vertical-alignment: center; }
+                }
+                for t in AudioState.bus-targets: Rectangle {
+                    height: Theme.row-h;
+                    background: row-ta.has-hover ? Theme.hover : t.current ? Theme.selection : transparent;
+                    Rectangle { x: 0px; width: 2px; background: t.current ? Theme.accent : transparent; }
+                    row-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if (!t.current) { AudioState.connect(root.b.id, t.id); }
+                            picker.close();
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.s4;
+                        padding-right: Theme.s4;
+                        Label { text: t.name; tone: t.current ? "bright" : "normal"; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                        Label { text: t.current ? "now" : ""; tone: "accent"; small: true; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The bank every column opens, on the same rows: tone, then four sends.
+// A strip with none of them — a return, the DJ Booth whose EQ lives on its
+// decks, an output with no controls — still draws those rows greyed, so the
+// desk stays a grid and "no EQ here" is visible rather than blank.
+component StripUpper inherits Rectangle {
+    in property <string> id;
+    in property <bool> live: true;
+    in property <bool> gain-live: false;
+    in property <bool> sends: true;
+    in property <string> send-note;
+    in property <float> k-gain: 0;
+    in property <float> k-high: 0;
+    in property <float> k-mid: 0;
+    in property <float> k-low: 0;
+    in property <float> s1: 0;
+    in property <float> s2: 0;
+    in property <float> s3: 0;
+    in property <float> s4: 0;
+    in property <bool> p1: false;
+    in property <bool> p2: false;
+    in property <bool> p3: false;
+    in property <bool> p4: false;
+    clip: true;
+    // A wider column (spare room) keeps the bank's 104 px grid, centred.
+    property <length> bx: Math.max(0px, (root.width - Console.col) / 2);
+    property <length> bw: Math.min(root.width, Console.col);
+    ToneBand {
+        x: root.bx;
+        y: 0px;
+        width: root.bw;
+        live: root.live;
+        gain-live: root.gain-live;
+        strip-id: root.id;
+        k-gain: root.k-gain;
+        k-high: root.k-high;
+        k-mid: root.k-mid;
+        k-low: root.k-low;
+    }
+    Sec { x: root.bx; y: Console.y-sends; width: root.bw; text: "SENDS"; }
+    if root.send-note == "": SendRow { x: root.bx; y: Console.y-s1; width: root.bw; strip-id: root.id; bus: 1; k: "Aux1"; value: root.s1; pre: root.p1; enabled: root.sends; }
+    if root.send-note == "": SendRow { x: root.bx; y: Console.y-s2; width: root.bw; strip-id: root.id; bus: 2; k: "Aux2"; value: root.s2; pre: root.p2; enabled: root.sends; }
+    if root.send-note == "": SendRow { x: root.bx; y: Console.y-s3; width: root.bw; strip-id: root.id; bus: 3; k: "Fx1"; value: root.s3; pre: root.p3; enabled: root.sends; }
+    if root.send-note == "": SendRow { x: root.bx; y: Console.y-s4; width: root.bw; strip-id: root.id; bus: 4; k: "Fx2"; value: root.s4; pre: root.p4; enabled: root.sends; }
+    // Sends that do nothing say why, in the rows' place, in plain words.
+    if root.send-note != "": Text {
+        x: root.bx + 6px; y: Console.y-s1;
+        width: root.bw - 12px;
+        height: Console.row * 4;
+        text: root.send-note;
+        color: Theme.text-dim;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        wrap: word-wrap;
+        vertical-alignment: center;
+    }
+}
+
+// MAIN's bank: the master section. Its rows land on the bank's row
+// boundaries, so its output selector, destination lamps and readouts stay
+// aligned with the channel controls beside it.
+component MainBank inherits Rectangle {
+    in property <int> output-req;
+    clip: true;
+    if AudioState.outputs.length > 0: OutputPicker { y: 0px; width: parent.width; height: 30px; open-req: root.output-req; }
+    if AudioState.outputs.length == 0: InfoRow {
+        y: 0px;
+        width: parent.width;
+        height: 30px;
+        k: "OUT";
+        v: AudioState.main-output != "" ? AudioState.main-output : "—";
+    }
+    InfoRow {
+        y: 30px;
+        width: parent.width;
+        k: "MIX";
+        v: AudioState.mix-out != "" ? AudioState.mix-out : (AudioState.main-output != "" ? AudioState.main-output : "—");
+    }
+    Sec { y: 50px; width: parent.width; text: "PLAYS TO"; }
+    // Every destination the mix reaches gets a row and its dot: the rows
+    // stack down the bank at its pitch (the fit grows the bank for the list
+    // and the rows tighten to a readable minimum), so the whole list — and
+    // PEAK and VU under it — always lands inside the bank. Four or fewer
+    // destinations sit at the standard 16 px pitch.
+    // A short bank shows the rows that fit: never less than 12 px, or they
+    // would stack up over the output picker.
+    property <length> pitch: Math.max(12px, Math.min(16px, (AudioState.console-knob-view * 1px - 82px) / (AudioState.dests.length + 2)));
+    for d[i] in AudioState.dests: InfoRow {
+        y: 64px + i * root.pitch;
+        height: root.pitch;
+        width: parent.width;
+        k: d;
+        v: i < AudioState.main-dests.length ? (AudioState.main-dests[i] ? "ON" : "OFF") : "OFF";
+        mark: true;
+        lit: i < AudioState.main-dests.length && AudioState.main-dests[i];
+    }
+    InfoRow { y: 64px + AudioState.dests.length * root.pitch; height: root.pitch; width: parent.width; k: "PEAK"; v: AudioState.out-peak-text; }
+    InfoRow { y: 64px + (AudioState.dests.length + 1) * root.pitch; height: root.pitch; width: parent.width; k: "VU"; v: AudioState.out-vu-text; }
+    InfoRow {
+        y: 64px + (AudioState.dests.length + 2) * root.pitch;
+        height: 18px;
+        width: parent.width;
+        k: "INSERT";
+        v: AudioState.plugins-insert;
+        lit: AudioState.plugins-enabled;
+    }
+}
+
+component StripFader inherits Rectangle {
+    in property <StripItem> s;
+    property <MeterKind> meter-kind: MeterKind.System;
+    FaderBay {
+        width: parent.width;
+        height: parent.height;
+        kind: root.meter-kind;
+        gain-headroom: root.s.headroom;
+        gain-volume: root.s.id == "output" || root.s.id == "system-sounds";
+        gain-stream-volume: root.s.id.starts-with("application:");
+        level: root.s.level;
+        peak: root.s.peak;
+        level-l: root.s.level-l;
+        level-r: root.s.level-r;
+        peak-l: root.s.peak-l;
+        peak-r: root.s.peak-r;
+        vu: root.s.vu;
+        clipping: root.s.clip;
+        mute: root.s.mute;
+        gain: root.s.gain;
+        selected: root.s.selected;
+        unity: root.s.headroom ? 0.909 : 1.0;
+        changed(v) => { AudioState.set-gain(root.s.id, v); }
+    }
+}
+
+component BusFader inherits Rectangle {
+    in property <BusItem> b;
+    FaderBay {
+        width: parent.width;
+        height: parent.height;
+        kind: MeterKind.System;
+        gain-headroom: true;
+        level: root.b.level;
+        peak: root.b.peak;
+        mute: root.b.mute;
+        gain: root.b.gain;
+        unity: 0.909;
+        changed(v) => { AudioState.set-bus-gain(root.b.id, v); }
+    }
+}
+
+// The name, under the fader, and the colour bar that identifies the strip.
+component StripFoot inherits Rectangle {
+    in property <StripItem> s;
+    clip: true;
+    property <bool> show-hint: root.s.send-hint != ""
+        && AudioState.console-knob-view * 1px < Console.y-s1 + Console.row * 4;
+    Text {
+        x: 4px;
+        y: 0px;
+        width: parent.width - 8px;
+        height: root.show-hint ? parent.height / 2 : parent.height - 3px;
+        text: root.s.name;
+        color: root.s.selected ? Theme.text-bright : Theme.text;
+        font-family: Theme.font-ui;
+        font-weight: 600;
+        font-size: Theme.fs-small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    if root.show-hint: Text {
+        x: 2px;
+        y: root.height / 2;
+        width: root.width - 4px;
+        height: root.height / 2;
+        text: root.s.send-hint;
+        color: Theme.text-dim;
+        font-family: Theme.font-ui;
+        font-size: Theme.fs-tiny;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component BusFoot inherits Rectangle {
+    in property <BusItem> b;
+    in property <bool> focused;
+    clip: true;
+    Text {
+        x: 4px;
+        y: 0px;
+        width: parent.width - 8px;
+        height: parent.height - 3px;
+        text: root.b.name;
+        color: root.focused ? Theme.text-bright : Theme.text;
+        font-family: Theme.font-ui;
+        font-weight: 600;
+        font-size: Theme.fs-small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+}
+
+// Always on screen, just above the fader: what this strip positions itself
+// with, then mute and solo, then the dB. MAIN's slot is its output: the
+// device while the bank is closed, the mix's destination once it is open.
+component StripCap inherits Rectangle {
+    in property <StripItem> s;
+    in property <int> output-req;
+    property <bool> main: Console.main-strip(root.s);
+    property <bool> soloable: !root.main;
+    clip: true;
+    if !root.main: PanBar {
+        y: 0px;
+        width: parent.width;
+        strip-id: root.s.id;
+        value: root.s.k-pan;
+        enabled: root.s.knobs && root.s.tone;
+    }
+    if root.main && AudioState.console-knob-view <= 0.5 && AudioState.outputs.length > 0: OutputPicker {
+        x: 4px;
+        y: (Console.pan-h - self.height) / 2;
+        width: parent.width - 8px;
+        open-req: root.output-req;
+    }
+    if root.main && (AudioState.console-knob-view > 0.5 || AudioState.outputs.length == 0): Text {
+        x: 4px;
+        y: 0px;
+        width: parent.width - 8px;
+        height: Console.pan-h;
+        text: AudioState.mix-out != "" ? AudioState.mix-out : "MAIN";
+        color: Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    HorizontalLayout {
+        y: Console.pan-h;
+        height: Console.sm-h;
+        width: parent.width;
+        alignment: center;
+        spacing: 4px;
+        MSButton { text: "M"; active: root.s.mute; clicked => { AudioState.toggle-mute(root.s.id); } }
+        // The solo slot is on every column, so the mute lamps line up.
+        MSButton { text: "S"; enabled: root.soloable; active: root.soloable && root.s.solo; clicked => { AudioState.toggle-solo(root.s.id); } }
+    }
+    Text {
+        y: Console.pan-h + Console.sm-h;
+        width: parent.width;
+        height: Console.db-h;
+        text: Console.volume-strip(root.s) ? "VOL " + root.s.db : root.s.db;
+        color: root.s.mute ? Theme.text-faint : Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-large;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// A return, in the same cap. Its one control — the effect's amount, or
+// where the AUX plays — sits where a channel has its pan, so the faders
+// still line up. A return has no solo: the slot is drawn, greyed.
+component BusCap inherits Rectangle {
+    in property <BusItem> b;
+    clip: true;
+    if root.b.param-label != "": HorizontalLayout {
+        y: (Console.pan-h - Console.row) / 2;
+        width: parent.width;
+        height: Console.row;
+        padding-left: 4px;
+        padding-right: 4px;
+        spacing: 3px;
+        Text {
+            width: 30px;
+            text: root.b.param-label;
+            color: Theme.text-dim;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+        }
+        Knob {
+            width: 24px;
+            height: 24px;
+            size: 22px;
+            label: root.b.param-label;
+            readout: root.b.param-label == "TIME" ? Math.round(40 + root.b.param * 960) + " ms" : Math.round(root.b.param * 100) + " %";
+            bare: true;
+            pack: true;
+            unipolar: true;
+            hide-pointer: true;
+            value: root.b.param * 2 - 1;
+            reset-value: -1;
+            moved(v) => { AudioState.set-bus-param(root.b.id, (v + 1) / 2); }
+        }
+        Text {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            text: root.b.param-label == "TIME" ? Math.round(40 + root.b.param * 960) + " ms" : Math.round(root.b.param * 100) + " %";
+            color: root.b.param > 0.001 ? Theme.text-bright : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    if root.b.param-label == "": BusOutput {
+        x: 4px;
+        y: (Console.pan-h - 24px) / 2;
+        width: parent.width - 8px;
+        height: 24px;
+        b: root.b;
+    }
+    HorizontalLayout {
+        y: Console.pan-h;
+        height: Console.sm-h;
+        width: parent.width;
+        alignment: center;
+        spacing: 4px;
+        MSButton { text: "M"; active: root.b.mute; clicked => { AudioState.toggle-bus-mute(root.b.id); } }
+        MSButton { text: "S"; enabled: false; }
+    }
+    Text {
+        y: Console.pan-h + Console.sm-h;
+        width: parent.width;
+        height: Console.db-h;
+        text: root.b.db;
+        color: root.b.mute ? Theme.text-faint : Theme.text-bright;
+        font-family: Theme.font;
+        font-size: Theme.fs-large;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// Fires when `gen` changes and `arm` is set. `changed` only sees the
+// element's own properties, so the desk's reveal counter is copied in.
+component RevealWatch inherits Rectangle {
+    in property <int> gen;
+    in property <bool> arm;
+    callback fire();
+    width: 0px;
+    height: 0px;
+    changed gen => { if (root.arm) { root.fire(); } }
+}
+
+// One scope of the desk: the channels and modules, the returns, MAIN, in
+// that order — so the same layout serves the desk that scrolls and the
+// group pinned to the right edge, and their columns cannot drift.
+// band: 0 the bank (tone, sends, or MAIN's master section), 1 the fader,
+// 2 the name, 3 what the strip positions itself with, mute, solo and the dB.
+// One band's slice of a strip's card (Patch style: Graphite 900 cards on
+// the Ink ground). The bands are drawn apart, so each cell rounds only the
+// card's own top or bottom. The selected strip's card is lighter, with the
+// unit's one red line under its name.
+component CardCell inherits Rectangle {
+    in property <int> band;
+    in property <bool> selected;
+    property <bool> top: root.band == 0 || (root.band == 3 && AudioState.console-knob-view <= 0.5);
+    property <bool> bottom: root.band == 2;
+    property <length> r: Theme.r-panel;
+    background: Theme.panel;
+    border-top-left-radius: root.top ? root.r : 0px;
+    border-top-right-radius: root.top ? root.r : 0px;
+    border-bottom-left-radius: root.bottom ? root.r : 0px;
+    border-bottom-right-radius: root.bottom ? root.r : 0px;
+    // The selected strip: the unit's one red edge, around its whole card
+    // (each band draws its slice: both sides, and its own top or bottom).
+    if root.selected: Rectangle {
+        border-top-left-radius: parent.border-top-left-radius;
+        border-top-right-radius: parent.border-top-right-radius;
+        border-bottom-left-radius: parent.border-bottom-left-radius;
+        border-bottom-right-radius: parent.border-bottom-right-radius;
+        border-width: 2px;
+        border-color: Theme.accent;
+        // Hide the edges between bands.
+        if !root.top: Rectangle { x: 2px; y: 0px; width: parent.width - 4px; height: 2px; background: Theme.panel; }
+        if !root.bottom: Rectangle { x: 2px; y: parent.height - 2px; width: parent.width - 4px; height: 2px; background: Theme.panel; }
+    }
+}
+
+component Desk inherits HorizontalLayout {
+    in property <int> band;
+    // The columns' width: Console.col, or wider when the desk has room.
+    in property <length> col-w: Console.col;
+    in property <bool> strips: true;
+    in property <bool> buses: true;
+    in property <bool> mains: true;
+    in property <int> output-req;
+    in property <bool> navigator: false;
+    in property <int> reveal-gen;
+    in property <string> reveal-strip;
+    in property <string> reveal-bus;
+    in property <string> bus-focus;
+    callback scroll-to(length);
+    callback focus-strip(string);
+    callback focus-bus(string);
+    padding-left: Theme.s2;
+    padding-right: Theme.s2;
+    spacing: 0px;
+    alignment: start;
+    for s[i] in AudioState.strips: group := HorizontalLayout {
+        height: parent.height;
+        spacing: 0px;
+        // Separate desktop/system playback from individual app streams.
+        // Do not add this to the pinned output group, where the source strips
+        // are hidden and their spacing would push Main out of view.
+        if root.strips && s.id == "system-sounds" && i > 0 && AudioState.strips[i - 1].id.starts-with("application:"): Rectangle { width: Theme.s3; }
+        if root.strips && s.id == "system-sounds" && i > 0 && AudioState.strips[i - 1].id.starts-with("application:"): VLine { }
+        if root.strips && s.id == "system-sounds" && i > 0 && AudioState.strips[i - 1].id.starts-with("application:"): Rectangle { width: Theme.s3; }
+        // Separate incoming application/system streams from Patch's own
+        // engine strips. Keep the rule quiet and align it across every band.
+        if root.strips && s.id == "engine.dj-mixer": Rectangle { width: Theme.s3; }
+        if root.strips && s.id == "engine.dj-mixer": VLine { }
+        if root.strips && s.id == "engine.dj-mixer": Rectangle { width: Theme.s3; }
+        // Mics and other live inputs form their own group after the booth.
+        if root.strips && s.id == "engine.mic-1": Rectangle { width: Theme.s3; }
+        if root.strips && s.id == "engine.mic-1": VLine { }
+        if root.strips && s.id == "engine.mic-1": Rectangle { width: Theme.s3; }
+        if !Console.hidden(s): RevealWatch {
+            gen: root.reveal-gen;
+            arm: root.navigator && root.reveal-strip == s.id && s.id != "";
+            fire => { root.scroll-to(group.x); }
+        }
+        // The returns sit before MAIN, once, as a console's group output does.
+        if Console.main-strip(s) && root.buses && AudioState.buses.length > 0: Rectangle { width: Theme.s3; }
+        if Console.main-strip(s) && root.buses && AudioState.buses.length > 0: VLine { }
+        if Console.main-strip(s) && root.buses && AudioState.buses.length > 0: Rectangle { width: Theme.s2; }
+        if Console.main-strip(s) && root.buses: busrow := HorizontalLayout {
+            height: parent.height;
+            for b in AudioState.buses: cell := Rectangle {
+                width: root.col-w;
+                height: parent.height;
+                clip: true;
+                CardCell { x: 2px; width: parent.width - 4px; height: parent.height; band: root.band; selected: root.bus-focus == b.id; }
+                RevealWatch {
+                    gen: root.reveal-gen;
+                    arm: root.navigator && root.reveal-bus == b.id && b.id != "";
+                    fire => { root.scroll-to(group.x + busrow.x + cell.x); }
+                }
+                TouchArea { clicked => { root.focus-bus(b.id); } }
+                // A return's bank: the same rows as a channel, greyed — no
+                // engine EQ and no sends on a bus, and the desk says so
+                // (user, 2026-11-14: an empty card hid that). Its own
+                // control (size, time) sits in the cap.
+                if root.band == 0: StripUpper {
+                    width: parent.width;
+                    height: parent.height;
+                    id: b.id;
+                    live: false;
+                    gain-live: false;
+                    sends: false;
+                }
+                if root.band == 1: BusFader { b: b; width: parent.width; height: parent.height; }
+                if root.band == 2: BusFoot { b: b; focused: root.bus-focus == b.id; width: parent.width; height: parent.height; }
+                if root.band == 3: BusCap { b: b; width: parent.width; height: parent.height; }
+            }
+        }
+        if Console.main-strip(s): Rectangle { width: Theme.s3; }
+        if Console.main-strip(s): VLine { }
+        if Console.main-strip(s): Rectangle { width: Theme.s3; }
+        // A strip is drawn by the scope that owns it: the channels here, MAIN
+        // there, and the returns with whichever of the two holds them.
+        if !Console.hidden(s) && (Console.main-strip(s) ? root.mains : root.strips): Rectangle {
+            width: root.col-w;
+            height: parent.height;
+            clip: true;
+            CardCell { x: 2px; width: parent.width - 4px; height: parent.height; band: root.band; selected: s.selected; }
+            TouchArea {
+                clicked => { root.focus-strip(s.id); }
+                double-clicked => {
+                    root.focus-strip(s.id);
+                    Host.focus-surface("inspector");
+                }
+            }
+            if root.band == 0 && Console.main-strip(s): MainBank { width: parent.width; height: parent.height; output-req: root.output-req; }
+            if root.band == 0 && !Console.main-strip(s): StripUpper {
+                width: parent.width;
+                height: parent.height;
+                id: s.id;
+                live: s.knobs && s.tone;
+                gain-live: s.knobs && s.gain-live;
+                sends: s.knobs && s.sends;
+                send-note: s.send-note;
+                k-gain: s.k-gain;
+                k-high: s.k-high;
+                k-mid: s.k-mid;
+                k-low: s.k-low;
+                s1: s.s1;
+                s2: s.s2;
+                s3: s.s3;
+                s4: s.s4;
+                p1: s.p1;
+                p2: s.p2;
+                p3: s.p3;
+                p4: s.p4;
+            }
+            if root.band == 1: StripFader { s: s; width: parent.width; height: parent.height; }
+            if root.band == 2: StripFoot { s: s; width: parent.width; height: parent.height; }
+            if root.band == 3: StripCap { s: s; output-req: root.output-req; width: parent.width; height: parent.height; }
+        }
+    }
+}
+
+// One scope's four bands, at the y every other scope uses: the bank, the
+// cap, the fader and the name. Placed once here, so a scrolling desk and a
+// pinned group line up row for row.
+component Bands inherits Rectangle {
+    in property <length> col-w: Console.col;
+    in property <bool> strips: true;
+    in property <bool> buses: true;
+    in property <bool> mains: true;
+    in property <int> output-req;
+    in property <string> bus-focus;
+    in property <bool> navigator: false;
+    in property <int> reveal-gen;
+    in property <string> reveal-strip;
+    in property <string> reveal-bus;
+    callback scroll-to(length);
+    callback focus-strip(string);
+    callback focus-bus(string);
+    property <length> cap-y: AudioState.console-knob-view * 1px;
+    property <length> fader-y: root.cap-y + AudioState.console-header * 1px;
+    property <length> foot-y: root.fader-y + AudioState.console-fader * 1px;
+    // The bank: whole rows, clipped to what the window can spare.
+    if AudioState.console-knob-view > 0.5: Rectangle {
+        y: 0px;
+        width: parent.width;
+        height: AudioState.console-knob-view * 1px;
+        clip: true;
+        // Anchored at the top: left unset, Slint centres it and the viewport
+        // slices the trim row and hides a whole row below.
+        Desk {
+            y: 0px;
+            col-w: root.col-w;
+            band: 0;
+            strips: root.strips;
+            buses: root.buses;
+            mains: root.mains;
+            output-req: root.output-req;
+            bus-focus: root.bus-focus;
+            width: parent.width;
+            height: Math.max(AudioState.console-knob-body * 1px, parent.height);
+            focus-strip(id) => { root.focus-strip(id); }
+            focus-bus(id) => { root.focus-bus(id); }
+        }
+    }
+    Rectangle {
+        y: root.cap-y;
+        width: parent.width;
+        height: AudioState.console-header * 1px;
+        clip: true;
+        Desk {
+            col-w: root.col-w;
+            band: 3;
+            strips: root.strips;
+            buses: root.buses;
+            mains: root.mains;
+            output-req: root.output-req;
+            bus-focus: root.bus-focus;
+            width: parent.width;
+            height: parent.height;
+            focus-strip(id) => { root.focus-strip(id); }
+            focus-bus(id) => { root.focus-bus(id); }
+        }
+    }
+    Rectangle {
+        y: root.fader-y;
+        width: parent.width;
+        height: AudioState.console-fader * 1px;
+        clip: true;
+        Desk {
+            col-w: root.col-w;
+            band: 1;
+            strips: root.strips;
+            buses: root.buses;
+            mains: root.mains;
+            output-req: root.output-req;
+            bus-focus: root.bus-focus;
+            navigator: root.navigator;
+            reveal-gen: root.reveal-gen;
+            reveal-strip: root.reveal-strip;
+            reveal-bus: root.reveal-bus;
+            width: parent.width;
+            height: parent.height;
+            scroll-to(x) => { root.scroll-to(x); }
+            focus-strip(id) => { root.focus-strip(id); }
+            focus-bus(id) => { root.focus-bus(id); }
+        }
+    }
+    Rectangle {
+        y: root.foot-y;
+        width: parent.width;
+        height: AudioState.console-foot * 1px;
+        clip: true;
+        Desk {
+            col-w: root.col-w;
+            band: 2;
+            strips: root.strips;
+            buses: root.buses;
+            mains: root.mains;
+            output-req: root.output-req;
+            bus-focus: root.bus-focus;
+            width: parent.width;
+            height: parent.height;
+            focus-strip(id) => { root.focus-strip(id); }
+            focus-bus(id) => { root.focus-bus(id); }
+        }
+    }
+}
+
+component TrackList inherits Rectangle {
+    in property <string> bus-focus;
+    callback pick-strip(string);
+    callback pick-bus(string);
+    background: Theme.bg-deep;
+    Scroll {
+        width: 100%;
+        height: 100%;
+        spacing: 0px;
+        Rectangle { height: Theme.s2; }
+        Rectangle {
+            height: 20px;
+            Text {
+                x: 10px; width: parent.width - 16px; height: parent.height;
+                text: "CHANNELS";
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                letter-spacing: 1px;
+                vertical-alignment: center;
+            }
+        }
+        for s in AudioState.strips: VerticalLayout {
+        if !Console.main-strip(s) && !Console.hidden(s): ListRow {
+            selected: s.selected && root.bus-focus == "";
+            muted: s.mute;
+            row-height: 22px;
+            pad: 8px;
+            clicked => { root.pick-strip(s.id); }
+            double-clicked => {
+                root.pick-strip(s.id);
+                Host.focus-surface("inspector");
+            }
+            Text {
+                text: s.solo ? "●" : "○";
+                color: s.solo ? Theme.accent : Theme.text-faint;
+                font-size: Theme.fs-tiny;
+                vertical-alignment: center;
+                width: 12px;
+            }
+            Label {
+                text: s.name;
+                tone: s.selected ? "bright" : "normal";
+                small: true;
+                overflow: elide;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+        }
+        }
+        if AudioState.can-add-mic: ListRow {
+            row-height: 22px;
+            pad: 8px;
+            clicked => { AudioState.add-mic(); }
+            Label { text: "+ Mic"; tone: "accent"; small: true; vertical-alignment: center; }
+        }
+        if AudioState.buses.length > 0: Rectangle { height: Theme.s3; }
+        if AudioState.buses.length > 0: Rectangle {
+            height: 20px;
+            Text {
+                x: 10px; width: parent.width - 16px; height: parent.height;
+                text: "RETURNS";
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                letter-spacing: 1px;
+                vertical-alignment: center;
+            }
+        }
+        for b in AudioState.buses: ListRow {
+            selected: root.bus-focus == b.id;
+            muted: b.mute;
+            row-height: 22px;
+            pad: 8px;
+            clicked => { root.pick-bus(b.id); }
+            Text {
+                text: "●";
+                color: Theme.text-faint;
+                font-size: Theme.fs-tiny;
+                vertical-alignment: center;
+                width: 12px;
+            }
+            Label {
+                text: b.name;
+                tone: root.bus-focus == b.id ? "bright" : "normal";
+                small: true;
+                overflow: elide;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+        }
+        Rectangle { height: Theme.s3; }
+        Rectangle {
+            height: 20px;
+            Text {
+                x: 10px; width: parent.width - 16px; height: parent.height;
+                text: "MAIN";
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                letter-spacing: 1px;
+                vertical-alignment: center;
+            }
+        }
+        for s in AudioState.strips: VerticalLayout {
+        if Console.main-strip(s) && !Console.hidden(s): ListRow {
+            selected: s.selected && root.bus-focus == "";
+            muted: s.mute;
+            row-height: 22px;
+            pad: 8px;
+            clicked => { root.pick-strip(s.id); }
+            double-clicked => {
+                root.pick-strip(s.id);
+                Host.focus-surface("inspector");
+            }
+            Text {
+                text: "●";
+                color: Theme.text-faint;
+                font-size: Theme.fs-tiny;
+                vertical-alignment: center;
+                width: 12px;
+            }
+            Label {
+                text: s.name;
+                tone: s.selected ? "bright" : "normal";
+                small: true;
+                overflow: elide;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+        }
+        }
+    }
+}
+
+export component MixerSurface inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    init => {
+        keys.focus();
+        root.refit();
+    }
+    property <bool> console: AudioState.professional-routing;
+    function refit() { AudioState.fit-console(root.height / 1px, root.width / 1px, true); }
+    changed console => { root.refit(); }
+    changed height => { root.refit(); }
+    changed width => { root.refit(); }
+    property <length> hardware-w: AudioState.strips.length * Console.strip + 72px;
+    property <string> sel: AudioState.sel-strip >= 0 ? AudioState.strips[AudioState.sel-strip].id : "";
+    property <int> output-req;
+    property <string> bus-focus;
+    property <string> reveal-strip;
+    property <string> reveal-bus;
+    property <int> reveal-gen;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.LeftArrow || e.text == "h") {
+                root.bus-focus = "";
+                AudioState.select(AudioState.strips[Math.max(AudioState.sel-strip - 1, 0)].id);
+                return accept;
+            }
+            if (e.text == Key.RightArrow || e.text == "l") {
+                root.bus-focus = "";
+                AudioState.select(AudioState.strips[Math.min(AudioState.sel-strip + 1, AudioState.strips.length - 1)].id);
+                return accept;
+            }
+            if (e.text == Key.UpArrow || e.text == "k" || e.text == "+") { AudioState.nudge-gain(root.sel, e.modifiers.shift ? 0.1 : 1.0); return accept; }
+            if (e.text == Key.DownArrow || e.text == "j" || e.text == "-") { AudioState.nudge-gain(root.sel, e.modifiers.shift ? -0.1 : -1.0); return accept; }
+            if (e.text == " ") { AudioState.toggle-mute(root.sel); return accept; }
+            if (e.text == "s") { AudioState.toggle-solo(root.sel); return accept; }
+            if (e.text == "a" && AudioState.can-add-mic) { AudioState.add-mic(); return accept; }
+            if (e.text == "o" && AudioState.outputs.length > 0) { root.output-req += 1; return accept; }
+            if (e.text == Key.Return) { Host.focus-surface("inspector"); return accept; }
+            return reject;
+        }
+        if !root.console: Flickable {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            content-width: Math.max(root.hardware-w, self.width);
+            content-height: self.height;
+            HorizontalLayout {
+                height: parent.height;
+                padding: Theme.s2;
+                spacing: 0px;
+                alignment: start;
+                for s[i] in AudioState.strips: HorizontalLayout {
+                    if s.id == "system-sounds" && i > 0 && AudioState.strips[i - 1].id.starts-with("application:"): Rectangle { width: Theme.s3; }
+                    if s.id == "system-sounds" && i > 0 && AudioState.strips[i - 1].id.starts-with("application:"): VLine { }
+                    if s.id == "system-sounds" && i > 0 && AudioState.strips[i - 1].id.starts-with("application:"): Rectangle { width: Theme.s3; }
+                    if s.id == "engine.dj-mixer": Rectangle { width: Theme.s3; }
+                    if s.id == "engine.dj-mixer": VLine { }
+                    if s.id == "engine.dj-mixer": Rectangle { width: Theme.s3; }
+                    if s.id == "engine.mic-1": Rectangle { width: Theme.s3; }
+                    if s.id == "engine.mic-1": VLine { }
+                    if s.id == "engine.mic-1": Rectangle { width: Theme.s3; }
+                    if s.master: Rectangle { width: Theme.s3; }
+                    if s.master: VLine { }
+                    if s.master: Rectangle { width: Theme.s3; }
+                    StripColumn { s: s; width: Console.strip; output-req: root.output-req; }
+                }
+            }
+        }
+        // Console: a channel list, then the desk. What a strip positions
+        // itself with, mute and solo, the dB, the fader and the name stay
+        // put; the bank opens above them row by row. The returns and MAIN
+        // are pinned to the right edge once the window is wide enough to
+        // keep three whole channel columns beside them.
+        if root.console: HorizontalLayout {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            TrackList {
+                width: 176px;
+                bus-focus: root.bus-focus;
+                pick-strip(id) => {
+                    root.bus-focus = "";
+                    root.reveal-bus = "";
+                    root.reveal-strip = id;
+                    root.reveal-gen += 1;
+                    AudioState.select(id);
+                }
+                pick-bus(id) => {
+                    root.reveal-strip = "";
+                    root.reveal-bus = id;
+                    root.bus-focus = id;
+                    root.reveal-gen += 1;
+                }
+            }
+            VLine { }
+            desk-area := Rectangle {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                // With room to spare, keep the fixed-width strips together.
+                // The viewport takes everything the pinned group does not, so
+                // the returns and MAIN sit flush against the window's edge
+                // whether or not the channels need to scroll. When they do not,
+                // the bands widen to the viewport and the strips keep their own
+                // width, so the spare room falls between them and the rule.
+                property <length> scroll-view-w: Math.max(0px, self.width - AudioState.console-pinned * 1px);
+                // Columns keep their 104 px whatever the room (user,
+                // 2026-11-14: widened to 160 px they were far too wide), so
+                // spare room falls before the pinned group, as in Classic.
+                property <length> col-w: Console.col;
+                property <length> desk-w: AudioState.console-scroll-w * 1px;
+                // The channels — and whichever group is not pinned — scroll.
+                // A plain mouse wheel scrolls the desk sideways: the desk never
+                // scrolls up and down, and Slint's Flickable turns a vertical
+                // wheel sideways only with shift held (user, 2026-11-14: many
+                // channels were hard to reach). Trackpad swipes and
+                // shift+wheel still go to the Flickable itself.
+                desk-wheel := TouchArea {
+                    x: 0px;
+                    y: 0px;
+                    width: desk-area.scroll-view-w;
+                    height: parent.height;
+                    scroll-event(e) => {
+                        let room = desk-flick.width - desk-flick.content-width;
+                        if (room >= 0px || e.delta-y == 0px) {
+                            return reject;
+                        }
+                        desk-flick.content-x = clamp(desk-flick.content-x + e.delta-y, room, 0px);
+                        accept
+                    }
+                    desk-flick := Flickable {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
+                        content-width: Math.max(desk-area.desk-w, self.width);
+                        content-height: self.height;
+                        Bands {
+                            col-w: desk-area.col-w;
+                            width: Math.max(desk-area.desk-w, desk-flick.width);
+                            height: parent.height;
+                            strips: true;
+                            buses: !AudioState.console-pin-buses;
+                            mains: !AudioState.console-pin-main;
+                            navigator: true;
+                            output-req: root.output-req;
+                            bus-focus: root.bus-focus;
+                            reveal-gen: root.reveal-gen;
+                            reveal-strip: root.reveal-strip;
+                            reveal-bus: root.reveal-bus;
+                            scroll-to(x) => {
+                                // Whole columns only: a column is never left sliced.
+                                let want = Math.round((-x) / desk-area.col-w) * desk-area.col-w;
+                                if (want + desk-area.col-w < -desk-flick.content-x || want > -desk-flick.content-x + desk-flick.width - desk-area.col-w) {
+                                    desk-flick.content-x = clamp(-want, Math.min(0px, desk-flick.width - desk-flick.content-width), 0px);
+                                }
+                            }
+                            focus-strip(id) => { root.bus-focus = ""; AudioState.select(id); }
+                            focus-bus(id) => { root.bus-focus = id; }
+                        }
+                    }
+                }
+                // The pinned group: the same bands, at the same rows.
+                if AudioState.console-pinned > 0.5: Rectangle {
+                    x: desk-area.scroll-view-w;
+                    y: 0px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.border;
+                }
+                if AudioState.console-pinned > 0.5: Bands {
+                    x: desk-area.scroll-view-w + 1px;
+                    y: 0px;
+                    width: AudioState.console-pinned * 1px - 1px;
+                    height: parent.height;
+                    strips: false;
+                    buses: AudioState.console-pin-buses;
+                    mains: AudioState.console-pin-main;
+                    output-req: root.output-req;
+                    bus-focus: root.bus-focus;
+                    focus-strip(id) => { root.bus-focus = ""; AudioState.select(id); }
+                    focus-bus(id) => { root.bus-focus = id; }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1210">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Patch Auto Mix">
+<title>Patch · Auto Mix</title>
+<link rel="stylesheet" href="/dj.css">
+<link rel="stylesheet" href="/navigation.css"><script src="/pairing.js" defer></script><script src="/navigation.js" defer></script><script src="/client.js" defer></script>
+</head>
+<body data-page="dj">
+<patch-navigation page="dj"></patch-navigation>
+<main>
+<div class="session-line"><span id="connection" role="status">Connecting</span><span id="phase">Waiting for Patch</span></div>
+<section class="countdown" aria-label="Time until transition starts">
+<div class="countdown-heading"><span class="eyebrow">NEXT TRANSITION</span><span id="countdown-status">Waiting for Patch</span></div>
+<div class="countdown-values"><div><output id="countdown-bars">—</output><span>BARS</span></div><div><output id="countdown-time">—</output><span>MIN : SEC</span></div></div>
+</section>
+<div class="next-actions"><button id="mix-now" class="mix-now">Mix now</button><button id="change-next">Change next</button><span>AI transition · earliest next bar</span></div>
+<section class="set-actions" aria-label="Auto Mix set controls"><div><span class="eyebrow">Auto Mix SET</span><span id="set-status">Checking set…</span></div><button id="set-start" class="mix-now">Start Auto Mix set</button><button id="set-resume">Resume Auto Mix set</button></section>
+<section class="sources" id="sources" aria-label="Current and upcoming tracks"><div class="empty">Waiting for live Patch state…</div></section>
+<section class="intent" aria-labelledby="transition">
+<div class="section-heading"><span class="eyebrow">THE NEXT MOVE</span><span id="plan-state" class="state-tag">LISTENING</span></div>
+<h2 id="transition">No transition scheduled</h2><p id="detail">Patch will publish its next move here.</p>
+<progress id="plan-progress" max="1" value="0" aria-label="Transition execution progress"></progress>
+<div class="evidence-line"><span id="timing">Engine timing</span><span id="rehearsal"></span></div>
+</section>
+<div class="lower">
+<section class="control" aria-labelledby="control-heading"><div class="section-heading"><h2 id="control-heading">AI control</h2><span id="mode-label" class="eyebrow">—</span></div><div class="segmented" id="modes" aria-label="AI autonomy"></div><p id="mode-hint" class="hint">Patch remains in control of musical timing.</p><div class="section-heading direction-heading"><h3>Energy direction</h3><span class="fine">YOUR INTENT</span></div><div class="segmented directions" id="directions" aria-label="Energy direction"></div><p id="note" class="note"></p></section>
+<details class="candidate-panel" id="candidate-panel"><summary><span>Candidate horizon</span><span id="candidate-count" class="fine">—</span></summary><div id="candidates" class="candidate-list">Waiting for candidates</div></details>
+</div>
+</main>
+<footer><span id="ack" role="status" aria-live="polite">Following Patch</span><span id="access">PRIVATE REMOTE</span></footer>
+</body>
+</html>

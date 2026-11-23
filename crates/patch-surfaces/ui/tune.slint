@@ -1,0 +1,46 @@
+import { Theme, Label, SectionHeading, Scroll, EmptyState } from "@patch-ui/patch-ui.slint";
+
+export component TuneSurface inherits VerticalLayout {
+    spacing: Theme.s4;
+    padding: Theme.s4;
+    Scroll {
+        VerticalLayout {
+            spacing: Theme.s4;
+            // A preview: Tune has no device profiles or controls yet, so it
+            // says so (the window header carries the same PREVIEW badge).
+            EmptyState {
+                title: "Tune is coming soon";
+                detail: "Device profiles, correction and calibration are planned. Until then Tune changes nothing: Patch applies no correction to your output.";
+                badge: "PREVIEW";
+            }
+            Rectangle {
+                height: 118px;
+                background: Theme.bg-deeper;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: Theme.s4;
+                    spacing: Theme.s2;
+                    SectionHeading { text: "SIGNAL PATH"; detail: "post-mix · pre-output"; pad: 0px; }
+                    Label { text: "Device correction → headroom → peak guard"; tone: "normal"; small: true; }
+                    Label { text: "Current correction: flat · processing latency: 0 samples"; tone: "dim"; small: true; }
+                    Label { text: "Protection remains available when tonal correction is bypassed."; tone: "dim"; small: true; wrap: word-wrap; }
+                }
+            }
+            Rectangle {
+                height: 100px;
+                background: Theme.bg-deeper;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: Theme.s4;
+                    spacing: Theme.s2;
+                    SectionHeading { text: "CALIBRATION"; detail: "room data is separate from device profile"; pad: 0px; }
+                    Label { text: "No calibration saved"; tone: "dim"; }
+                    Label { text: "Measurement microphone, safe sweep, and response view are planned."; tone: "dim"; small: true; wrap: word-wrap; }
+                }
+            }
+            Label { text: "Unknown hardware limits stay unknown. No guessed correction is applied."; tone: "dim"; small: true; wrap: word-wrap; }
+        }
+    }
+}

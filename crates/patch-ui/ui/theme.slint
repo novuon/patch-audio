@@ -1,0 +1,114 @@
+// Design tokens. Colors and base size are overwritten at startup from the
+// active Omarchy theme (~/.local/state/omarchy/current/theme/colors.toml);
+// the defaults below are Omarchy's matte-black.
+
+// The display face: Unit titles, headlines, track titles (SIL OFL,
+// fonts/OFL.txt). Every value, label and key is in the monospaced `font`
+// (JetBrains Mono, the Omarchy font).
+import "fonts/SpaceGrotesk-Medium.ttf";
+import "fonts/SpaceGrotesk-Bold.ttf";
+
+export global Theme {
+    // Surfaces
+    in-out property <color> bg: #121212;
+    in-out property <color> bg-deep: #0d0d0d;
+    in-out property <color> bg-deeper: #090909;
+    // Controls (buttons, pads, knobs' wells): the Patch style's Graphite 800.
+    in-out property <color> raised: #181818;
+    in-out property <color> hover: #1e1e1e;
+    in-out property <color> selection: #262626;
+    // Lines
+    in-out property <color> border: #232323;
+    in-out property <color> border-strong: #333333;
+    // Text
+    in-out property <color> text: #bebebe;
+    in-out property <color> text-bright: #eaeaea;
+    in-out property <color> text-dim: #8a8a8d;
+    in-out property <color> text-faint: #5a5a5a;
+    // The one accent, plus semantic colors used sparingly.
+    in-out property <color> accent: #e68e0d;
+    in-out property <color> accent-soft: #e68e0d33;
+    in-out property <color> accent-ink: #ffffff;
+    // Paper, the brand's light: type on a red fill (the header's LIVE).
+    out property <color> paper: #f7f4ee;
+    // Patch Red, whatever the theme: the Module's plug-in Unit is never
+    // recoloured (docs/brand.md).
+    out property <color> brand: #f0243b;
+    in-out property <bool> logo-accent: false;
+    // Mock/prototype stamps. The accent, unless the theme's accent is grey.
+    in-out property <color> mock: #e68e0d;
+    in-out property <color> warn: #c9a23a;
+    in-out property <color> error: #d35f5f;
+    // Meter levels and their warning zone (Patch style: Meter green and
+    // Meter amber, functional only, inside meters). Clipping is the accent.
+    in-out property <color> level: #22c7a0;
+    in-out property <color> level-warn: #ffb020;
+    // Code (the Tidal Unit's editor): the theme's terminal colours eased
+    // toward the text. Words of the language, controls, strings, numbers.
+    in-out property <color> code-word: #8b95d8;
+    in-out property <color> code-control: #6bb7bd;
+    in-out property <color> code-string: #8fb782;
+    in-out property <color> code-number: #d58a5f;
+    // Panels (a unit's sections, a channel's strip): between the ground and
+    // the controls, the Patch style's Graphite 900 on Ink.
+    out property <color> panel: bg.mix(raised, 0.5);
+    // Corners: panels and controls (the window itself is Hyprland's 10 px).
+    out property <length> r-panel: patch-style ? 6px : 0px;
+    out property <length> r-control: patch-style ? 4px : 0px;
+
+    // Typography
+    in-out property <string> font: "JetBrainsMono Nerd Font";
+    // Titles and track names (Space Grotesk 700).
+    in-out property <string> font-display: "Space Grotesk";
+    // The style guide's type, in every style (docs/patch-style.md):
+    // names and labels (strips, sections, pads, list rows) in JetBrains
+    // Mono 600, every label mono;
+    out property <string> font-ui: font;
+    out property <int> ui-weight: 600;
+    // large readouts (BPM, key) in JetBrains Mono 500, tabular, so a
+    // changing number never jumps;
+    out property <string> font-data: font;
+    out property <int> data-weight: 500;
+    // caps labels tracked +14 % of their size.
+    out property <length> caps-track: Math.round(fs-tiny * 0.14 * 2 / 1px) / 2 * 1px;
+    // The window's style: Classic (the Omarchy layouts and flat controls in
+    // the theme's colours, the default) or Patch (the same layouts with
+    // Patch's panels, controls and corners). Both follow the style guide's
+    // chrome and type. Set per window from Settings · Style.
+    in-out property <bool> patch-style: false;
+    // Pro gear: the club-gear layouts (with the Patch look). Units choose
+    // their layout from this, their look from `patch-style`.
+    in-out property <bool> pro: false;
+    in-out property <length> fs: 13px;
+    out property <length> fs-small: Math.round(fs * 0.82 / 1px) * 1px;
+    out property <length> fs-tiny: Math.round(fs * 0.72 / 1px) * 1px;
+    out property <length> fs-large: Math.round(fs * 1.2 / 1px) * 1px;
+    out property <length> fs-title: Math.round(fs * 1.65 / 1px) * 1px;
+    out property <length> fs-heading: Math.round(fs * 1.1 / 1px) * 1px;
+    // Hero readouts: deck time, LUFS, the recorder clock.
+    out property <length> fs-hero: Math.round(fs * 2.8 / 1px) * 1px;
+
+    // Spacing scale
+    out property <length> s1: 2px;
+    out property <length> s2: 4px;
+    out property <length> s3: 8px;
+    out property <length> s4: 12px;
+    out property <length> s5: 16px;
+    out property <length> s6: 24px;
+
+    // Metrics
+    out property <length> row-h: Math.round(fs * 1.85 / 1px) * 1px;
+    // The Unit header: 48 px (the guide's, on the 8 px grid) at Patch's
+    // 13 px body in the Patch styles; Classic keeps its compact 34 px, which
+    // its layouts are fitted to (a 48 px header pushed a 705 px deck into
+    // scrolling).
+    out property <length> header-h: Math.round(fs * (patch-style ? 3.7 : 2.6) / 1px) * 1px;
+    out property <length> footer-h: Math.round(fs * 2.0 / 1px) * 1px;
+    out property <length> line: 1px;
+
+    // Responsive breakpoints (logical px, applied to the surface's own size)
+    out property <length> narrow-w: 520px;
+    out property <length> tiny-w: 340px;
+    out property <length> wide-w: 1100px;
+    out property <length> short-h: 340px;
+}

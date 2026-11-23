@@ -1,0 +1,17 @@
+[package]
+name = "patch-analysis"
+description = "Track analysis for the DJ Booth: BPM and beat grid, musical key (Camelot), EBU R128 loudness, waveform overview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+libc = "0.2"
+patch-meter.workspace = true
+serde.workspace = true
+serde_json = "1"
+sha2 = "0.10"
+
+[lints]
+workspace = true

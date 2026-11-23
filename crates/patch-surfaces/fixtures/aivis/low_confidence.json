@@ -1,0 +1,137 @@
+{
+ "mode": "suggest",
+ "phase": "comparing",
+ "origin": "demo:low_confidence",
+ "direction": "build",
+ "section": "build",
+ "sources": [
+  {
+   "id": "deck-a",
+   "title": "Losing It",
+   "artist": "Fisher",
+   "playing": true,
+   "presence": 1.0,
+   "beat": 224.0,
+   "bpm": 125.0,
+   "beat_confidence": 0.38,
+   "key": "9A",
+   "energy": 0.72,
+   "energy_ahead": [
+    0.72,
+    0.74,
+    0.78,
+    0.8,
+    0.82,
+    0.85,
+    0.86,
+    0.88
+   ],
+   "position": 107.5,
+   "remaining": 141.2
+  },
+  {
+   "id": "deck-b",
+   "playing": false
+  }
+ ],
+ "candidates": [
+  {
+   "id": "/music/1.mp3",
+   "title": "Tell Me Why",
+   "artist": "Supermode (Mau P Remix)",
+   "bpm": 126.0,
+   "key": "10A",
+   "score": 0.61,
+   "confidence": 0.35,
+   "factors": {
+    "tempo": 0.95,
+    "harmony": 1.0,
+    "energy": 0.8,
+    "phrase": 0.5,
+    "history": 1.0
+   },
+   "reasons": [
+    "+ 9A → 10A, a neighbour on the wheel",
+    "+ 126 BPM, +0.8%",
+    "~ energy +2, builds"
+   ],
+   "energy_delta": 0.08,
+   "key_steps": 1,
+   "selected": true
+  },
+  {
+   "id": "/music/2.mp3",
+   "title": "Push To Start",
+   "artist": "Chris Lake",
+   "bpm": 124.0,
+   "key": "9A",
+   "score": 0.6,
+   "confidence": 0.33,
+   "factors": {
+    "tempo": 0.9,
+    "harmony": 1.0,
+    "energy": 0.5,
+    "phrase": 0.5,
+    "history": 1.0
+   },
+   "reasons": [
+    "+ same key 9A",
+    "+ 124 BPM, −0.8%",
+    "~ energy holds"
+   ],
+   "energy_delta": 0.0,
+   "key_steps": 0
+  },
+  {
+   "id": "/music/3.mp3",
+   "title": "Rumble",
+   "artist": "Skrillex (Club Mix)",
+   "bpm": 128.0,
+   "key": "4A",
+   "score": 0.58,
+   "confidence": 0.3,
+   "factors": {
+    "tempo": 0.72,
+    "harmony": 0.1,
+    "energy": 0.9,
+    "phrase": 0.5,
+    "history": 1.0
+   },
+   "reasons": [
+    "− 9A → 4A, a clash",
+    "~ 128 BPM, +2.4%",
+    "+ energy +5"
+   ],
+   "energy_delta": 0.25,
+   "key_steps": -5
+  }
+ ],
+ "transition": null,
+ "confidence": 0.32,
+ "uncertainty": [
+  "weak beat grid on deck A (0.38)",
+  "close call: top three within 0.03"
+ ],
+ "environment": null,
+ "clock": {
+  "nsec": 1000000000000,
+  "output_latency_ns": 42000000,
+  "latency_level": "reported"
+ },
+ "history": [
+  {
+   "title": "Cola",
+   "style": "blend",
+   "age_s": 184.0
+  },
+  {
+   "title": "Turn Off The Lights",
+   "style": "loopout",
+   "age_s": 452.0
+  }
+ ],
+ "override_age_s": null,
+ "eval_ms": 3.4,
+ "eval_age_s": 1.2,
+ "note": ""
+}

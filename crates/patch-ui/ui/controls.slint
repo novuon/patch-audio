@@ -1,0 +1,835 @@
+import { Theme } from "theme.slint";
+import { KeyCap } from "primitives.slint";
+
+// Button. Padding comes from the layout, never from width arithmetic:
+// 12 px each side (8 px compact), 8 px between key hint and label, and the
+// label is centred on the button's own height, so every button in Patch has
+// identical insets whatever its text.
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <string> key;
+    in property <bool> primary;
+    // A switch that is on (keylock, a loop length, a set cue): outlined in
+    // the accent on a soft fill. `primary` is the solid call to action.
+    in property <bool> lit;
+    in property <bool> enabled: true;
+    in property <bool> compact;
+    callback clicked();
+    height: compact ? Theme.row-h - 4px : Theme.row-h + 2px;
+    horizontal-stretch: 0;
+    border-radius: Theme.r-control;
+    // A chosen option stays visible while the row is unavailable.
+    // In Patch style, selected controls use the same orange accent as the
+    // rest of the interface instead of a high-contrast paper-white fill.
+    background: !enabled ? (lit && Theme.patch-style ? Theme.text-faint : transparent)
+        : primary ? Theme.accent
+        : ta.pressed ? Theme.selection
+        : lit ? (Theme.patch-style ? Theme.accent : Theme.accent-soft)
+        : ta.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    // Selected controls share the accent edge and fill in Patch style.
+    border-color: !enabled ? (lit && Theme.patch-style ? Theme.text-faint : Theme.border) : primary ? Theme.accent.with-alpha(0.7) : lit ? Theme.accent : ta.has-hover ? Theme.text-faint : Theme.border-strong;
+    HorizontalLayout {
+        padding-left: root.compact ? Theme.s3 : Theme.s4;
+        padding-right: root.compact ? Theme.s3 : Theme.s4;
+        spacing: Theme.s3;
+        alignment: center;
+        if root.key != "": Text {
+            text: root.key;
+            color: root.primary && root.enabled ? Theme.accent-ink : root.lit && root.enabled ? (Theme.patch-style ? Theme.accent-ink : Theme.accent) : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-small;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            color: !root.enabled ? (root.lit && Theme.patch-style ? Theme.bg : Theme.text-faint) : root.primary ? Theme.accent-ink : root.lit ? (Theme.patch-style ? Theme.accent-ink : Theme.accent) : Theme.text;
+            font-family: Theme.font;
+            // Small labels, as on hardware: the button's size carries it.
+            font-size: Theme.fs-small;
+            letter-spacing: root.compact ? 0px : 0.5px;
+            font-weight: root.primary || root.lit ? 700 : 400;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Vector icons on a 12-unit grid, drawn (not font glyphs) so they sit on
+// the same optical centre in every font and size.
+//   play · pause · cue · back · fwd · power · load · phones · heart · heart-on
+export component Icon inherits Rectangle {
+    in property <string> name;
+    in property <color> ink: Theme.text;
+    in property <length> size: 12px;
+    width: size;
+    height: size;
+    if root.name == "heart": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 6 11 C 2 8 0.6 6 0.6 3.8 C 0.6 2 2 0.9 3.4 0.9 C 4.5 0.9 5.4 1.5 6 2.5 C 6.6 1.5 7.5 0.9 8.6 0.9 C 10 0.9 11.4 2 11.4 3.8 C 11.4 6 10 8 6 11 Z";
+        stroke: root.ink;
+        stroke-width: 1px;
+    }
+    if root.name == "heart-on": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 6 11 C 2 8 0.6 6 0.6 3.8 C 0.6 2 2 0.9 3.4 0.9 C 4.5 0.9 5.4 1.5 6 2.5 C 6.6 1.5 7.5 0.9 8.6 0.9 C 10 0.9 11.4 2 11.4 3.8 C 11.4 6 10 8 6 11 Z";
+        fill: root.ink;
+    }
+    if root.name == "play": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 2.5 1 L 11 6 L 2.5 11 Z";
+        fill: root.ink;
+    }
+    if root.name == "pause": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 2 1 L 5 1 L 5 11 L 2 11 Z M 7 1 L 10 1 L 10 11 L 7 11 Z";
+        fill: root.ink;
+    }
+    if root.name == "cue": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 1 1 L 3 1 L 3 11 L 1 11 Z M 11 1 L 4.5 6 L 11 11 Z";
+        fill: root.ink;
+    }
+    if root.name == "back": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 6 1 L 0.5 6 L 6 11 Z M 11.5 1 L 6 6 L 11.5 11 Z";
+        fill: root.ink;
+    }
+    if root.name == "fwd": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 0.5 1 L 6 6 L 0.5 11 Z M 6 1 L 11.5 6 L 6 11 Z";
+        fill: root.ink;
+    }
+    if root.name == "power": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 5.25 0.5 L 6.75 0.5 L 6.75 6 L 5.25 6 Z M 3.2 2.3 A 4.6 4.6 0 1 0 8.8 2.3 L 8 3.5 A 3.2 3.2 0 1 1 4 3.5 Z";
+        fill: root.ink;
+    }
+    // Headphones: the band (stroked) and two cups.
+    if root.name == "phones": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 1.75 8 L 1.75 6.5 A 4.25 4.25 0 0 1 10.25 6.5 L 10.25 8";
+        stroke: root.ink;
+        stroke-width: root.size / 9;
+    }
+    if root.name == "phones": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 0.75 7 L 3.75 7 L 3.75 11.25 L 0.75 11.25 Z M 8.25 7 L 11.25 7 L 11.25 11.25 L 8.25 11.25 Z";
+        fill: root.ink;
+    }
+    if root.name == "load": Path {
+        width: root.size; height: root.size;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M 5.25 0.5 L 6.75 0.5 L 6.75 6 L 9 6 L 6 9.5 L 3 6 L 5.25 6 Z M 1 10 L 11 10 L 11 11.5 L 1 11.5 Z";
+        fill: root.ink;
+    }
+}
+
+// Transport pad: a hardware-style square pad that fills its cell. Icon and
+// label sit on a shared centre line at a fixed 12 px inset; the key hint is
+// a KeyCap docked to the right edge at the same inset. The active pad is lit
+// (accent fill and a 2 px accent sill along the bottom, like an LED strip).
+export component Pad inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <string> key;
+    in property <bool> active;
+    in property <bool> enabled: true;
+    in property <bool> show-label: true;
+    callback clicked();
+    // Hold-to-act pads (a CDJ cue): pressed and released (or cancelled).
+    callback down();
+    callback up();
+    height: Theme.row-h * 2;
+    min-width: Theme.row-h * 2;
+    // Width comes only from stretch, so pads in a row are exactly equal
+    // (or exact multiples), never sized by their labels.
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    border-radius: Theme.r-control;
+    property <color> ink: !enabled ? Theme.text-faint : active ? Theme.accent-ink : ta.has-hover ? Theme.text-bright : Theme.text;
+    background: !enabled ? transparent
+        : active ? (ta.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+        : ta.pressed ? Theme.selection
+        : ta.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: !enabled ? Theme.border : active ? Theme.accent : ta.has-hover ? Theme.text-faint : Theme.patch-style ? Theme.raised : Theme.border-strong;
+    HorizontalLayout {
+        padding-left: Theme.s4;
+        padding-right: Theme.s4;
+        spacing: Theme.s3;
+        alignment: root.show-label ? stretch : center;
+        if root.icon != "": VerticalLayout { alignment: center; Icon { name: root.icon; ink: root.ink; } }
+        if root.show-label: Text {
+            text: root.text;
+            color: root.ink;
+            font-family: Theme.font-ui;
+            font-size: Theme.fs;
+            font-weight: Theme.ui-weight;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        if root.show-label && root.key != "": VerticalLayout {
+            alignment: center;
+            KeyCap { key: root.key; active: root.active; }
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) { root.down(); }
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) { root.up(); }
+            if (e.kind == PointerEventKind.cancel) { root.up(); }
+        }
+    }
+}
+
+// Compact square-cornered switch.
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    width: 24px;
+    height: 12px;
+    border-width: 1px;
+    border-color: checked ? Theme.accent.with-alpha(0.8) : Theme.border-strong;
+    background: checked ? Theme.accent-soft : transparent;
+    Rectangle {
+        width: 8px;
+        height: 6px;
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        y: 3px;
+        background: root.checked ? Theme.accent : Theme.text-faint;
+        animate x { duration: 90ms; easing: ease-out; }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+// Horizontal value slider, 0..1 with a bipolar option (center detent).
+export component Slider inherits Rectangle {
+    // The model's value, never written here (see Fader): a drag shows
+    // `held`.
+    in property <float> value: 0.5;
+    property <float> held;
+    property <float> shown: ta.pressed ? root.held : root.value;
+    in property <bool> bipolar;
+    in property <bool> enabled: true;
+    in property <bool> reset-on-double-click: false;
+    in property <float> reset-value: 0.5;
+    callback changed(float);
+    height: 14px;
+    min-width: 60px;
+    track := Rectangle {
+        y: (parent.height - 2px) / 2;
+        height: 2px;
+        background: Theme.border-strong;
+    }
+    // fill
+    Rectangle {
+        y: track.y;
+        height: 2px;
+        x: root.bipolar ? min(root.shown, 0.5) * root.width : 0px;
+        width: root.bipolar ? abs(root.shown - 0.5) * root.width : root.shown * root.width;
+        background: ta.pressed ? Theme.accent : Theme.text-dim;
+    }
+    if root.bipolar: Rectangle {
+        x: root.width / 2;
+        y: track.y - 3px;
+        width: 1px;
+        height: 8px;
+        background: Theme.text-faint;
+    }
+    // knob
+    Rectangle {
+        x: clamp(root.shown * root.width - 3px, 0px, root.width - 6px);
+        y: (parent.height - 12px) / 2;
+        width: 6px;
+        height: 12px;
+        background: ta.pressed || ta.has-hover ? Theme.accent : Theme.text;
+    }
+    ta := TouchArea {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        enabled: root.enabled;
+        mouse-cursor: ew-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.held = clamp(self.mouse-x / root.width, 0, 1);
+                root.changed(root.held);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.held = clamp(self.mouse-x / root.width, 0, 1);
+                root.changed(root.held);
+            }
+        }
+        double-clicked => {
+            if (root.reset-on-double-click) {
+                root.changed(root.reset-value);
+            }
+        }
+    }
+}
+
+// Level meter, identical everywhere in Patch. Positions are 0..1 on the
+// caller's meter law (Patch: linear in dB, −60 … 0 dBFS; DJ channels:
+// −24 … +6 dBFS).
+//
+//   peak level (IEC 60268-18)   full width, dim; hot part in accent
+//   average level (VU)          full width, bright, over the peak
+//   peak hold                   one 1 px line (holds 1.5 s, then falls)
+//   clip lamp                   accent cap at the end, while `clipping` is set
+//
+export enum MeterKind { Performance, System }
+
+// A filled piece of one meter's colour band.
+component MeterRegion inherits Rectangle {
+    in property <bool> vertical: true;
+    in property <float> level;
+    in property <float> from;
+    in property <float> to;
+    in property <length> span;
+    in property <length> full-width;
+    in property <length> full-height;
+    in property <length> lamp;
+    in property <color> tint;
+    property <float> edge: min(root.level, root.to);
+    property <length> extent: max(0px, (self.edge - root.from) * root.span);
+    x: root.vertical ? 0px : root.from * root.span;
+    y: root.vertical ? root.full-height - root.lamp - self.edge * root.span : 0px;
+    width: root.vertical ? root.full-width : self.extent;
+    height: root.vertical ? self.extent : root.full-height - root.lamp;
+    background: root.tint;
+}
+
+// No animation and no elements that come and go: the ballistics are
+// stepped at the display rate in Rust, and every part is always present
+// (zero-sized when empty), so edges move smoothly and nothing blinks.
+// Edges snap to whole pixels so they don't shimmer between two.
+// How meters are styled, the user's choice (the app saves it): Classic,
+// Patch's own two-tone body with the accent above a hot threshold; Banded,
+// colour bands per meter kind; LED, a ladder of lit segments in green,
+// amber and red like a hi-fi amplifier's (Yamaha M-2). Scales and levels
+// are the same in all three.
+export global MeterStyle {
+    in-out property <bool> banded: false;
+    in-out property <bool> led: false;
+    // Patch style: Classic's shapes in the Patch style's Meter green, Amber from −6 dB,
+    // the signal red only on the clip lamp.
+    in-out property <bool> patch-style: false;
+    // The LED palette, shared by every LED ladder.
+    out property <color> led-green: #35d45a;
+    out property <color> led-amber: #ffb627;
+    out property <color> led-red: #ff3b30;
+    callback toggle();
+    // Classic ladder, rendered once in Rust at the meter's physical size:
+    // (width, height, segments, pitch and gap in physical pixels, where the
+    // hot zone starts, body colour, hot colour) → the segments on
+    // transparent. Cached; a meter only clips it to its level each frame.
+    pure callback ladder(int, int, int, int, int, float, color, color) -> image;
+}
+
+export component Meter inherits Rectangle {
+    in property <float> value;
+    in property <float> peak: -1;
+    in property <float> avg: -1;
+    in property <bool> clipping;
+    in property <bool> vertical: true;
+    in property <bool> muted;
+    in property <MeterKind> kind: MeterKind.System;
+    /// Classic style: where the accent starts (0…1 along the meter; on
+    /// the System scale 0.9 is −1 dBFS). Patch style: where Amber starts, −6 dB
+    /// on either scale (0.68 System, 0.6 Performance).
+    in property <float> hot: MeterStyle.patch-style ? (root.kind == MeterKind.Performance ? 0.6 : 0.68) : 0.9;
+    /// Classic style, vertical: a ladder of segments rather than one bar.
+    in property <bool> segmented: true;
+    property <bool> ladder: !MeterStyle.banded && !MeterStyle.led && root.segmented && root.vertical && root.span >= 60px;
+    background: root.ladder ? transparent : Theme.bg-deeper;
+    property <length> lamp: 3px;
+    property <length> span: vertical ? root.height - lamp - 1px : root.width - lamp - 1px;
+    // Lengths along the meter, whole pixels.
+    property <length> p-len: floor(root.span * clamp(root.peak, 0, 1) / 1px) * 1px;
+    property <length> v-len: floor(root.span * clamp(root.value, 0, 1) / 1px) * 1px;
+    property <length> a-len: root.avg >= 0 ? floor(root.span * clamp(root.avg, 0, 1) / 1px) * 1px : 0px;
+    property <length> hot-len: floor(root.span * clamp(root.hot, 0, 1) / 1px) * 1px;
+    property <float> b1: root.kind == MeterKind.Performance ? 0.4 : 0.44;
+    property <float> b2: root.kind == MeterKind.Performance ? 0.7 : 0.68;
+    property <float> b3: root.kind == MeterKind.Performance ? 0.8 : 0.80;
+    property <float> b4: root.kind == MeterKind.Performance ? 0.9 : 1.0;
+    property <float> level-p: clamp(root.value, 0, 1);
+    property <float> avg-p: clamp(root.avg, 0, 1);
+    // Classic: one quiet body up to the hot threshold, the accent above it,
+    // the measured VU over it in brighter tones.
+    if !MeterStyle.banded && !MeterStyle.led && !root.ladder: Rectangle {
+        x: 0px;
+        y: root.vertical ? root.height - min(root.v-len, root.hot-len) : 0px;
+        width: root.vertical ? root.width : min(root.v-len, root.hot-len);
+        height: root.vertical ? min(root.v-len, root.hot-len) : root.height;
+        background: root.muted ? Theme.border : MeterStyle.patch-style ? Theme.level.with-alpha(0.7) : Theme.text-faint;
+    }
+    if !MeterStyle.banded && !MeterStyle.led && !root.ladder: Rectangle {
+        x: root.vertical ? 0px : root.hot-len;
+        y: root.vertical ? root.height - max(root.v-len, root.hot-len) : 0px;
+        width: root.vertical ? root.width : max(root.v-len - root.hot-len, 0px);
+        height: root.vertical ? max(root.v-len - root.hot-len, 0px) : root.height;
+        background: root.muted ? Theme.border : MeterStyle.patch-style ? Theme.level-warn.with-alpha(0.7) : Theme.accent.with-alpha(0.55);
+    }
+    if !MeterStyle.banded && !MeterStyle.led && !root.ladder: Rectangle {
+        x: 0px;
+        y: root.vertical ? root.height - min(root.a-len, root.hot-len) : 0px;
+        width: root.vertical ? root.width : min(root.a-len, root.hot-len);
+        height: root.vertical ? min(root.a-len, root.hot-len) : root.height;
+        background: root.muted ? Theme.border-strong : MeterStyle.patch-style ? Theme.level : Theme.text;
+    }
+    if !MeterStyle.banded && !MeterStyle.led && !root.ladder: Rectangle {
+        x: root.vertical ? 0px : root.hot-len;
+        y: root.vertical ? root.height - max(root.a-len, root.hot-len) : 0px;
+        width: root.vertical ? root.width : max(root.a-len - root.hot-len, 0px);
+        height: root.vertical ? max(root.a-len - root.hot-len, 0px) : root.height;
+        background: root.muted ? Theme.border-strong : MeterStyle.patch-style ? Theme.level-warn : Theme.accent;
+    }
+    // Classic ladder: segments on whole physical pixels with a 2 px gap; the
+    // body quiet, the measured VU brighter, the accent above the hot point
+    // and the held peak as one bright segment. Unlit segments show faintly.
+    //
+    // Drawn as three images Rust renders once per size and colour (unlit,
+    // lit, VU), each clipped to its level: a few items per meter. One
+    // rectangle per segment, each re-coloured every frame, cost the UI
+    // thread 76 % of a core against 26 % for Banded across the live-dj
+    // windows, and the governor then halved every meter's frame rate.
+    if root.ladder: lad := Rectangle {
+        property <length> gap: Math.max(1, Math.round(2px / 1phx)) * 1phx;
+        property <int> n: Math.max(6, Math.floor(root.span / 12px));
+        property <length> pitch: Math.floor(root.span / self.n / 1phx) * 1phx;
+        property <int> peak-i: root.peak <= 0.02 ? -1 : Math.min(self.n - 1, Math.floor(root.peak * self.n));
+        // Segment i is lit while its middle, (i + 0.5) / n, is at or under the level.
+        property <int> lit-n: Math.max(0, Math.min(self.n, Math.floor(root.level-p * self.n + 0.5)));
+        property <int> vu-n: root.avg < 0 || root.muted ? 0 : Math.max(0, Math.min(self.n, Math.floor(root.avg-p * self.n + 0.5)));
+        property <int> wp: Math.max(1, Math.round(root.width / 1phx));
+        property <int> hp: Math.max(1, Math.round(root.height / 1phx));
+        property <int> pp: Math.round(self.pitch / 1phx);
+        property <int> gp: Math.round(self.gap / 1phx);
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        Image {
+            width: root.width;
+            height: root.height;
+            image-fit: fill;
+            image-rendering: pixelated;
+            source: MeterStyle.ladder(lad.wp, lad.hp, lad.n, lad.pp, lad.gp, root.hot, root.muted || !MeterStyle.patch-style ? Theme.raised : Theme.level.with-alpha(0.07), root.muted ? Theme.raised : MeterStyle.patch-style ? Theme.level-warn.with-alpha(0.07) : Theme.accent.with-alpha(0.12));
+        }
+        Rectangle {
+            y: root.height - lad.lit-n * lad.pitch;
+            width: root.width;
+            height: lad.lit-n * lad.pitch;
+            clip: true;
+            Image {
+                y: -parent.y;
+                width: root.width;
+                height: root.height;
+                image-fit: fill;
+                image-rendering: pixelated;
+                source: MeterStyle.ladder(lad.wp, lad.hp, lad.n, lad.pp, lad.gp, root.hot, root.muted ? Theme.border-strong : MeterStyle.patch-style ? Theme.level.with-alpha(0.7) : Theme.text-faint, root.muted ? Theme.border-strong : MeterStyle.patch-style ? Theme.level-warn.with-alpha(0.75) : Theme.accent.with-alpha(0.7));
+            }
+        }
+        Rectangle {
+            y: root.height - lad.vu-n * lad.pitch;
+            width: root.width;
+            height: lad.vu-n * lad.pitch;
+            clip: true;
+            Image {
+                y: -parent.y;
+                width: root.width;
+                height: root.height;
+                image-fit: fill;
+                image-rendering: pixelated;
+                source: MeterStyle.ladder(lad.wp, lad.hp, lad.n, lad.pp, lad.gp, root.hot, MeterStyle.patch-style ? Theme.level : Theme.text-dim, MeterStyle.patch-style ? Theme.level-warn : Theme.accent);
+            }
+        }
+        if self.peak-i >= 0 && !root.muted: Rectangle {
+            y: root.height - (parent.peak-i + 1) * parent.pitch;
+            width: root.width;
+            height: parent.pitch - parent.gap;
+            background: Theme.text-bright;
+        }
+    }
+    // LED: a ladder of segments on whole pixels (5 px lit, 5 px dark), lit
+    // up to the level;
+    // the Banded zones: green to the warm zone, amber above it (0 VU is a
+    // loud master's normal level, not a fault), red only in Banded's red
+    // zone. Unlit segments show
+    // faintly, as on the real thing.
+    //
+    // 5 px on a 10 px pitch is 8 and 16 device pixels at a 1.6 display scale,
+    // which is what makes the ladder even. At 3 px on a 6 px pitch (4.8 and
+    // 9.6 device pixels) the sub-pixel phase walks 0.6 per segment, so one
+    // segment in five covered four rows instead of five and the edges ate into
+    // the neighbouring gaps: the blocks looked like they had different heights
+    // although every one of them is the same length. Measured, not assumed.
+    if MeterStyle.led: Rectangle {
+        property <length> pitch: 10px;
+        property <int> n: Math.max(2, Math.floor(root.span / self.pitch));
+        property <float> amber: root.b2;
+        property <float> red: root.kind == MeterKind.Performance ? root.b4 : 0.95;
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        for i in self.n: Rectangle {
+            property <float> p: (i + 0.5) / parent.n;
+            property <bool> on: self.p <= root.level-p;
+            property <color> c: self.p >= parent.red ? MeterStyle.led-red : self.p >= parent.amber ? MeterStyle.led-amber : MeterStyle.led-green;
+            x: root.vertical ? 0px : i * parent.pitch;
+            y: root.vertical ? root.height - root.lamp - (i + 1) * parent.pitch : 0px;
+            width: root.vertical ? root.width : 5px;
+            height: root.vertical ? 5px : root.height;
+            background: root.muted ? (self.on ? Theme.border-strong : Theme.raised) : (self.on ? self.c : self.c.with-alpha(0.13));
+        }
+    }
+    // Banded: five colour bands per meter kind.
+    if MeterStyle.banded: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        MeterRegion { vertical: root.vertical; level: root.level-p; from: 0; to: root.b1; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border : Theme.text-faint; }
+        MeterRegion { vertical: root.vertical; level: root.level-p; from: root.b1; to: root.b2; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border : Theme.text-dim; }
+        MeterRegion { vertical: root.vertical; level: root.level-p; from: root.b2; to: root.b3; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border : (root.kind == MeterKind.Performance ? Theme.text : Theme.warn); }
+        MeterRegion { vertical: root.vertical; level: root.level-p; from: root.b3; to: root.b4; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border : (root.kind == MeterKind.Performance ? Theme.warn : Theme.error); }
+        MeterRegion { vertical: root.vertical; level: root.level-p; from: root.b4; to: 1; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border : Theme.error; }
+        // Measured VU overlays the peak body in brighter versions of each band.
+        MeterRegion { vertical: root.vertical; level: root.avg-p; from: 0; to: root.b1; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border-strong : Theme.text; }
+        MeterRegion { vertical: root.vertical; level: root.avg-p; from: root.b1; to: root.b2; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border-strong : Theme.text-bright; }
+        MeterRegion { vertical: root.vertical; level: root.avg-p; from: root.b2; to: root.b3; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border-strong : (root.kind == MeterKind.Performance ? Theme.text-bright : Theme.warn); }
+        MeterRegion { vertical: root.vertical; level: root.avg-p; from: root.b3; to: root.b4; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border-strong : (root.kind == MeterKind.Performance ? Theme.warn : Theme.error); }
+        MeterRegion { vertical: root.vertical; level: root.avg-p; from: root.b4; to: 1; span: root.span; full-width: root.width; full-height: root.height; lamp: root.lamp; tint: root.muted ? Theme.border-strong : Theme.error; }
+        // The nominal 0 dB line on performance meters is a reference, not a clip.
+        Rectangle {
+            visible: MeterStyle.banded && root.kind == MeterKind.Performance;
+            x: root.vertical ? 0px : 0.8 * root.span;
+            y: root.vertical ? root.height - root.lamp - 0.8 * root.span : 0px;
+            width: root.vertical ? root.width : 1px;
+            height: root.vertical ? 1px : root.height - root.lamp;
+            background: Theme.text-bright.with-alpha(0.75);
+        }
+    }
+    // Peak hold: one line (the ladder holds a whole segment instead).
+    if !root.ladder: Rectangle {
+        x: root.vertical ? 0px : max(root.p-len - 1px, 0px);
+        y: root.vertical ? root.height - max(root.p-len, 1px) : 0px;
+        width: root.vertical ? root.width : 1px;
+        height: root.vertical ? 1px : root.height;
+        background: root.peak > 0.001 ? Theme.text-bright : transparent;
+    }
+    // Clip lamp
+    if !root.ladder || root.clipping: Rectangle {
+        x: root.vertical ? 0px : root.width - root.lamp;
+        y: 0px;
+        width: root.vertical ? root.width : root.lamp;
+        height: root.vertical ? root.lamp : root.height;
+        background: root.clipping ? (MeterStyle.led ? MeterStyle.led-red : MeterStyle.banded ? Theme.error : Theme.accent) : Theme.border;
+    }
+}
+
+// Canonical meter labels. System spacing is nonlinear to give the -12…0
+// dBFS warning range more visual resolution.
+export component MeterScale inherits Rectangle {
+    in property <MeterKind> kind: MeterKind.System;
+    // A short fader bay keeps the marks that still read: the top, the
+    // warning range, and (on a system meter) the floor.
+    property <bool> short: root.height < 180px;
+    // −48 sits 6 % of the bay above the floor: only once that is a label's
+    // height (300 px) does it get its own line instead of overlapping −60.
+    property <[float]> marks: root.short
+        ? (root.kind == MeterKind.Performance ? [0, -6, -12, -24] : [0, -6, -12, -24, -60])
+        : (root.kind == MeterKind.Performance ? [6, 3, 0, -3, -6, -9, -12, -18, -24]
+            : root.height < 300px ? [0, -1, -3, -6, -12, -18, -24, -36, -60] : [0, -1, -3, -6, -12, -18, -24, -36, -48, -60]);
+    width: 22px;
+    property <length> lamp: 4px;
+    property <length> span: root.height - lamp;
+    function position-for-db(db: float) -> float {
+        if root.kind == MeterKind.Performance { clamp((db + 24) / 30, 0, 1) }
+        else if db <= -60 { 0 }
+        else if db <= -48 { 0.06 * (db + 60) / 12 }
+        else if db <= -36 { 0.06 + 0.08 * (db + 48) / 12 }
+        else if db <= -24 { 0.14 + 0.10 * (db + 36) / 12 }
+        else if db <= -18 { 0.24 + 0.09 * (db + 24) / 6 }
+        else if db <= -12 { 0.33 + 0.11 * (db + 18) / 6 }
+        else if db <= -6 { 0.44 + 0.24 * (db + 12) / 6 }
+        else if db <= -3 { 0.68 + 0.12 * (db + 6) / 3 }
+        else if db <= -1 { 0.80 + 0.10 * (db + 3) / 2 }
+        else { clamp(0.90 + 0.10 * (db + 1), 0, 1) }
+    }
+    for mark in root.marks: Text {
+        // Keep the end marks inside the bay. Centring them on the edge
+        // clips the top of 0 and the bottom of the floor.
+        y: Math.max(0px, Math.min(root.height - self.height, root.lamp + root.span * (1 - root.position-for-db(mark)) - self.height / 2));
+        x: 0px;
+        width: root.width - 3px;
+        horizontal-alignment: right;
+        text: mark > 0 ? "+" + mark : "" + mark;
+        color: mark == 0 ? (root.kind == MeterKind.Performance ? Theme.text-bright : Theme.error) : mark == (root.kind == MeterKind.Performance ? -3 : -6) ? Theme.warn : Theme.text-faint;
+        font-family: Theme.font;
+        font-size: Theme.fs-tiny;
+    }
+}
+
+// Vertical fader, a console's long-throw: a recessed groove, unity marked
+// on both sides, a cap with a centre line. value 0..1 maps to the strip's
+// gain curve (done in Rust). Drag, the wheel (fine), or double-click for
+// unity.
+export component Fader inherits Rectangle {
+    // The gain as the model has it. Never written here: assigning it
+    // dropped the window's binding, and a fader once moved by hand stopped
+    // following every other change of that gain (the Crossfader's Booth
+    // Out knob, AI fades, MIDI) — 2026-11-12. A drag shows `held` until
+    // release; the model has it by then.
+    in property <float> value: 0.75;
+    property <float> held;
+    property <float> shown: ta.pressed ? root.held : root.value;
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    callback changed(float);
+    min-width: 14px;
+    min-height: 40px;
+    property <length> cap-h: Math.min(22px, Math.max(14px, root.width * 0.8));
+    property <length> travel: root.height - root.cap-h;
+    // The fader's own 100 %: 0.909 on the mixer's −60…+6 dB curve, the top
+    // on a sink-volume strip's percentage scale (see app.rs).
+    in property <float> unity: 0.909;
+    // groove
+    Rectangle {
+        x: (parent.width - 4px) / 2;
+        width: 4px;
+        y: root.cap-h / 2;
+        height: root.travel;
+        border-radius: 2px;
+        background: Theme.bg-deeper;
+        border-width: 1px;
+        border-color: Theme.border;
+    }
+    // Unity is a gain setting, independent of the adjacent signal meter's
+    // dBFS scale. The mixer prints the fader's own scale beside its rail.
+    Rectangle { x: 0px; width: (parent.width - 8px) / 2; height: 1px; y: root.cap-h / 2 + root.travel * (1 - root.unity); background: Theme.patch-style ? Theme.text-dim : Theme.accent; }
+    Rectangle { x: (parent.width + 8px) / 2; width: (parent.width - 8px) / 2; height: 1px; y: root.cap-h / 2 + root.travel * (1 - root.unity); background: Theme.patch-style ? Theme.text-dim : Theme.accent; }
+    // cap
+    Rectangle {
+        x: 0px;
+        width: parent.width;
+        height: root.cap-h;
+        y: root.travel * (1 - clamp(root.shown, 0, 1));
+        animate y { duration: ta.pressed ? 24ms : 80ms; easing: ease-out; }
+        border-radius: 2px;
+        // Patch style: a solid Paper cap with a dark centre line. Classic: a
+        // Graphite cap with grip lines.
+        background: Theme.patch-style ? (ta.pressed ? Theme.accent : ta.has-hover || root.selected ? Theme.text-bright : Theme.text) : (ta.pressed ? Theme.selection : Theme.raised);
+        border-width: Theme.patch-style ? 0px : 1px;
+        border-color: ta.pressed || root.selected ? Theme.accent : ta.has-hover ? Theme.text-faint : Theme.border-strong;
+        if Theme.patch-style: Rectangle { x: 2px; width: parent.width - 4px; height: 2px; y: (parent.height - 2px) / 2; background: Theme.bg-deeper; }
+        if !Theme.patch-style: Rectangle { x: 3px; width: parent.width - 6px; height: 1px; y: parent.height * 0.28; background: Theme.border-strong; }
+        if !Theme.patch-style: Rectangle { x: 2px; width: parent.width - 4px; height: 2px; y: (parent.height - 2px) / 2; background: root.selected || ta.pressed ? Theme.accent : Theme.text-bright; }
+        if !Theme.patch-style: Rectangle { x: 3px; width: parent.width - 6px; height: 1px; y: parent.height * 0.72; background: Theme.border-strong; }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: ns-resize;
+        property <float> start-value;
+        property <length> start-y;
+        property <float> sensitivity: 0.75;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                self.start-value = root.value;
+                root.held = root.value;
+                self.start-y = self.mouse-y;
+                self.sensitivity = e.modifiers.shift ? 0.25 : 0.75;
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.held = clamp(self.start-value - (self.mouse-y - self.start-y) / root.travel * self.sensitivity, 0, 1);
+                root.changed(root.held);
+            }
+        }
+        scroll-event(e) => {
+            if (e.modifiers.control || e.delta-y == 0) { return reject; }
+            root.changed(clamp(root.value + (e.delta-y > 0 ? 0.01 : -0.01), 0, 1));
+            return accept;
+        }
+        double-clicked => {
+            if (root.enabled) {
+                root.changed(root.unity);
+            }
+        }
+    }
+}
+
+// Flat tabs: text with an accent underline on the current one.
+export component Tabs inherits Rectangle {
+    in property <[string]> labels;
+    in-out property <int> current;
+    callback selected(int);
+    height: Theme.row-h;
+    HorizontalLayout {
+        alignment: start;
+        spacing: 0px;
+        for label[i] in root.labels: Rectangle {
+            width: t.preferred-width + 20px;
+            background: ta.has-hover && i != root.current ? Theme.hover : transparent;
+            t := Text {
+                text: label;
+                color: i == root.current ? Theme.text-bright : Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-small;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+            Rectangle {
+                y: parent.height - 2px;
+                height: 2px;
+                background: i == root.current ? Theme.accent : transparent;
+            }
+            ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current = i;
+                    root.selected(i);
+                }
+            }
+        }
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+// "/ filter" line. Activated with `/`, dismissed with Esc.
+export component SearchField inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder: "filter";
+    in property <string> prompt: "/";
+    out property <bool> editing: input.has-focus;
+    // A form field that can't change now (its value still shows).
+    in property <bool> read-only;
+    callback edited(string);
+    callback accepted();
+    callback cancelled();
+    callback navigate(int);
+    height: Theme.row-h + 4px;
+    background: Theme.bg-deep;
+    public function start-edit() { input.focus(); }
+    HorizontalLayout {
+        padding-left: Theme.s4;
+        padding-right: Theme.s4;
+        spacing: Theme.s3;
+        // A form field passes no prompt: then no gap either.
+        if root.prompt != "": Text {
+            horizontal-stretch: 0;
+            text: root.prompt;
+            color: input.has-focus ? Theme.accent : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            // Children with explicit sizes would otherwise cap this cell.
+            horizontal-stretch: 1;
+            max-width: 100000px;
+            input := TextInput {
+                width: 100%;
+                height: 100%;
+                color: Theme.text-bright;
+                font-family: Theme.font;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+                selection-background-color: Theme.selection;
+                selection-foreground-color: Theme.text-bright;
+                single-line: true;
+                read-only: root.read-only;
+                edited => { root.edited(self.text); }
+                accepted => { root.accepted(); }
+                key-pressed(e) => {
+                    if (e.text == Key.Escape) { root.cancelled(); return accept; }
+                    if (e.text == Key.DownArrow) { root.navigate(1); return accept; }
+                    if (e.text == Key.UpArrow) { root.navigate(-1); return accept; }
+                    return reject;
+                }
+            }
+            if input.text == "": Text {
+                x: 0px;
+                width: parent.width;
+                horizontal-alignment: left;
+                text: root.placeholder;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+                height: 100%;
+            }
+        }
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: input.has-focus ? Theme.accent.with-alpha(0.5) : Theme.border;
+    }
+}
+
+// Bar sparkline for histories and spectra. `capped` draws a quiet body with
+// a thin brighter top edge, which stays calm at large sizes.
+export component Bars inherits Rectangle {
+    in property <[float]> values;
+    in property <length> gap: 1px;
+    in property <bool> accent-last;
+    in property <bool> capped;
+    // Spectrum look: every bar runs from the accent at its top into the
+    // quiet body, so the loud bands carry the colour.
+    in property <bool> heat;
+    property <length> bw: root.values.length > 0 ? (root.width - root.gap * (root.values.length - 1)) / root.values.length : 0px;
+    for v[i] in root.values: Rectangle {
+        x: i * (root.bw + root.gap);
+        width: max(root.bw, 1px);
+        height: max(clamp(v, 0, 1) * root.height, 1px);
+        y: root.height - self.height;
+        background: root.accent-last && i == root.values.length - 1 ? Theme.accent
+            // Into the panel at the floor: no dark grey pooling there.
+            : root.heat && MeterStyle.patch-style ? @linear-gradient(180deg, Theme.level 0%, Theme.level.with-alpha(0.1) 100%)
+            : root.heat ? @linear-gradient(180deg, Theme.accent 0%, Theme.text-faint.with-alpha(0.12) 100%)
+            : Theme.text-faint;
+        if root.capped && !root.heat: Rectangle {
+            y: 0px;
+            height: 2px;
+            background: root.accent-last && i == root.values.length - 1 ? Theme.accent : Theme.text-dim;
+        }
+    }
+}

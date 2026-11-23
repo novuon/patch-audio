@@ -1,0 +1,12 @@
+// Aurora Cathedral — slow, luminous nebula fields with a deliberate
+// 32-bar arc: establish, bloom, hold, then dissolve. Visuals only.
+// Try with Visualiser in generative mode (m), fullscreen (f), and a deck
+// playing. Follow the lead deck so the score stays on phrase boundaries.
+cycle 4
+scene("<nebula nebula cells nebula prism nebula cells nebula>/8")
+visual.intensity("<0.26 0.34 0.48 0.62 0.78 0.92 0.72 0.38>/8")
+visual.motion("<0.18 0.24 0.38 0.54 0.72 0.86 0.58 0.22>/8")
+visual.density("<0.28 0.36 0.48 0.62 0.76 0.88 0.62 0.32>/8")
+visual.feedback("<0.12 0.22 0.36 0.48 0.64 0.78 0.52 0.18>/8")
+visual.symmetry("<0.18 0.24 0.34 0.48 0.66 0.82 0.54 0.22>/8")
+visual.hue(saw.slow(32).segment(4))

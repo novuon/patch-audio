@@ -1,0 +1,166 @@
+import { Theme, Label, MockBadge, Tag, SectionHeading, Scroll, ListRow, Host, HLine } from "@patch-ui/patch-ui.slint";
+import { AudioState, DeviceItem, PortGroupItem } from "state.slint";
+
+// Port chips laid out in a wrapping grid (scales to 64+ channels).
+component PortGrid inherits Rectangle {
+    in property <PortGroupItem> group;
+    property <length> chip-w: 26px;
+    property <length> chip-h: 18px;
+    property <length> gap: 3px;
+    property <int> per-row: Math.max(1, Math.floor((self.width + gap) / (chip-w + gap)));
+    property <int> rows: Math.ceil(group.count / per-row);
+    height: label.preferred-height + 4px + rows * (chip-h + gap);
+    label := Label {
+        y: 0px;
+        x: 0px;
+        text: root.group.name + " · " + root.group.count;
+        tone: "dim";
+        small: true;
+    }
+    for p[i] in root.group.ports: Rectangle {
+        x: Math.mod(i, root.per-row) * (root.chip-w + root.gap);
+        y: label.preferred-height + 4px + Math.floor(i / root.per-row) * (root.chip-h + root.gap);
+        width: root.chip-w;
+        height: root.chip-h;
+        border-width: 1px;
+        border-color: p.used ? Theme.text-faint : Theme.border;
+        background: p.used ? Theme.raised : transparent;
+        Text {
+            text: p.short;
+            color: p.used ? Theme.text : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component PortColumn inherits VerticalLayout {
+    in property <string> title;
+    in property <[PortGroupItem]> groups;
+    spacing: Theme.s3;
+    Label {
+        text: root.title;
+        tone: "faint";
+        small: true;
+        caps: true;
+        font-weight: 700;
+    }
+    for g in root.groups: PortGrid { group: g; }
+}
+
+component DeviceBlock inherits VerticalLayout {
+    in property <DeviceItem> d;
+    in property <length> avail;
+    property <bool> narrow: avail < 560px;
+    property <bool> two-col: avail >= 760px;
+    ListRow {
+        selected: root.d.selected;
+        row-height: Theme.row-h + 8px;
+        clicked => { AudioState.toggle-device(root.d.id); }
+        Label {
+            text: root.d.expanded ? "▾" : "▸";
+            tone: "faint";
+            width: 10px;
+        }
+        Label {
+            text: root.d.name;
+            tone: root.d.selected ? "bright" : "normal";
+            font-weight: 600;
+            horizontal-stretch: 0;
+        }
+        if root.d.mock: VerticalLayout {
+            alignment: center;
+            MockBadge { text: root.narrow ? "MOCK" : "MOCK DEVICE"; }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Label {
+            text: root.d.ins + " in / " + root.d.outs + " out";
+            tone: "normal";
+            small: true;
+            horizontal-stretch: 0;
+        }
+        if !root.narrow: Label {
+            text: root.d.rate;
+            tone: "dim";
+            small: true;
+            horizontal-stretch: 0;
+            width: 56px;
+            horizontal-alignment: right;
+        }
+    }
+    if root.d.expanded: VerticalLayout {
+        padding-left: Theme.s5 + Theme.s2;
+        padding-right: Theme.s4;
+        padding-bottom: Theme.s4;
+        spacing: Theme.s3;
+        HorizontalLayout {
+            spacing: Theme.s4;
+            height: Theme.row-h - 4px;
+            Label { text: "clock"; tone: "faint"; small: true; horizontal-stretch: 0; }
+            Label { text: root.d.clock; tone: root.d.clock-master ? "normal" : "dim"; small: true; horizontal-stretch: 0; }
+            if !root.narrow: Label { text: "bus"; tone: "faint"; small: true; horizontal-stretch: 0; }
+            if !root.narrow: Label { text: root.d.bus; tone: "dim"; small: true; horizontal-stretch: 0; }
+            if root.narrow: Label { text: root.d.rate; tone: "dim"; small: true; horizontal-stretch: 0; }
+            Rectangle { }
+        }
+        if root.two-col: HorizontalLayout {
+            spacing: Theme.s6;
+            PortColumn { title: "Inputs"; groups: root.d.inputs; }
+            PortColumn { title: "Outputs"; groups: root.d.outputs; }
+        }
+        if !root.two-col: PortColumn { title: "Inputs"; groups: root.d.inputs; }
+        if !root.two-col: PortColumn { title: "Outputs"; groups: root.d.outputs; }
+    }
+    HLine { }
+}
+
+export component EngineStrip inherits Rectangle {
+    in property <bool> compact;
+    height: Theme.row-h + 8px;
+    background: Theme.bg-deep;
+    HorizontalLayout {
+        padding-left: Theme.s4;
+        padding-right: Theme.s4;
+        spacing: Theme.s4;
+        if root.width >= 380px: Label { text: "ENGINE"; tone: "faint"; small: true; caps: true; font-weight: 700; horizontal-stretch: 0; }
+        VerticalLayout { alignment: center; MockBadge { text: AudioState.live ? "LIVE" : "SIMULATED"; } }
+        Label { text: AudioState.rate; horizontal-stretch: 0; }
+        if root.width >= 380px: Label { text: AudioState.buffer; tone: "dim"; horizontal-stretch: 0; }
+        if !root.compact: Label { text: AudioState.latency; tone: "dim"; horizontal-stretch: 0; }
+        Rectangle { horizontal-stretch: 1; }
+        Label {
+            text: AudioState.live ? AudioState.backend : "XRUN " + AudioState.xruns;
+            tone: AudioState.xruns > 0 && !AudioState.live ? "warn" : "dim";
+            horizontal-stretch: 0;
+        }
+    }
+    HLine { y: parent.height - 1px; width: 100%; }
+}
+
+export component DevicesSurface inherits Rectangle {
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.UpArrow || e.text == "k") { AudioState.move-device(-1); return accept; }
+            if (e.text == Key.DownArrow || e.text == "j") { AudioState.move-device(1); return accept; }
+            if (e.text == Key.Return || e.text == " ") {
+                AudioState.toggle-device(AudioState.devices[AudioState.device-cursor].id);
+                return accept;
+            }
+            return reject;
+        }
+        VerticalLayout {
+            EngineStrip { compact: root.width < 520px; }
+            Scroll {
+                vertical-stretch: 1;
+                for d in AudioState.devices: DeviceBlock {
+                    d: d;
+                    avail: root.width;
+                }
+            }
+        }
+    }
+}

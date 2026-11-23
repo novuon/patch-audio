@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "patch.health",
+  "name": "Patch Buffer Health",
+  "version": "1.0.0",
+  "author": "Patch",
+  "description": "A dot for Patch's audio buffers: green while they keep up, amber near the limit or after a recent skip, red on a skip just now",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Health.qml"
+  },
+  "barWidget": {
+    "displayName": "Patch Buffer Health",
+    "description": "Green, amber or red for Patch's audio buffers; hover for why",
+    "category": "Audio",
+    "allowMultiple": false
+  }
+}

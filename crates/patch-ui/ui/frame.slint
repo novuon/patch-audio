@@ -1,0 +1,351 @@
+import { Theme } from "theme.slint";
+import { Label, MockBadge, KeyCap, HLine, Module } from "primitives.slint";
+import { Host, KeyHint } from "host.slint";
+import { Button } from "controls.slint";
+
+// The Unit header in every style (docs/patch-style.md, Unit chrome): the Module,
+// PATCH, the Unit's title and its state on the left; LIVE, a small red dot
+// and faint caps, on the right (quiet: a layout repeats it in every
+// window). A mock or planned Unit says so without the dot. Clicking PATCH (or the Module)
+// opens the controller. A narrow window keeps the Module, the title and
+// the badge.
+export component SurfaceHeader inherits Rectangle {
+    in property <string> unit;
+    in property <string> title;
+    in property <string> status;
+    in property <string> badge: "MOCK";
+    // A small window (the Mini Booth): one short row, the same parts.
+    in property <bool> slim;
+    height: root.slim ? Theme.row-h + Theme.s2 : Theme.header-h;
+    background: Theme.bg-deep;
+    property <bool> narrow: self.width < Theme.narrow-w;
+    property <bool> live: root.badge == "LIVE";
+    row := HorizontalLayout {
+        padding-left: root.slim ? Theme.s3 : Theme.s5;
+        padding-right: root.slim ? Theme.s3 : Theme.s5;
+        spacing: Theme.s3;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Module {
+                size: Math.round(Theme.fs * (root.slim ? 0.8 : 0.92) / 1px) * 1px;
+                ground: root.background;
+                TouchArea { mouse-cursor: pointer; clicked => { Host.show-controller(); } }
+            }
+        }
+        if !root.narrow: Text {
+            text: root.unit;
+            color: ta.has-hover ? Theme.text-bright : Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            font-weight: 600;
+            letter-spacing: Theme.caps-track;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            ta := TouchArea { mouse-cursor: pointer; clicked => { Host.show-controller(); } }
+        }
+        Label {
+            text: root.title;
+            tone: "bright";
+            font-family: Theme.font-display;
+            font-size: Math.round(Theme.fs * (root.slim ? 1.15 : 1.5) / 1px) * 1px;
+            font-weight: 700;
+            horizontal-stretch: 0;
+            min-width: Math.min(self.preferred-width, 120px);
+        }
+        // The state, right after the title; it gives way first.
+        if !root.narrow && root.status != "": Label {
+            text: root.status;
+            tone: "dim";
+            small: true;
+            font-weight: 500;
+            horizontal-stretch: 1;
+            min-width: 0px;
+        }
+        if root.narrow || root.status == "": Rectangle { horizontal-stretch: 1; }
+        // Quiet, because a layout shows it in every window: a small red
+        // dot and the word in faint caps. MOCK or PLANNED has no dot.
+        if root.badge != "": HorizontalLayout {
+            horizontal-stretch: 0;
+            spacing: Theme.s2;
+            if root.live: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: Math.round(Theme.fs-tiny * 0.55 / 1px) * 1px;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.accent;
+                }
+            }
+            Text {
+                text: root.badge;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                font-weight: 600;
+                letter-spacing: Theme.caps-track;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+component HintView inherits Rectangle {
+    in property <KeyHint> hint;
+    in property <bool> shown: true;
+    // Where the footer's room ends: a hint that would cross it is not drawn
+    // (the per-hint estimate cut long ones in half).
+    in property <length> limit: 100000px;
+    visible: shown;
+    opacity: self.x + row.preferred-width <= root.limit ? 1 : 0;
+    width: shown ? row.preferred-width + Theme.s5 : 0px;
+    row := HorizontalLayout {
+        alignment: start;
+        spacing: Theme.s3;
+        VerticalLayout {
+            alignment: center;
+            KeyCap { key: root.hint.key; }
+        }
+        Label {
+            text: root.hint.label;
+            tone: "dim";
+            small: true;
+            overflow: clip;
+        }
+    }
+}
+
+// Footer: key hints on the left (as many as fit), provenance on the right.
+export component StatusBar inherits Rectangle {
+    in property <[KeyHint]> hints;
+    in property <[KeyHint]> common;
+    in property <string> note: "SIMULATED";
+    height: Theme.footer-h;
+    background: Theme.bg-deep;
+    property <bool> narrow: self.width < Theme.narrow-w;
+    property <int> fit: Math.floor((self.width - note-lbl.preferred-width - 2 * Theme.s4 - 16px) / 92px);
+    HLine { y: 0px; width: 100%; }
+    HorizontalLayout {
+        padding-left: Theme.s5;
+        padding-right: Theme.s5;
+        spacing: 0px;
+        // The hints get the room the note leaves; one that would not fit
+        // whole is not drawn, and never pushes the note out.
+        hint-room := Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            clip: true;
+            HorizontalLayout {
+                x: 0px;
+                alignment: start;
+                spacing: 0px;
+                for h[i] in root.hints: HintView {
+                    hint: h;
+                    shown: i < root.fit;
+                    limit: hint-room.width - Theme.s3;
+                }
+                for h[i] in root.common: HintView {
+                    hint: h;
+                    shown: i + root.hints.length < root.fit;
+                    limit: hint-room.width - Theme.s3;
+                }
+            }
+        }
+        note-lbl := Label {
+            // Where the data comes from only when it isn't real.
+            text: root.narrow || root.note == "" ? Host.version : root.note + " · " + Host.version;
+            tone: "faint";
+            small: true;
+            caps: true;
+            letter-spacing: 2px;
+            horizontal-stretch: 0;
+        }
+    }
+}
+
+component HelpGroup inherits VerticalLayout {
+    in property <string> title;
+    in property <[KeyHint]> items;
+    spacing: 2px;
+    Label {
+        text: root.title;
+        tone: "faint";
+        small: true;
+        caps: true;
+        font-weight: 700;
+        height: Theme.row-h;
+    }
+    for h in root.items: HorizontalLayout {
+        spacing: Theme.s3;
+        height: Theme.row-h - 4px;
+        Rectangle {
+            width: 64px;
+            HorizontalLayout {
+                alignment: start;
+                VerticalLayout {
+                    alignment: center;
+                    KeyCap { key: h.key; }
+                }
+            }
+        }
+        Label { text: h.label; }
+    }
+}
+
+export component HelpOverlay inherits Rectangle {
+    background: Theme.bg-deeper.with-alpha(0.94);
+    TouchArea {
+        clicked => { Host.help-visible = false; }
+    }
+    panel := Rectangle {
+        width: min(parent.width - 2 * Theme.s4, 620px);
+        height: min(parent.height - 2 * Theme.s4, layout.preferred-height);
+        background: Theme.bg;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        clip: true;
+        layout := VerticalLayout {
+            padding: Theme.s5;
+            spacing: Theme.s4;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                Label {
+                    text: Host.app-name + " / " + Host.heading;
+                    tone: "bright";
+                    font-weight: 600;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                MockBadge { text: "KEYS"; subtle: true; }
+            }
+            HorizontalLayout {
+                spacing: Theme.s6;
+                alignment: start;
+                HelpGroup { title: "This window"; items: Host.hints; }
+                HelpGroup { title: "Units"; items: Host.surface-keys; }
+                HelpGroup { title: "Everywhere"; items: Host.global-hints; }
+            }
+            Label {
+                text: "A letter this window does not use opens that Unit. Tab moves to the next open Patch window. Ctrl+K opens the controller.";
+                tone: "faint";
+                small: true;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+// Standard chrome for every surface window: header, content, footer, help.
+export component SurfaceFrame inherits Rectangle {
+    in property <string> status;
+    in property <string> badge: Host.badge;
+    in property <string> note: Host.provenance;
+    // Content drawn beneath the window's items (the Visualiser's GPU
+    // canvas): the frame lets it through.
+    in property <bool> see-through;
+    // A small window: a short header with the window's own name only
+    // ("Mini Booth", not "DJ Booth · Mini Booth").
+    in property <bool> slim;
+    property <length> head-h: root.slim ? Theme.row-h + Theme.s2 : Theme.header-h;
+    background: see-through ? transparent : Theme.bg;
+    // Absolute positioning (no layout) for the content area: surfaces pick
+    // their responsive arrangement from the size the compositor gives them,
+    // and must never feed their own size back into the frame.
+    SurfaceHeader {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        unit: Host.app-label;
+        title: root.slim ? Host.surface-title : Host.heading;
+        slim: root.slim;
+        status: root.status;
+        badge: root.badge;
+    }
+    // The note takes its row from the surface, so the surface fits what is
+    // left instead of losing its top under the note.
+    property <length> note-h: Host.size-note != "" ? Theme.row-h + 8px : 0px;
+    Rectangle {
+        x: 0px;
+        y: root.head-h + root.note-h;
+        width: root.width;
+        height: root.height - root.head-h - Theme.footer-h - root.note-h;
+        clip: true;
+        @children
+    }
+    // Too small to show everything: say so, and let the user choose.
+    if Host.size-note != "": Rectangle {
+        x: 0px;
+        y: root.head-h;
+        width: root.width;
+        height: root.note-h;
+        background: Theme.bg-deep;
+        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.warn.with-alpha(0.6); }
+        HorizontalLayout {
+            padding-left: Theme.s4;
+            padding-right: Theme.s3;
+            spacing: Theme.s3;
+            alignment: stretch;
+            Label { text: Host.size-note; tone: "warn"; small: true; horizontal-stretch: 1; vertical-alignment: center; }
+            VerticalLayout { alignment: center; Button { text: "Make room"; compact: true; primary: true; clicked => { Host.make-room(); } } }
+            VerticalLayout { alignment: center; Button { text: "Keep small"; compact: true; clicked => { Host.keep-small(); } } }
+        }
+    }
+    StatusBar {
+        x: 0px;
+        y: root.height - Theme.footer-h;
+        width: root.width;
+        hints: Host.hints;
+        common: Host.common-hints;
+        note: root.note;
+    }
+    if Host.help-visible: HelpOverlay { }
+}
+
+// Root key handler shared by all surfaces. Wraps the whole window content;
+// surface-level FocusScopes inside get the first chance at every key.
+export component SurfaceKeys inherits FocusScope {
+    // Capture phase: Ctrl chords and Tab belong to the shared grammar and
+    // must win over surface-local bindings (e.g. `k` = up).
+    capture-key-pressed(e) => {
+        if (Host.help-visible) {
+            return reject;
+        }
+        if (e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+            return Host.key(e.text, true, e.modifiers.shift) ? accept : reject;
+        }
+        if (e.text == Key.Tab && !e.modifiers.alt && !e.modifiers.meta) {
+            return Host.key(Key.Tab, false, e.modifiers.shift) ? accept : reject;
+        }
+        if (e.text == Key.Backtab) {
+            return Host.key(Key.Tab, false, true) ? accept : reject;
+        }
+        return reject;
+    }
+    key-pressed(e) => {
+        if (Host.help-visible) {
+            if (e.text == Key.Escape || e.text == "?") {
+                Host.help-visible = false;
+            }
+            return accept;
+        }
+        if (e.text == "?") {
+            Host.help-visible = true;
+            return accept;
+        }
+        if (e.text == Key.Escape && Host.surface-id == "controller") {
+            Host.close-window();
+            return accept;
+        }
+        if (e.modifiers.alt || e.modifiers.meta) {
+            return reject;
+        }
+        if (e.text == Key.Backtab) {
+            return Host.key(Key.Tab, false, true) ? accept : reject;
+        }
+        return Host.key(e.text, e.modifiers.control, e.modifiers.shift) ? accept : reject;
+    }
+}

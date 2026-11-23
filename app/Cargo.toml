@@ -1,0 +1,51 @@
+[package]
+name = "patch"
+description = "Patch: the Omarchy audio application (UI prototype, all audio simulated)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "omarchy-patch"
+path = "src/main.rs"
+
+[dependencies]
+patch-core.workspace = true
+patch-host.workspace = true
+patch-surfaces.workspace = true
+patch-pipewire.workspace = true
+patch-engine.workspace = true
+# The controller CLI: converting a mapping file is the app's job, and the
+# mapping format and importer belong to the controller service, so the binary
+# uses its public API rather than duplicating any of it.
+patch-controller.workspace = true
+patch-plugin.workspace = true
+patch-ai.workspace = true
+patch-stems.workspace = true
+patch-dsp.workspace = true
+patch-analysis.workspace = true
+serde_json = "1"
+anyhow.workspace = true
+patch-record.workspace = true
+patch-broadcast.workspace = true
+patch-network.workspace = true
+patch-library.workspace = true
+# Modules: verifying a release's signed manifest and its downloads.
+ed25519-compact = { version = "2", default-features = false }
+sha2 = "0.10"
+serde.workspace = true
+libc.workspace = true
+# Use unprefixed symbols so native audio libraries share the Rust allocator.
+tikv-jemallocator = { version = "0.6", optional = true, features = ["unprefixed_malloc_on_supported_platforms"] }
+# Heap profiling (diagnostics only): cargo build --no-default-features --features dhat-heap;
+# the run writes dhat-heap.json on exit (view it in dh_view.html).
+dhat = { version = "0.3", optional = true }
+
+[features]
+default = ["jemalloc"]
+jemalloc = ["dep:tikv-jemallocator", "patch-host/jemalloc"]
+dhat-heap = ["dep:dhat"]
+
+[lints]
+workspace = true

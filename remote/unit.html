@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f1210">
+<title>Patch · Mixer Unit</title><link rel="stylesheet" href="/unit.css"><link rel="stylesheet" href="/navigation.css">
+<script src="/pairing.js" defer></script><script src="/navigation.js" defer></script><script src="/unit.js" defer></script>
+</head><body><patch-navigation page="mixer"></patch-navigation><main>
+<div class="remote-session"><span id="connection" role="status">Connecting…</span></div>
+<div class="headline"><h1>Mixer Unit</h1><span id="count">Waiting for channels</span></div>
+<section class="master strip"><div class="strip-head"><h2>PATCH OUTPUT</h2><output id="master-value">—</output></div><label class="control-label" for="master-gain">Master level</label><input id="master-gain" type="range" min="-60" max="12" step="0.5" value="0" disabled><button id="master-mute" class="mute" disabled>Mute output</button></section>
+<div class="strips" id="strips" aria-live="polite"><p class="empty" id="strips-empty">Waiting for Patch…</p></div>
+<p class="muted">Channel levels and mute controls affect Patch’s live audio mixer.</p>
+</main><footer><span id="ack" role="status" aria-live="polite">Waiting for Patch…</span><span id="access">PRIVATE REMOTE</span></footer></body></html>

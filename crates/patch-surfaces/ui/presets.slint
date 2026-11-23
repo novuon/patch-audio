@@ -1,0 +1,103 @@
+import { Theme, Label, MockBadge, SectionHeading, ListRow, Button, Scroll, VLine, Host, EmptyState } from "@patch-ui/patch-ui.slint";
+import { AudioState, PresetItem } from "state.slint";
+
+component PresetRow inherits ListRow {
+    in property <PresetItem> p;
+    in property <bool> cursor;
+    in property <bool> narrow;
+    selected: cursor;
+    muted: p.plugin != "";
+    row-height: narrow ? Theme.row-h : Theme.row-h + 6px;
+    Label {
+        text: root.p.active ? "●" : " ";
+        tone: "accent";
+        small: true;
+        width: 10px;
+    }
+    Label {
+        text: root.p.name;
+        tone: root.p.active ? "bright" : "normal";
+        width: 84px;
+    }
+    if root.p.plugin != "": VerticalLayout { alignment: center; MockBadge { text: "PLUGIN MOCK"; } }
+    if !root.narrow: Label {
+        text: root.p.summary;
+        tone: "dim";
+        small: true;
+        horizontal-stretch: 1;
+    }
+}
+
+export component PresetsSurface inherits Rectangle {
+    init => { keys.focus(); }
+    property <bool> split: self.width >= 720px;
+    property <PresetItem> cur: AudioState.presets[AudioState.preset-cursor];
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.UpArrow || e.text == "k") { AudioState.move-preset(-1); return accept; }
+            if (e.text == Key.DownArrow || e.text == "j") { AudioState.move-preset(1); return accept; }
+            if (e.text == Key.Return) { AudioState.apply-preset(root.cur.id); return accept; }
+            return reject;
+        }
+        if AudioState.presets.length == 0: EmptyState {
+            title: "Session presets are coming soon";
+            detail: "Patch will save and recall routing, levels and layouts here. Nothing in this window changes your audio yet.";
+            badge: "PREVIEW";
+        }
+        if AudioState.presets.length > 0: HorizontalLayout {
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding-top: Theme.s2;
+                SectionHeading { text: "Session presets"; detail: root.width > 400px ? "enter applies" : ""; }
+                for p[i] in AudioState.presets: PresetRow {
+                    p: p;
+                    cursor: i == AudioState.preset-cursor;
+                    narrow: root.width < 420px;
+                    clicked => { AudioState.move-preset(i - AudioState.preset-cursor); }
+                    double-clicked => { AudioState.apply-preset(p.id); }
+                }
+                Rectangle { vertical-stretch: 1; }
+                if AudioState.toast != "": Rectangle {
+                    height: Theme.row-h + 4px;
+                    background: Theme.bg-deep;
+                    HorizontalLayout {
+                        padding-left: Theme.s4;
+                        spacing: Theme.s3;
+                        Label { text: AudioState.toast; tone: "dim"; small: true; }
+                    }
+                }
+            }
+            if root.split: VLine { }
+            if root.split: VerticalLayout {
+                width: Math.min(root.width * 0.45, 420px);
+                padding: Theme.s4;
+                padding-top: Theme.s2;
+                spacing: Theme.s2;
+                SectionHeading { text: "Would change"; detail: root.cur.name; pad: 0px; }
+                if root.cur.plugin != "": Label {
+                    text: "Needs the " + root.cur.plugin + " plugin. Planned, not implemented.";
+                    tone: "accent";
+                    small: true;
+                    wrap: word-wrap;
+                }
+                for c in root.cur.changes: HorizontalLayout {
+                    spacing: Theme.s3;
+                    height: Theme.row-h - 4px;
+                    Label { text: "·"; tone: "faint"; width: 8px; }
+                    Label { text: c; tone: root.cur.plugin != "" ? "faint" : "normal"; small: true; }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button {
+                        text: root.cur.plugin != "" ? "Unavailable" : root.cur.active ? "Active" : "Apply (preview)";
+                        lit: root.cur.plugin == "" && !root.cur.active;
+                        enabled: root.cur.plugin == "" && !root.cur.active;
+                        clicked => { AudioState.apply-preset(root.cur.id); }
+                    }
+                }
+            }
+        }
+    }
+}

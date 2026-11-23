@@ -1,0 +1,413 @@
+import { Theme, Label, MockBadge, Panel, SectionHeading, Meter, MeterScale, MeterKind, Bars, HLine, VLine } from "@patch-ui/patch-ui.slint";
+import { AudioState, ChannelLevel } from "state.slint";
+
+// Meter for one signal of any channel count (stereo is N = 2).
+component BusMeter inherits Panel {
+    in property <string> title;
+    in property <string> source;
+    in property <string> layout-name;
+    in property <[ChannelLevel]> channels;
+    in property <MeterKind> kind: MeterKind.System;
+    in property <float> peak;
+    in property <string> peak-text;
+    in property <string> vu-text;
+    in property <bool> clipping;
+    in property <bool> horizontal;
+    // Several sources behind `source` ("3 sources"): named while the
+    // pointer is on the heading.
+    in property <string> source-list;
+    // Bars get thinner as channels are added, and stay readable.
+    property <length> bar: root.channels.length <= 2 ? 10px : root.channels.length <= 8 ? 7px : 4px;
+    // Column per channel: wide enough for its label ("LFE", "Ls") above 2 channels.
+    property <length> column-w: root.channels.length <= 2 ? root.bar : root.channels.length <= 8 ? 18px : root.bar;
+    VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s2;
+        head := SectionHeading { text: root.title; detail: head-ta.has-hover && root.source-list != "" ? root.source-list : root.source; pad: 0px; }
+        if !root.horizontal: HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: Theme.s2;
+            alignment: center;
+            MeterScale { kind: root.kind; }
+            for c in root.channels: VerticalLayout {
+                width: root.column-w;
+                spacing: 2px;
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    alignment: center;
+                    Meter { width: root.bar; kind: root.kind; value: c.level; peak: root.peak; avg: c.vu; clipping: root.clipping; }
+                }
+                if root.channels.length <= 8: Text {
+                    text: c.label;
+                    color: Theme.text-faint;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-tiny;
+                    horizontal-alignment: center;
+                    overflow: clip;
+                }
+            }
+        }
+        if root.horizontal: VerticalLayout {
+            spacing: root.channels.length <= 2 ? 3px : 1px;
+            vertical-stretch: 0;
+            for c in root.channels: HorizontalLayout {
+                spacing: Theme.s2;
+                if root.channels.length <= 8: Text {
+                    text: c.label;
+                    color: Theme.text-faint;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-tiny;
+                    width: 18px;
+                    vertical-alignment: center;
+                }
+                Meter {
+                    vertical: false;
+                    kind: root.kind;
+                    height: root.channels.length <= 2 ? 6px : root.channels.length <= 8 ? 4px : 2px;
+                    value: c.level;
+                    peak: root.peak;
+                    avg: c.vu;
+                    clipping: root.clipping;
+                }
+            }
+        }
+        Label {
+            vertical-stretch: 0;
+            width: root.width - 2 * Theme.s3;
+            overflow: clip;
+            text: "VU " + root.vu-text + (AudioState.vu-measured ? "" : " est.");
+            tone: "normal";
+            small: true;
+            horizontal-alignment: root.horizontal ? left : center;
+        }
+        Label {
+            vertical-stretch: 0;
+            width: root.width - 2 * Theme.s3;
+            overflow: clip;
+            text: "peak " + root.peak-text + (root.kind == MeterKind.Performance ? " dB" : " dBFS");
+            tone: "dim";
+            small: true;
+            horizontal-alignment: root.horizontal ? left : center;
+        }
+        if root.layout-name != "stereo": Label {
+            vertical-stretch: 0;
+            width: root.width - 2 * Theme.s3;
+            overflow: clip;
+            text: root.layout-name;
+            tone: "faint";
+            small: true;
+            horizontal-alignment: root.horizontal ? left : center;
+        }
+    }
+    // The heading's row: hovering it names the sources.
+    head-ta := TouchArea { x: 0; y: 0; width: root.width; height: Theme.s3 + head.preferred-height; }
+}
+
+// Momentary loudness over the last 12 s on a −48 … 0 LUFS scale, with the
+// EBU R128 (−23) and streaming (−14) targets marked. Scrolls continuously.
+component LoudnessHistory inherits Rectangle {
+    in property <[float]> values;
+    in property <float> scroll;
+    // A column is a whole number of physical pixels and the scroll moves in
+    // whole pixels, so every edge of the steps sits on a pixel, frame after
+    // frame. (Fractional columns and shifts re-rasterised each edge
+    // differently every frame: a shimmer.) The history keeps to the right
+    // edge; a few pixels may stay free on the left.
+    property <length> step: root.values.length > 0 ? Math.max(Math.floor(root.width / root.values.length / 1phx), 1) * 1phx : 1px;
+    property <length> shift: root.width - root.step * root.values.length - Math.round(root.scroll * root.step / 1phx) * 1phx;
+    // Columns drawn past the left edge (over the free pixels) and one past
+    // the right, so the curve fills the panel while it scrolls.
+    property <int> pad: Math.ceil((root.width - root.step * root.values.length) / root.step) + 1;
+    clip: true;
+    background: Theme.bg-deeper;
+    // One filled shape and its top line, not a rectangle a column: the
+    // columns' anti-aliased edges and 1px gaps, scrolling, made moving
+    // interference bands. Shifted as a whole while it scrolls.
+    if root.values.length > 0: Path {
+        x: root.shift - root.pad * root.step;
+        width: root.step * (root.values.length + root.pad + 1);
+        height: root.height;
+        viewbox-x: -root.pad;
+        viewbox-width: root.values.length + root.pad + 1;
+        viewbox-height: 1;
+        fit: fill;
+        commands: AudioState.lufs-area;
+        // A soft area under the line: the history is context, not a signal.
+        fill: Theme.text-faint.with-alpha(0.32);
+        stroke-width: 0;
+    }
+    if root.values.length > 0: Path {
+        x: root.shift - root.pad * root.step;
+        width: root.step * (root.values.length + root.pad + 1);
+        height: root.height;
+        viewbox-x: -root.pad;
+        viewbox-width: root.values.length + root.pad + 1;
+        viewbox-height: 1;
+        fit: fill;
+        commands: AudioState.lufs-line;
+        stroke: Theme.text-dim;
+        stroke-width: 1px;
+    }
+    // Targets: −23 LUFS (EBU R128) and −14 LUFS (streaming).
+    for g in [{ lufs: -23, label: "−23" }, { lufs: -14, label: "−14" }]: Rectangle {
+        y: root.height * (-g.lufs / 48);
+        height: 1px;
+        background: Theme.accent.with-alpha(0.45);
+        // Both labels when there's room; the EBU target alone when small.
+        if root.height >= 72px || g.lufs == -23: Text {
+            x: root.width - self.width - 2px;
+            y: -self.height;
+            text: g.label;
+            color: Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+        }
+    }
+}
+
+component LoudnessValue inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    horizontal-stretch: 1;
+    spacing: 2px;
+    Label { text: root.label; tone: "faint"; small: true; }
+    Label { text: root.value; tone: "bright"; font-weight: 600; }
+}
+
+component Loudness inherits Panel {
+    in property <bool> compact;
+    VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s4;
+        SectionHeading {
+            text: "Loudness";
+            detail: AudioState.loudness-measured ? "EBU R128 · BS.1770-4" : "estimated · simulated";
+            pad: 0px;
+        }
+        HorizontalLayout {
+            spacing: Theme.s3;
+            alignment: start;
+            Label {
+                text: AudioState.lufs-m;
+                tone: "bright";
+                // Monospaced: the figure updates many times a second.
+                font-family: Theme.font;
+                font-size: root.compact ? Theme.fs-title : Theme.fs-hero;
+                font-weight: 700;
+                letter-spacing: -1px;
+                horizontal-stretch: 0;
+            }
+            Label {
+                text: "LUFS · M";
+                tone: "dim";
+                small: true;
+                letter-spacing: 3px;
+                vertical-alignment: bottom;
+                horizontal-stretch: 0;
+            }
+        }
+        // S · I · LRA · TP max, as broadcast loudness meters show them.
+        if !root.compact: HorizontalLayout {
+            spacing: Theme.s4;
+            if AudioState.loudness-measured: LoudnessValue { label: "S"; value: AudioState.lufs-s; }
+            LoudnessValue { label: "I"; value: AudioState.lufs-i; }
+            if AudioState.loudness-measured: LoudnessValue { label: "LRA"; value: AudioState.lra; }
+            LoudnessValue { label: "TP"; value: AudioState.true-peak; }
+        }
+        if root.compact: HorizontalLayout {
+            spacing: Theme.s4;
+            if AudioState.loudness-measured: Label { text: "S " + AudioState.lufs-s; small: true; horizontal-stretch: 0; }
+            Label { text: "I " + AudioState.lufs-i; tone: "normal"; small: true; horizontal-stretch: 0; }
+            if AudioState.loudness-measured: Label { text: "LRA " + AudioState.lra; tone: "dim"; small: true; horizontal-stretch: 0; }
+            Label { text: "TP " + AudioState.true-peak + " dBTP"; tone: "dim"; small: true; horizontal-stretch: 0; }
+            Rectangle { }
+        }
+        // The history fills the column, so it ends level with the meters beside
+        // it (72 px at least).
+        if !root.compact: LoudnessHistory {
+            min-height: 72px;
+            vertical-stretch: 1;
+            values: AudioState.lufs-history;
+            scroll: AudioState.lufs-scroll;
+        }
+        if root.compact: Rectangle { vertical-stretch: 1; }
+    }
+}
+
+// The bars take the height the window has left (up to `bars-h`), never
+// more: sized from a guess of the rows above, they ran off the bottom of a
+// short or narrow Meter.
+component Spectrum inherits Panel {
+    in property <length> bars-h: 120px;
+    VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s2;
+        SectionHeading {
+            text: "Spectrum";
+            detail: AudioState.live ? "output · FFT 4096 · band energy" : "master · simulated";
+            pad: 0px;
+        }
+        bars := Rectangle {
+            min-height: 24px;
+            preferred-height: Math.max(24px, root.bars-h);
+            max-height: Math.max(24px, root.bars-h);
+            vertical-stretch: 1;
+            // dBFS grid: 0 at the top, −72 at the bottom.
+            for g in [0, -12, -24, -36, -48, -60]: Rectangle {
+                y: parent.height * (-g / 72);
+                height: 1px;
+                background: Theme.border;
+                Text {
+                    visible: bars.height >= 140px || (bars.height >= 48px && Math.mod(-g, 24) == 0) || g == 0;
+                    x: parent.width - self.width;
+                    y: 1px;
+                    text: g == 0 ? "0 dBFS" : "−" + (-g);
+                    color: Theme.text-faint;
+                    font-family: Theme.font;
+                    font-size: Theme.fs-tiny;
+                }
+            }
+            Bars {
+                width: parent.width - 44px;
+                height: parent.height;
+                values: AudioState.spectrum;
+                gap: 3px;
+                heat: true;
+            }
+        }
+        // Log frequency axis, 25 Hz – 20 kHz: position = log(f/25)/log(800).
+        Rectangle {
+            height: Theme.row-h - 6px;
+            property <length> w: parent.width - 44px;
+            for f[i] in ["50", "100", "200", "500", "1k", "2k", "5k", "10k", "20k"]: Text {
+                // Narrow: the decades alone, then 1k alone, so the labels never run together.
+                visible: parent.w >= 260px || i == 4 || (parent.w >= 130px && (i == 1 || i == 7));
+                property <float> hz: i == 0 ? 50 : i == 1 ? 100 : i == 2 ? 200 : i == 3 ? 500 : i == 4 ? 1000 : i == 5 ? 2000 : i == 6 ? 5000 : i == 7 ? 10000 : 20000;
+                x: parent.w * (Math.log(hz / 25, 10) / Math.log(800, 10)) - self.width / 2;
+                text: f;
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+            }
+        }
+    }
+}
+
+component StatusRow inherits Rectangle {
+    height: Theme.row-h + 4px;
+    background: Theme.bg-deep;
+    HLine { y: 0px; width: 100%; }
+    HorizontalLayout {
+        padding-left: Theme.s4;
+        padding-right: Theme.s4;
+        spacing: Theme.s5;
+        if !AudioState.live: Label { text: "XRUN " + AudioState.xruns; tone: AudioState.xruns > 0 ? "warn" : "normal"; small: true; horizontal-stretch: 0; }
+        if !AudioState.live: Label { text: "DSP " + Math.round(AudioState.dsp * 100) + "%"; tone: "dim"; small: true; horizontal-stretch: 0; }
+        if AudioState.live: Label { text: AudioState.backend; tone: "normal"; small: true; horizontal-stretch: 0; }
+        if AudioState.timing-text != "": Label {
+            text: AudioState.timing-text;
+            tone: AudioState.timing-output ? "normal" : "accent";
+            small: true;
+            horizontal-stretch: 0;
+        }
+        if root.width > 900px || (root.width > 420px && AudioState.timing-text == ""): Label { text: AudioState.rate + " · " + AudioState.buffer; tone: "dim"; small: true; horizontal-stretch: 0; }
+        Rectangle { horizontal-stretch: 1; }
+        VerticalLayout { alignment: center; MockBadge { text: AudioState.live ? "LIVE SIGNAL" : "SIMULATED SIGNAL"; subtle: true; } }
+    }
+}
+
+export component MetersSurface inherits Rectangle {
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == "x") { AudioState.reset-loudness(); return accept; }
+            if (e.text == "o") { AudioState.toggle-reference(); return accept; }
+            if (e.text == ",") { AudioState.trim-sync(-10); return accept; }
+            if (e.text == ".") { AudioState.trim-sync(10); return accept; }
+            return reject;
+        }
+    }
+    property <bool> strip: self.height < 300px && self.width >= 600px;
+    property <bool> wide: !strip && self.width >= 900px && self.height >= 280px;
+    // The grid's upright meters beside the loudness need the height: under
+    // 560 px they pushed the spectrum and the status row out of the window.
+    // From 620 px: the meters' row (at least 380 px) and a readable spectrum.
+    property <bool> grid: !strip && !wide && self.width >= 520px && self.height >= 620px;
+    property <bool> stacked: !strip && !wide && !grid;
+    property <bool> tight: self.height < 300px;
+    // Stacked: input and output side by side when wide, or when short (one
+    // above the other pushed the spectrum and status row out of a 400 px
+    // Meter). The spectrum shows only when its panel fits whole.
+    property <bool> pair: !root.tight && (self.width >= 520px || self.height < 560px);
+    property <bool> spectrum-fits: !root.tight && self.height >= 380px;
+    VerticalLayout {
+        // Short tiles: everything on one line.
+        if root.strip: HorizontalLayout {
+            vertical-stretch: 1;
+            padding: Theme.s4;
+            padding-top: Theme.s2;
+            spacing: Theme.s3;
+            BusMeter { horizontal: true; width: 180px; title: "Input"; source: AudioState.in-label; source-list: AudioState.in-sources; kind: MeterKind.System; layout-name: AudioState.in-layout; channels: AudioState.in-channels; peak: AudioState.in-peak; peak-text: AudioState.in-peak-text; vu-text: AudioState.in-vu-text; clipping: AudioState.in-clip; }
+            BusMeter { horizontal: true; width: 180px; title: "Output"; source: AudioState.out-label; kind: MeterKind.System; layout-name: AudioState.out-layout; channels: AudioState.out-channels; peak: AudioState.out-peak; peak-text: AudioState.out-peak-text; vu-text: AudioState.out-vu-text; clipping: AudioState.out-clip; }
+            Loudness { compact: true; width: 190px; }
+            // Beside the meters the bars simply fill the row (a guessed cap left
+            // an empty band under them).
+            Spectrum { horizontal-stretch: 1; bars-h: root.height; }
+        }
+        if root.wide: HorizontalLayout {
+            vertical-stretch: 1;
+            padding: Theme.s4;
+            spacing: Theme.s3;
+            BusMeter { width: 132px; title: "Input"; source: AudioState.in-label; source-list: AudioState.in-sources; kind: MeterKind.System; layout-name: AudioState.in-layout; channels: AudioState.in-channels; peak: AudioState.in-peak; peak-text: AudioState.in-peak-text; vu-text: AudioState.in-vu-text; clipping: AudioState.in-clip; }
+            BusMeter { width: 132px; title: "Output"; source: AudioState.out-label; kind: MeterKind.System; layout-name: AudioState.out-layout; channels: AudioState.out-channels; peak: AudioState.out-peak; peak-text: AudioState.out-peak-text; vu-text: AudioState.out-vu-text; clipping: AudioState.out-clip; }
+            Loudness { width: Math.min(root.width * 0.28, 420px); }
+            Spectrum { horizontal-stretch: 1; bars-h: root.height; }
+        }
+        // The level meters and loudness take about half a tall window
+        // (380–560 px), the spectrum the rest: stretched to the full
+        // height the meters were mostly empty bars (the user, 2026-11-16:
+        // "a lot of space lost by vu meter visuals that take complete
+        // height").
+        if root.grid: VerticalLayout {
+            vertical-stretch: 1;
+            padding: Theme.s4;
+            spacing: Theme.s3;
+            HorizontalLayout {
+                spacing: Theme.s3;
+                height: clamp((root.height - Theme.row-h) * 0.55, 380px, 560px);
+                BusMeter { width: 132px; title: "Input"; source: AudioState.in-label; source-list: AudioState.in-sources; kind: MeterKind.System; layout-name: AudioState.in-layout; channels: AudioState.in-channels; peak: AudioState.in-peak; peak-text: AudioState.in-peak-text; vu-text: AudioState.in-vu-text; clipping: AudioState.in-clip; }
+                BusMeter { width: 132px; title: "Output"; source: AudioState.out-label; kind: MeterKind.System; layout-name: AudioState.out-layout; channels: AudioState.out-channels; peak: AudioState.out-peak; peak-text: AudioState.out-peak-text; vu-text: AudioState.out-vu-text; clipping: AudioState.out-clip; }
+                Loudness { horizontal-stretch: 1; }
+            }
+            Spectrum { bars-h: root.height; vertical-stretch: 1; }
+        }
+        if root.stacked: VerticalLayout {
+            vertical-stretch: 1;
+            padding: Theme.s4;
+            spacing: Theme.s3;
+            // Wide enough: input and output side by side, half the height.
+            if root.pair: HorizontalLayout {
+                spacing: Theme.s3;
+                property <length> half: (root.width - Theme.s4 * 2 - Theme.s3) / 2;
+                BusMeter { width: parent.half; horizontal: true; title: "Input"; source: AudioState.in-label; source-list: AudioState.in-sources; kind: MeterKind.System; layout-name: AudioState.in-layout; channels: AudioState.in-channels; peak: AudioState.in-peak; peak-text: AudioState.in-peak-text; vu-text: AudioState.in-vu-text; clipping: AudioState.in-clip; }
+                BusMeter { width: parent.half; horizontal: true; title: "Output"; source: AudioState.out-label; kind: MeterKind.System; layout-name: AudioState.out-layout; channels: AudioState.out-channels; peak: AudioState.out-peak; peak-text: AudioState.out-peak-text; vu-text: AudioState.out-vu-text; clipping: AudioState.out-clip; }
+            }
+            // Too short for rows (and too narrow for the strip): input,
+            // output and loudness side by side, each a third.
+            if root.tight: HorizontalLayout {
+                spacing: Theme.s3;
+                property <length> third: (root.width - Theme.s4 * 2 - Theme.s3 * 2) / 3;
+                BusMeter { horizontal: true; width: parent.third; title: "Input"; source: AudioState.in-label; source-list: AudioState.in-sources; kind: MeterKind.System; layout-name: AudioState.in-layout; channels: AudioState.in-channels; peak: AudioState.in-peak; peak-text: AudioState.in-peak-text; vu-text: AudioState.in-vu-text; clipping: AudioState.in-clip; }
+                BusMeter { horizontal: true; width: parent.third; title: "Output"; source: AudioState.out-label; kind: MeterKind.System; layout-name: AudioState.out-layout; channels: AudioState.out-channels; peak: AudioState.out-peak; peak-text: AudioState.out-peak-text; vu-text: AudioState.out-vu-text; clipping: AudioState.out-clip; }
+                Loudness { compact: true; width: parent.third; }
+            }
+            if !root.pair && !root.tight: BusMeter { horizontal: true; title: "Input"; source: AudioState.in-label; source-list: AudioState.in-sources; kind: MeterKind.System; layout-name: AudioState.in-layout; channels: AudioState.in-channels; peak: AudioState.in-peak; peak-text: AudioState.in-peak-text; vu-text: AudioState.in-vu-text; clipping: AudioState.in-clip; }
+            if !root.pair && !root.tight: BusMeter { horizontal: true; title: "Output"; source: AudioState.out-label; kind: MeterKind.System; layout-name: AudioState.out-layout; channels: AudioState.out-channels; peak: AudioState.out-peak; peak-text: AudioState.out-peak-text; vu-text: AudioState.out-vu-text; clipping: AudioState.out-clip; }
+            if !root.tight: Loudness { compact: root.height < 700px; vertical-stretch: 0; }
+            if root.spectrum-fits: Spectrum { bars-h: 160px; vertical-stretch: 1; }
+            if !root.spectrum-fits: Rectangle { vertical-stretch: 1; }
+        }
+        StatusRow { }
+    }
+}

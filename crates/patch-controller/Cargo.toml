@@ -1,0 +1,20 @@
+[package]
+name = "patch-controller"
+description = "Independent MIDI and HID controller control plane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+patch-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "input"
+harness = false

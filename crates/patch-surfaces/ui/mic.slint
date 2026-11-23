@@ -1,0 +1,118 @@
+import { Theme, Label, SectionHeading, Button, EmptyState, Host, SearchField, Scroll, Meter, Slider } from "@patch-ui/patch-ui.slint";
+import { AudioState } from "state.slint";
+import { RecState } from "recorder.slint";
+import { InspectorSurface } from "inspector.slint";
+
+export component MicSurface inherits VerticalLayout {
+    init => { AudioState.mic-step(0); }
+    spacing: Theme.s2;
+    property <bool> calibration-open: false;
+    property <bool> selected-mic: AudioState.selected.starts-with("engine.mic-");
+    HorizontalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s2;
+        SectionHeading { text: "MIC"; pad: 0px; }
+        Button { text: "+ Input"; compact: true; enabled: AudioState.live && AudioState.can-add-mic; clicked => { AudioState.add-mic(); } }
+        Button { text: "+ Call far end"; compact: true; enabled: AudioState.live && AudioState.can-add-mic; clicked => { AudioState.add-remote("far_end"); } }
+        Button { text: "+ Voice source"; compact: true; enabled: AudioState.live && AudioState.can-add-mic; clicked => { AudioState.add-remote("voice"); } }
+        Button { text: "Recorder"; compact: true; clicked => { Host.focus-surface("recorder"); } }
+        Button { text: root.calibration-open ? "Controls" : "Calibrate"; compact: true; clicked => { root.calibration-open = !root.calibration-open; } }
+        Button { text: "Router"; compact: true; clicked => { Host.focus-surface("graph"); } }
+    }
+    HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s2;
+        Button { text: "←"; compact: true; clicked => { AudioState.mic-step(-1); } }
+        Label { text: root.selected-mic ? AudioState.sel-name + " · " + AudioState.sel-detail : "No input selected"; tone: "bright"; overflow: elide; }
+        Button { text: "→"; compact: true; clicked => { AudioState.mic-step(1); } }
+    }
+    if root.selected-mic && AudioState.mic-loop-warning != "": HorizontalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        Label { text: AudioState.mic-loop-warning; tone: "warn"; small: true; wrap: word-wrap; }
+    }
+    if root.selected-mic: VerticalLayout {
+        padding: Theme.s3;
+        spacing: Theme.s2;
+        HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: "Channel EQ"; compact: true; clicked => { Host.focus-surface("eq"); AudioState.mic-profile(AudioState.selected, "eq", ""); } }
+            Button { text: "Mute / unmute"; compact: true; clicked => { AudioState.toggle-mute(AudioState.selected); } }
+            Button { text: "Voice bypass"; compact: true; clicked => { AudioState.voice-set(AudioState.selected, "Bypass", false, 0); } }
+            Button { text: "Voice enable"; compact: true; clicked => { AudioState.voice-set(AudioState.selected, "Bypass", true, 0); } }
+
+        }
+        SectionHeading { text: "STARTING PROFILE"; detail: "voice and EQ · device gain retained"; pad: 0px; }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: "Natural"; compact: true; clicked => { AudioState.mic-profile(AudioState.selected, "apply", "Natural"); } }
+            Button { text: "Podcast"; compact: true; clicked => { AudioState.mic-profile(AudioState.selected, "apply", "Podcast"); } }
+            Button { text: "Broadcast"; compact: true; clicked => { AudioState.mic-profile(AudioState.selected, "apply", "Broadcast"); } }
+            Button { text: "Streaming"; compact: true; clicked => { AudioState.mic-profile(AudioState.selected, "apply", "Streaming"); } }
+            Button { text: "Remote voice"; compact: true; clicked => { AudioState.mic-profile(AudioState.selected, "apply", "Remote voice"); } }
+            Button { text: "Restore"; compact: true; clicked => { AudioState.mic-profile(AudioState.selected, "restore", ""); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            name := SearchField { placeholder: "Profile name"; }
+            Button { text: "Save"; compact: true; enabled: name.text != ""; clicked => { AudioState.mic-profile(AudioState.selected, "save", name.text); } }
+            Button { text: "Load"; compact: true; enabled: name.text != ""; clicked => { AudioState.mic-profile(AudioState.selected, "apply", name.text); } }
+        }
+        Label { text: AudioState.sel-name.starts-with("Remote ")
+            ? "Call far end: the voices of a call or an X Space you are in, through the voice chain. You hear and record them, but they are never sent back to the call (mix-minus)."
+            : AudioState.sel-name.starts-with("Voice ")
+            ? "Voice source: an app's voice through the voice chain, like a microphone. Send it to AUX 1 and choose Patch AUX 1 as the microphone in another browser."
+            : "Select Patch Input in your call or streaming app. Monitoring plays in the main mix; use headphones. Gain below is software gain."; tone: "dim"; small: true; wrap: word-wrap; }
+    }
+    if root.selected-mic && root.calibration-open: Scroll {
+        vertical-stretch: 1;
+        VerticalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        spacing: Theme.s2;
+        SectionHeading { text: "CALIBRATION"; detail: "1–60 second raw take · include room silence"; pad: 0px; }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: "Record original"; compact: true; enabled: !RecState.recording && !RecState.busy; clicked => { AudioState.mic-record(false); } }
+            Button { text: "Processed take"; compact: true; enabled: !RecState.recording && !RecState.busy; clicked => { AudioState.mic-record(true); } }
+            Button { text: "Stop and save"; compact: true; enabled: RecState.recording && !RecState.busy; clicked => { AudioState.mic-stop-record(); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            take := SearchField { text: RecState.file; placeholder: "Path to an original voice take"; }
+            Button { text: "Analyze"; compact: true; enabled: take.text != ""; clicked => { AudioState.mic-analyze(take.text); } }
+            Button { text: "Apply advice"; compact: true; enabled: AudioState.mic-calibration-ready; clicked => { AudioState.mic-apply-calibration(); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.s2;
+            Button { text: "Render comparison"; compact: true; enabled: take.text != ""; clicked => { AudioState.mic-compare(take.text); } }
+            Button { text: "Listen original"; compact: true; enabled: take.text != ""; clicked => { AudioState.mic-listen(take.text); } }
+            Button { text: "Listen processed"; compact: true; enabled: AudioState.mic-comparison != ""; clicked => { AudioState.mic-listen(AudioState.mic-comparison); } }
+        }
+        if AudioState.mic-analysis != "": Label { text: AudioState.mic-analysis; tone: "dim"; small: true; wrap: word-wrap; }
+        }
+    }
+    if root.selected-mic && !root.calibration-open && AudioState.mic-history.length > 0: VerticalLayout {
+        padding-left: Theme.s3;
+        padding-right: Theme.s3;
+        SectionHeading { text: "RAW PEAK HISTORY"; detail: AudioState.mic-history-span; pad: 0px; }
+        plot := Rectangle {
+            height: 32px;
+            background: Theme.bg-deeper;
+            clip: true;
+            for v[i] in AudioState.mic-history: Rectangle {
+                x: i * plot.width / AudioState.mic-history.length;
+                width: Math.max(1px, plot.width / AudioState.mic-history.length - 1px);
+                height: Math.max(1px, v * plot.height);
+                y: plot.height - self.height;
+                background: Theme.accent;
+            }
+        }
+    }
+    if root.selected-mic && !root.calibration-open: InspectorSurface { show-identity: false; vertical-stretch: 1; }
+    if !root.selected-mic: EmptyState {
+        title: "Choose a microphone input";
+        detail: AudioState.live ? "Add an input or select a Mic lane above. USB, interfaces, built-in, Bluetooth and virtual sources use Patch's audio backend. + Call far end takes the voices of a call or an X Space you are in (never sent back to it); + Voice source takes an app's voice to process and pass on, for example as another browser's microphone." : "Mic controls need the live audio provider. No simulated device will change your audio.";
+    }
+}

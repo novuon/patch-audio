@@ -1,0 +1,10 @@
+-- Three against four against five.
+setcps (120/60/4)
+
+d1 $ s "{bd sn hh}%4"
+
+d2 $ n "{0 3 7 10 12}%8" # s "superfm" # gain 0.85
+
+d3 $ jux (iter 4) $ s "{rim cb}%3" # room 0.3
+
+d4 $ s "bd*2, hh*3, ~ cp ~ ~ cp"

@@ -1,0 +1,140 @@
+// SIGNAL: an audience-facing, read-only portrait of the actual mix.
+import { Theme, Host } from "@patch-ui/patch-ui.slint";
+import { DjState, DeckItem, DeckLevels, EqKnobs } from "dj.slint";
+import { BroadcastState } from "broadcast.slint";
+
+export global BroadcastDjState {
+    in property <bool> performer-gpu;
+    in property <string> performer-note;
+    in property <string> section: "INTRO";
+    in property <float> motion: 0.5;
+    in property <float> density: 0.5;
+    in property <float> scene-seed: 0.23;
+    in property <float> scene-progress;
+    in property <float> section-id;
+    in property <float> handover: -1;
+    in property <color> stage-a: #52ebff;
+    in property <color> stage-b: #e0d1ff;
+    callback toggle-fullscreen();
+}
+
+component Caption inherits Text {
+    x: 0px;
+    y: 0px;
+    color: #87939b;
+    font-family: Theme.font;
+    font-size: 11px;
+    letter-spacing: 2px;
+    height: self.font-size * 1.5;
+    horizontal-alignment: left;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+component Trace inherits Rectangle {
+    in property <float> value;
+    in property <color> ink;
+    in property <string> label;
+    in property <string> readout;
+    in property <length> u: 1px;
+    background: #10141e;
+    height: 28 * u;
+    Rectangle { y: parent.height / 2; height: 1px; width: parent.width; background: #31414a; }
+    Rectangle {
+        x: parent.width * Math.min(0.5, (root.value + 1) / 2);
+        width: Math.max(1px, parent.width * Math.abs(root.value) / 2);
+        height: parent.height;
+        background: root.ink.with-alpha(0.12);
+    }
+    Rectangle { x: (parent.width - self.width) * (root.value + 1) / 2; width: 2 * root.u; height: parent.height; background: root.ink; }
+    Caption { x: 8 * root.u; width: parent.width - 16 * root.u; height: parent.height; text: root.label; font-size: Math.max(1px, 9 * root.u); color: #c5d0d4; }
+    Caption { x: 8 * root.u; width: parent.width - 16 * root.u; height: parent.height; text: root.readout; horizontal-alignment: right; font-size: Math.max(1px, 9 * root.u); color: root.ink; letter-spacing: 0px; }
+}
+
+component DeckPortrait inherits Rectangle {
+    in property <DeckItem> deck;
+    in property <DeckLevels> levels;
+    in property <EqKnobs> eq;
+    in property <float> gain;
+    in property <color> ink;
+    in property <string> side;
+    in property <length> u;
+    background: transparent;
+    Caption { width: parent.width; text: root.side + "  /  " + (root.deck.loaded ? root.deck.artist : "AWAITING SIGNAL"); color: root.ink; font-size: Math.max(1px, 10 * root.u); }
+    Text { y: 24 * root.u; width: parent.width; height: 30 * root.u; text: root.deck.loaded ? root.deck.title : "Load a track in the DJ Booth"; overflow: elide; color: #e6edef; font-family: Theme.font; font-size: Math.max(1px, 17 * root.u); font-weight: 500; }
+    Caption { y: 292 * root.u; width: parent.width; text: root.deck.bpm + " BPM  /  " + root.deck.key; color: root.ink; font-size: Math.max(1px, 12 * root.u); letter-spacing: 0px; }
+    Caption { y: 294 * root.u; width: parent.width; text: !root.deck.loaded ? "EMPTY" : root.deck.playing ? "PLAYING" : "PAUSED"; horizontal-alignment: right; color: root.ink; font-size: Math.max(1px, 9 * root.u); letter-spacing: 1 * root.u; }
+    // Existing cached overview, clipped at the exact played position.
+    Rectangle {
+        y: 326 * root.u; width: parent.width; height: 42 * root.u; clip: true;
+        Image { width: parent.width; height: parent.height; source: root.deck.wave-rest; image-fit: fill; opacity: 0.5; }
+        Rectangle { x: 0px; y: 0px; width: parent.width * root.deck.progress; height: parent.height; clip: true;
+            Image { x: 0px; y: 0px; width: root.width; height: parent.height; source: root.deck.wave-played; image-fit: fill; }
+        }
+        Rectangle { x: (parent.width - self.width) * root.deck.progress; width: 1px; height: parent.height; background: root.ink; }
+    }
+    Caption { y: 374 * root.u; width: parent.width; text: root.deck.time + "  /  " + root.deck.length; font-size: Math.max(1px, 10 * root.u); letter-spacing: 0px; }
+    Caption { y: 374 * root.u; width: parent.width; text: root.deck.loop-on ? root.deck.loop-text.to-uppercase() : root.deck.synced ? "SYNC" : root.deck.tempo-text; horizontal-alignment: right; color: root.ink; font-size: Math.max(1px, 10 * root.u); letter-spacing: 0px; }
+    VerticalLayout {
+        y: 404 * root.u; width: parent.width; height: 115 * root.u; spacing: 3 * root.u;
+        Trace { u: root.u; ink: root.ink; label: "HIGH"; value: root.eq.high; readout: root.eq.high-text; }
+        Trace { u: root.u; ink: root.ink; label: "MID"; value: root.eq.mid; readout: root.eq.mid-text; }
+        Trace { u: root.u; ink: root.ink; label: "LOW"; value: root.eq.low; readout: root.eq.low-text; }
+        Trace { u: root.u; ink: root.ink; label: "FILTER"; value: root.eq.filter; readout: root.eq.filter-text; }
+    }
+    Caption { y: 529 * root.u; text: "CHANNEL"; font-size: Math.max(1px, 9 * root.u); }
+    Rectangle { y: 550 * root.u; width: parent.width; height: 3 * root.u; background: #242a39;
+        Rectangle { x: 0px; y: 0px; width: parent.width * Math.min(1, Math.max(0, root.gain)); height: parent.height; background: root.ink; }
+    }
+    Caption { y: 529 * root.u; width: parent.width; text: Math.round(root.gain * 100) + "%"; horizontal-alignment: right; color: root.ink; font-size: Math.max(1px, 9 * root.u); }
+}
+
+export component BroadcastDjSurface inherits Rectangle {
+    background: BroadcastDjState.performer-gpu ? transparent : #080a11;
+    Rectangle { x: 0px; y: 0px; width: root.width; height: root.height; background: @linear-gradient(90deg, #080a11cc, #080a1100 35%, #080a1100 65%, #080a11cc); }
+    property <length> u: Math.min(self.width / 1000, self.height / 700);
+    init => { keys.focus(); }
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if e.text == "f" { BroadcastDjState.toggle-fullscreen(); return accept; }
+            return reject;
+        }
+    }
+    Rectangle {
+        width: 920 * root.u; height: 660 * root.u;
+        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
+        background: transparent;
+        Caption { text: "PATCH  /  SIGNAL"; color: #e6edef; font-size: Math.max(1px, 13 * root.u); letter-spacing: 4 * root.u; }
+        Caption { width: parent.width; text: Host.badge == "MOCK" ? "DEMO  /  SIMULATED" : BroadcastState.live ? "ON AIR  /  " + BroadcastState.uptime : BroadcastState.active ? BroadcastState.state.to-uppercase() : "MONITOR  /  " + (DjState.engine-on ? "ENGINE CONNECTED" : "ENGINE OFFLINE"); horizontal-alignment: right; color: BroadcastState.live ? #9af5dc : #87939b; font-size: Math.max(1px, 10 * root.u); }
+        Rectangle { y: 32 * root.u; width: parent.width; height: 1px; background: #242a39; }
+        DeckPortrait { x: 0px; y: 58 * root.u; width: 220 * root.u; height: 556 * root.u; u: root.u; side: "A"; deck: DjState.deck-a; levels: DjState.levels-a; eq: DjState.eq-live ? DjState.eq-a : { high: DjState.deck-a.eq-high, mid: DjState.deck-a.eq-mid, low: DjState.deck-a.eq-low, filter: DjState.deck-a.filter, high-text: DjState.deck-a.eq-high-text, mid-text: DjState.deck-a.eq-mid-text, low-text: DjState.deck-a.eq-low-text, filter-text: DjState.deck-a.filter-text }; gain: DjState.gain-a; ink: #9af5dc; }
+        DeckPortrait { x: 700 * root.u; y: 58 * root.u; width: 220 * root.u; height: 556 * root.u; u: root.u; side: "B"; deck: DjState.deck-b; levels: DjState.levels-b; eq: DjState.eq-live ? DjState.eq-b : { high: DjState.deck-b.eq-high, mid: DjState.deck-b.eq-mid, low: DjState.deck-b.eq-low, filter: DjState.deck-b.filter, high-text: DjState.deck-b.eq-high-text, mid-text: DjState.deck-b.eq-mid-text, low-text: DjState.deck-b.eq-low-text, filter-text: DjState.deck-b.filter-text }; gain: DjState.gain-b; ink: #ffc28a; }
+        // Beat-grid phase, extrapolated by the shared DJ clock.
+        for i in 4: Rectangle {
+            x: (423 + i * 20) * root.u; y: 480 * root.u;
+            width: 6 * root.u; height: 6 * root.u; border-radius: 3 * root.u;
+            background: DjState.deck-a.playing && DjState.phase-a >= 0 && Math.mod(Math.floor(DjState.phase-a), 4) == i ? #9af5dc : #242a39;
+        }
+        for i in 4: Rectangle {
+            x: (423 + i * 20) * root.u; y: 493 * root.u;
+            width: 6 * root.u; height: 6 * root.u; border-radius: 3 * root.u;
+            background: DjState.deck-b.playing && DjState.phase-b >= 0 && Math.mod(Math.floor(DjState.phase-b), 4) == i ? #ffc28a : #242a39;
+        }
+        Caption { x: 350 * root.u; y: 420 * root.u; width: 220 * root.u; text: DjState.fx-on ? "FX  /  " + DjState.fx-label.to-uppercase() : "FX  /  DRY"; color: DjState.fx-on ? #e6edef : #87939b; horizontal-alignment: center; font-size: Math.max(1px, 9 * root.u); }
+        Caption { x: 350 * root.u; y: 438 * root.u; width: 220 * root.u; text: DjState.fx-on ? "DECK " + DjState.fx-deck.to-uppercase() + "  /  " + Math.round(DjState.fx-depth * 100) + "%" : ""; horizontal-alignment: center; font-size: Math.max(1px, 9 * root.u); }
+        Caption { x: 350 * root.u; y: 610 * root.u; width: 220 * root.u; text: "MAIN  /  " + DjState.master-text; horizontal-alignment: center; font-size: Math.max(1px, 9 * root.u); }
+        // The mouth connects the two decks. Its cursor is the actual crossfader.
+        Rectangle { x: 355 * root.u; y: 536 * root.u; width: 210 * root.u; height: 70 * root.u; background: transparent;
+            Caption { width: parent.width; text: "BLEND VECTOR"; horizontal-alignment: center; font-size: Math.max(1px, 9 * root.u); }
+            Rectangle { y: 35 * root.u; width: parent.width; height: 2 * root.u; background: @linear-gradient(90deg, #9af5dc, #ffc28a); }
+            Rectangle { x: (parent.width - self.width) * DjState.xfader; y: 24 * root.u; width: 4 * root.u; height: 24 * root.u; background: #edf4f6; }
+            Caption { y: 57 * root.u; width: parent.width; text: DjState.xfader-text; horizontal-alignment: center; font-size: Math.max(1px, 9 * root.u); letter-spacing: 0px; }
+        }
+
+        Rectangle { y: 632 * root.u; width: parent.width; height: 1px; background: #242a39; }
+        Caption { y: 646 * root.u; text: (DjState.set-on ? "Auto Mix  /  " : "DIRECTOR  /  ") + BroadcastDjState.section; font-size: Math.max(1px, 8 * root.u); }
+        Caption { x: 270 * root.u; y: 646 * root.u; width: 380 * root.u; text: BroadcastDjState.performer-note; horizontal-alignment: center; font-size: Math.max(1px, 8 * root.u); }
+        Caption { y: 646 * root.u; width: parent.width; text: "F  /  FULLSCREEN"; horizontal-alignment: right; font-size: Math.max(1px, 8 * root.u); }
+    }
+}

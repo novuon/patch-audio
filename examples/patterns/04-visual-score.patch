@@ -1,0 +1,12 @@
+// A visual score with no sound: a 32-bar arrangement for the Visualiser
+// to play over whatever the decks are doing (follow deck A or B).
+// Scenes change on phrase lines; intensity builds with a saw over each
+// 8-bar phrase; feedback swells; hue walks the wheel slowly.
+// Safe: visuals only. Load it, then `omarchy-patch pattern follow a`.
+cycle 4
+scene("<nebula cells lattice prism>/8")
+visual.intensity(saw.range(0.2, 1).slow(8).segment(16))
+visual.feedback(sine.range(0.2, 0.9).slow(16).segment(8))
+visual.symmetry("<0.2 0.4 0.6 0.9>/8")
+visual.motion(tri.range(0.1, 0.7).slow(4).segment(8))
+visual.hue(saw.slow(32).segment(4))

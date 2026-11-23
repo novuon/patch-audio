@@ -1,0 +1,453 @@
+import { Theme } from "theme.slint";
+import { Label, MockBadge, Tag, KeyCap, Dot, HLine, VLine } from "primitives.slint";
+import { Button, Tabs } from "controls.slint";
+import { ListRow, SectionHeading, Scroll } from "lists.slint";
+import { Host, TileItem, LayoutItem } from "host.slint";
+import { StatusBar } from "frame.slint";
+
+// Miniature of a layout recipe: how the workspace will be tiled initially.
+export component LayoutPreview inherits Rectangle {
+    in property <[TileItem]> tiles;
+    in property <bool> available: true;
+    property <length> gap: 3px;
+    background: Theme.bg-deeper;
+    border-width: 1px;
+    border-color: Theme.border;
+    for t in root.tiles: Rectangle {
+        x: root.gap + t.x * (root.width - root.gap);
+        y: root.gap + t.y * (root.height - root.gap);
+        width: t.w * (root.width - root.gap) - root.gap;
+        height: t.h * (root.height - root.gap) - root.gap;
+        background: t.planned ? transparent : Theme.raised;
+        border-width: 1px;
+        border-color: t.planned ? Theme.border-strong : root.available ? Theme.text-faint : Theme.border-strong;
+        clip: true;
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: t.title;
+                color: t.planned ? Theme.text-faint : Theme.text-dim;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+            if t.planned && parent.height > 28px: Text {
+                text: "planned";
+                color: Theme.text-faint;
+                font-family: Theme.font;
+                font-size: Theme.fs-tiny;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+// A switch big enough to see and hit (the shared Toggle is a small
+// in-row control).
+component SetupSwitch inherits Rectangle {
+    in property <bool> on;
+    callback clicked();
+    width: 38px;
+    height: 20px;
+    border-radius: 10px;
+    background: root.on ? Theme.accent : Theme.bg-deeper;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.border-strong;
+    Rectangle {
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        y: 3px;
+        x: root.on ? parent.width - self.width - 3px : 3px;
+        background: root.on ? Theme.accent-ink : Theme.text-dim;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// The transient controller (Ctrl+K): Units, Layouts, Setup, About.
+//
+// * Units: every Unit grouped (Audio, DJ Booth, Tools; planned ones last,
+//   faint), open or close each; the engine's state beside it.
+// * Layouts: the workspaces with a preview; open one.
+// * Setup: what Patch does on this machine (a ready-made profile, or each
+//   switch with what it does), changed and applied at once.
+// * About: app identity and Slint's required attribution widget.
+export component ControllerView inherits Rectangle {
+    background: Theme.bg;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+
+    property <int> n-surfaces: Host.surfaces.length;
+    property <int> n-layouts: Host.layouts.length;
+    property <int> n-profiles: Host.profiles.length;
+    property <int> n-settings: Host.settings.length;
+    // 0 Units, 1 Layouts, 2 Setup, 3 About.
+    in-out property <int> tab: 0;
+    in-out property <int> cursor: 0;
+    in-out property <int> layout-cursor: find-layout(Host.active-layout);
+    in-out property <int> setup-cursor: 0;
+    property <bool> wide: self.width >= 560px;
+    property <bool> short: self.height < 380px;
+    property <length> item-h: root.short ? Theme.row-h - 4px : Theme.row-h;
+    property <length> head-h: Theme.row-h;
+    property <LayoutItem> preview: Host.layouts[root.layout-cursor];
+
+    pure function find-layout(id: string) -> int {
+        // Slint has no find(); layouts are few, so a bounded scan is fine.
+        if (n-layouts > 0 && Host.layouts[0].id == id) { return 0; }
+        if (n-layouts > 1 && Host.layouts[1].id == id) { return 1; }
+        if (n-layouts > 2 && Host.layouts[2].id == id) { return 2; }
+        if (n-layouts > 3 && Host.layouts[3].id == id) { return 3; }
+        if (n-layouts > 4 && Host.layouts[4].id == id) { return 4; }
+        if (n-layouts > 5 && Host.layouts[5].id == id) { return 5; }
+        if (n-layouts > 6 && Host.layouts[6].id == id) { return 6; }
+        if (n-layouts > 7 && Host.layouts[7].id == id) { return 7; }
+        return 0;
+    }
+
+    // The keys move the cursor: keep its row in view (group headings above).
+    changed cursor => {
+        if (root.n-surfaces > 0) {
+            units.ensure-visible(Theme.s2 + Host.surfaces[root.cursor].section * root.head-h + root.cursor * root.item-h, root.item-h);
+        }
+    }
+
+    function move(d: int) {
+        if (root.tab == 0) {
+            root.cursor = Math.max(0, Math.min(root.cursor + d, root.n-surfaces - 1));
+        } else if (root.tab == 1) {
+            root.layout-cursor = Math.max(0, Math.min(root.layout-cursor + d, root.n-layouts - 1));
+        } else if (root.tab == 2) {
+            root.setup-cursor = Math.max(0, Math.min(root.setup-cursor + d, root.n-profiles + root.n-settings - 1));
+        }
+    }
+
+    function activate() {
+        if (root.tab == 0) {
+            if (root.n-surfaces > 0) { Host.toggle-surface(Host.surfaces[root.cursor].id); }
+        } else if (root.tab == 1) {
+            if (root.preview.available) { Host.open-layout(root.preview.id); }
+        } else if (root.tab == 2) {
+            if (root.setup-cursor < root.n-profiles) {
+                Host.choose-profile(Host.profiles[root.setup-cursor].id);
+            } else {
+                Host.toggle-setting(Host.settings[root.setup-cursor - root.n-profiles].id);
+            }
+        }
+    }
+
+    forward-focus: keys;
+    init => { keys.focus(); }
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Tab || e.text == Key.Backtab) {
+                root.tab = Math.mod(root.tab + (e.text == Key.Backtab ? 3 : 1), 4);
+                return accept;
+            }
+            if (e.text == "1" || e.text == "2" || e.text == "3" || e.text == "4") {
+                root.tab = e.text.to-float() - 1;
+                return accept;
+            }
+            // Arrows only: every letter opens its Unit (patch_core::keys),
+            // Ctrl+Q quits the windows (the session host; audio plays on).
+            if (e.text == Key.DownArrow) { root.move(1); return accept; }
+            if (e.text == Key.UpArrow) { root.move(-1); return accept; }
+            if (e.text == Key.Return || e.text == " ") { root.activate(); return accept; }
+            return reject;
+        }
+    }
+
+    property <length> title-h: Theme.header-h + 4px;
+    property <length> action-h: Theme.row-h + 16px;
+
+    // Title bar: who, and the four tabs.
+    Rectangle {
+        y: 0px;
+        height: root.title-h;
+        background: Theme.bg-deep;
+        HorizontalLayout {
+            padding-left: Theme.s4;
+            padding-right: Theme.s4;
+            spacing: Theme.s3;
+            Label { text: Host.app-label; tone: "bright"; caps: true; font-weight: 700; horizontal-stretch: 0; }
+            if root.wide: Label { text: "controller · " + Host.version; tone: "faint"; small: true; horizontal-stretch: 0; }
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: end;
+                Tabs {
+                    labels: ["1 Units", "2 Layouts", "3 Setup", "4 About"];
+                    current: root.tab;
+                    selected(i) => { root.tab = i; keys.focus(); }
+                }
+            }
+            Rectangle { width: Theme.s3; }
+            // Only without an engine (simulated data): a live Patch shows none.
+            VerticalLayout { alignment: center; MockBadge { text: Host.provenance != "" ? "MOCK" : ""; } }
+        }
+        HLine { y: parent.height - 1px; width: 100%; }
+    }
+
+    // ── Units ──────────────────────────────────────────────────────────
+    HorizontalLayout {
+        y: root.title-h;
+        height: root.height - root.title-h - root.action-h;
+        visible: root.tab == 0;
+        units := Scroll {
+            horizontal-stretch: 1;
+            Rectangle { height: Theme.s2; }
+            for s[i] in Host.surfaces: VerticalLayout {
+                if s.first: SectionHeading {
+                    height: root.head-h;
+                    text: s.group;
+                    detail: s.group == "Planned" ? "not built yet" : (i == 0 && root.wide ? "enter opens or closes" : "");
+                }
+                ListRow {
+                    selected: root.cursor == i && root.tab == 0;
+                    muted: s.group == "Planned";
+                    row-height: root.item-h;
+                    clicked => {
+                        root.cursor = i;
+                        Host.toggle-surface(s.id);
+                        keys.focus();
+                    }
+                    VerticalLayout { alignment: center; width: 22px; KeyCap { key: s.key; } }
+                    Label {
+                        // A Unit with several windows shows the window's name
+                        // ("Deck A"), one with a single window its own.
+                        text: s.title == s.unit ? s.unit : s.title;
+                        tone: s.open ? "bright" : "normal";
+                        horizontal-stretch: 0;
+                        min-width: 96px;
+                    }
+                    Label {
+                        text: s.title == s.unit ? "" : s.unit;
+                        tone: "faint";
+                        small: true;
+                        horizontal-stretch: 1;
+                    }
+                    Label { text: s.open ? "open" : ""; tone: "dim"; small: true; horizontal-stretch: 0; }
+                    VerticalLayout { alignment: center; Dot { state: s.open ? "on" : "off"; } }
+                }
+            }
+            Rectangle { height: Theme.s3; }
+        }
+        if root.wide: VLine { }
+        // The engine's state (the app's @children), beside the Units.
+        Scroll {
+            visible: root.wide;
+            width: root.wide ? Math.min(root.width * 0.38, 300px) : 0px;
+            VerticalLayout {
+                padding: root.wide ? Theme.s4 : 0px;
+                padding-top: root.wide ? Theme.s2 : 0px;
+                spacing: Theme.s3;
+                @children
+            }
+        }
+    }
+
+    // ── Layouts ────────────────────────────────────────────────────────
+    if root.tab == 1: HorizontalLayout {
+        y: root.title-h;
+        height: root.height - root.title-h - root.action-h;
+        Scroll {
+            horizontal-stretch: 1;
+            Rectangle { height: Theme.s2; }
+            SectionHeading { text: "Workspaces"; detail: root.wide ? "enter opens" : ""; }
+            for l[i] in Host.layouts: ListRow {
+                selected: root.layout-cursor == i;
+                muted: !l.available;
+                row-height: root.item-h;
+                clicked => { root.layout-cursor = i; keys.focus(); }
+                double-clicked => { if (l.available) { Host.open-layout(l.id); } }
+                Label { text: l.id == Host.active-layout ? "›" : " "; tone: "accent"; width: 8px; }
+                Label { text: l.name; tone: l.available ? "normal" : "dim"; horizontal-stretch: 0; min-width: 96px; }
+                if !l.available: VerticalLayout { alignment: center; MockBadge { text: "PLUGIN MOCK"; } }
+                Label { text: l.available ? l.summary : l.note; tone: "faint"; small: true; horizontal-stretch: 1; overflow: elide; }
+            }
+        }
+        if root.wide: VLine { }
+        if root.wide: VerticalLayout {
+            width: Math.min(root.width * 0.42, 340px);
+            padding: Theme.s4;
+            padding-top: Theme.s2;
+            spacing: Theme.s3;
+            SectionHeading { pad: 0px; text: "Preview"; detail: root.preview.name; }
+            LayoutPreview { height: self.width * 9 / 16; tiles: root.preview.tiles; available: root.preview.available; }
+            Label { text: root.preview.available ? root.preview.summary : root.preview.note; tone: root.preview.available ? "dim" : "accent"; small: true; wrap: word-wrap; }
+            Rectangle { vertical-stretch: 1; }
+        }
+    }
+
+    // ── Setup ──────────────────────────────────────────────────────────
+    if root.tab == 2: Scroll {
+        y: root.title-h;
+        height: root.height - root.title-h - root.action-h;
+        spacing: Theme.s2;
+        Rectangle { height: Theme.s2; }
+        SectionHeading { text: "Profile"; detail: root.wide ? "a ready-made setup" : ""; }
+        // The profiles as cards, the one in use marked: as many on a row as
+        // fit (each at least 220 px), the rest on the next rows; never cut
+        // off at the window's edge.
+        Rectangle {
+            property <length> gap: Theme.s3;
+            property <int> cols: Math.max(1, Math.min(root.n-profiles, Math.floor((root.width - 2 * Theme.s4 + gap) / (220px + gap))));
+            property <length> cw: (root.width - 2 * Theme.s4 - (cols - 1) * gap) / cols;
+            property <length> ch: root.width >= 640px ? 104px : 44px;
+            height: Math.ceil(Math.max(root.n-profiles, 1) / cols) * (ch + gap) - gap;
+            for p[i] in Host.profiles: Rectangle {
+                x: Theme.s4 + Math.mod(i, cols) * (cw + gap);
+                y: Math.floor(i / cols) * (ch + gap);
+                width: cw;
+                height: ch;
+                clip: true;
+                background: ta.has-hover ? Theme.hover : Theme.raised;
+                border-width: p.active || root.setup-cursor == i ? 1px : 1px;
+                border-color: p.active ? Theme.accent : root.setup-cursor == i ? Theme.text-dim : Theme.border;
+                card := VerticalLayout {
+                    alignment: start;
+                    padding: Theme.s3;
+                    spacing: Theme.s2;
+                    HorizontalLayout {
+                        spacing: Theme.s2;
+                        Label { text: p.name; tone: p.active ? "bright" : "normal"; font-weight: 700; horizontal-stretch: 1; }
+                        if p.active: Label { text: "in use"; tone: "accent"; small: true; horizontal-stretch: 0; }
+                    }
+                    if root.width >= 640px: Label { text: p.about; tone: "dim"; small: true; wrap: word-wrap; }
+                }
+                ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.setup-cursor = i; Host.choose-profile(p.id); keys.focus(); }
+                }
+            }
+        }
+        Rectangle { height: Theme.s3; }
+        // The switches, by group ("Setup", then a Unit's own).
+        for st[i] in Host.settings: VerticalLayout {
+            if i == 0 || Host.settings[i - 1].group != st.group: SectionHeading {
+                text: st.group == "Setup" ? "Switches" : st.group;
+                detail: i == 0 && root.wide ? "change one: it applies at once" : "";
+            }
+            Rectangle {
+                background: root.setup-cursor == root.n-profiles + i ? Theme.selection : row-ta.has-hover ? Theme.hover : transparent;
+                min-height: sw.preferred-height;
+                row-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.setup-cursor = root.n-profiles + i; Host.toggle-setting(st.id); keys.focus(); }
+                }
+                sw := HorizontalLayout {
+                    padding-left: Theme.s4;
+                    padding-right: Theme.s4;
+                    padding-top: Theme.s2;
+                    padding-bottom: Theme.s2;
+                    spacing: Theme.s4;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 1px;
+                        Label { text: st.label; tone: st.on ? "bright" : "normal"; }
+                        Label { text: st.detail; tone: "dim"; small: true; wrap: word-wrap; }
+                    }
+                    // Actions are buttons, not switches: what they do opens.
+                    if st.action: Label {
+                        text: "open ›";
+                        tone: row-ta.has-hover ? "accent" : "normal";
+                        small: true;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                    if !st.action: Label {
+                        text: st.on ? "on" : "off";
+                        tone: st.on ? "accent" : "faint";
+                        small: true;
+                        width: 28px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                    if !st.action: VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 0;
+                        SetupSwitch { on: st.on; clicked => { root.setup-cursor = root.n-profiles + i; Host.toggle-setting(st.id); keys.focus(); } }
+                    }
+                }
+            }
+        }
+        Rectangle { height: Theme.s3; }
+        HorizontalLayout {
+            padding-left: Theme.s4;
+            padding-right: Theme.s4;
+            Label {
+                text: "The same from a terminal: omarchy-patch setup";
+                tone: "faint";
+                small: true;
+                wrap: word-wrap;
+            }
+        }
+        Rectangle { height: Theme.s3; }
+    }
+
+    // About Patch (Ctrl+K, 4): what it is, in a few words, and what it is
+    // built with. Slint's royalty-free licence attribution is its badge on
+    // the public release page (licence option b; NOTICE.md), not a widget here.
+    if root.tab == 3: VerticalLayout {
+        y: root.title-h;
+        height: root.height - root.title-h - root.action-h;
+        alignment: center;
+        padding-left: Theme.s4 * 2;
+        padding-right: Theme.s4 * 2;
+        spacing: Theme.s3;
+        Label {
+            text: Host.app-name + " · " + Host.version;
+            tone: "bright";
+            horizontal-alignment: center;
+        }
+        Label {
+            text: "Patch is the audio environment for Omarchy. It routes, mixes, meters and records the sound of your desktop, and it has a DJ booth. One real-time engine does it all, and the music keeps playing when the windows close.";
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+        Label {
+            text: "Built with Rust, C, C++, assembly and Slint";
+            tone: "faint";
+            small: true;
+            horizontal-alignment: center;
+        }
+    }
+
+    // Action row
+    Rectangle {
+        y: root.height - root.action-h;
+        height: root.action-h;
+        background: Theme.bg-deep;
+        HLine { y: 0px; width: 100%; }
+        HorizontalLayout {
+            padding-left: Theme.s4;
+            padding-right: Theme.s4;
+            spacing: Theme.s3;
+            if root.tab == 1: VerticalLayout {
+                alignment: center;
+                Button {
+                    text: root.preview.available ? "Open workspace · " + root.preview.name : root.preview.name + " not implemented";
+                    primary: root.preview.available;
+                    enabled: root.preview.available;
+                    clicked => { Host.open-layout(root.preview.id); }
+                }
+            }
+            if root.tab != 1: VerticalLayout {
+                alignment: center;
+                Label {
+                    text: root.tab == 0 ? "↑↓ choose · enter open/close · a–z open · tab next tab" : root.tab == 3 ? "Patch · " + Host.version : "↑↓ choose · enter change · tab next tab";
+                    tone: "faint";
+                    small: true;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if root.width > 440px: VerticalLayout {
+                alignment: center;
+                Button { text: "Quit session"; key: "^q"; compact: true; clicked => { Host.quit-session(); } }
+            }
+            VerticalLayout { alignment: center; Label { text: "esc"; tone: "faint"; small: true; } }
+        }
+    }
+}

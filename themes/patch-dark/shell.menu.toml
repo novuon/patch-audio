@@ -1,0 +1,13 @@
+# Flat, opaque cards: no translucency, a signal-red selection.
+background                = "#141114"
+background-alpha          = 1.0
+text                      = "#d2cdc8"
+border                    = "#d2cdc8"
+border-alpha              = 1.0
+scrim                     = "#0b0a0b"
+scrim-alpha               = 0.6
+selected-background       = "#f0243b"
+selected-background-alpha = 0.18
+selected-text             = "#f7f4ee"
+selected-border           = "#f0243b"
+selected-border-alpha     = 1.0

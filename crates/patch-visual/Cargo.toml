@@ -1,0 +1,22 @@
+[package]
+name = "patch-visual"
+description = "Patch Visualiser Unit: our own character-cell animations on ttfx's motion curves, played to the music as glowing glyphs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The engine's motion curves (easing): ttfx, a Rust port of
+# TerminalTextEffects (ChrisBuilds, MIT) by omacom (MIT). Its stock
+# effects (Omarchy's screensaver) are not used.
+ttfx = { git = "https://github.com/omacom/ttfx", tag = "v0.5.0" }
+ab_glyph = "0.2"
+rand.workspace = true
+libc.workspace = true
+patch-core.workspace = true
+serde.workspace = true
+serde_json = "1"
+
+[lints]
+workspace = true

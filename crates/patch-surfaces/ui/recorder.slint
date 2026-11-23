@@ -1,0 +1,253 @@
+import { Theme, Label, MockBadge, Tag, SectionHeading, ListRow, Scroll, Button, Meter, MeterKind, HLine, VLine, Dot, EmptyState, Host } from "@patch-ui/patch-ui.slint";
+
+export struct RecSource {
+    id: string,
+    label: string,
+    selected: bool,
+}
+
+export struct TakeItem {
+    name: string,
+    path: string,
+    detail: string,
+}
+
+export global RecState {
+    in property <[RecSource]> sources;
+    in property <int> source-cursor;
+    in property <bool> float32: false;
+    in property <bool> recording;
+    in property <bool> paused;
+    in property <bool> busy;
+    in property <string> timecode: "00:00:00.00";
+    in property <string> size: "—";
+    in property <string> peak: "−∞";
+    in property <float> peak-pos;
+    in property <float> level-pos;
+    in property <int> clips;
+    in property <int> dropouts;
+    in property <string> loudness: "—";
+    in property <string> file;
+    in property <string> folder;
+    in property <string> free;
+    in property <string> message;
+    in property <[TakeItem]> takes;
+    callback pause-record();
+    callback play-take(string);
+    callback toggle-record();
+    callback move-source(int);
+    callback set-float(bool);
+}
+
+component RecButton inherits Rectangle {
+    in property <bool> recording;
+    in property <bool> busy;
+    callback clicked();
+    height: 56px;
+    background: ta.pressed ? Theme.selection : ta.has-hover ? Theme.hover : Theme.raised;
+    border-width: 1px;
+    border-color: recording ? Theme.accent : Theme.border-strong;
+    HorizontalLayout {
+        alignment: center;
+        spacing: Theme.s4;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                border-radius: root.recording ? 0px : 8px;
+                background: Theme.accent;
+            }
+        }
+        Text {
+            text: root.busy ? "Working…" : root.recording ? "Stop" : "Record";
+            color: Theme.text-bright;
+            font-family: Theme.font-display;
+            font-weight: 700;
+            font-size: Theme.fs-large;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "enter";
+            color: Theme.text-faint;
+            font-family: Theme.font;
+            font-size: Theme.fs-tiny;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { if !root.busy { root.clicked(); } }
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: Theme.row-h;
+    width: t.preferred-width + 20px;
+    background: on ? Theme.accent-soft : ta.has-hover ? Theme.hover : transparent;
+    border-width: 1px;
+    border-color: on ? Theme.accent : Theme.border-strong;
+    t := Text {
+        text: root.text;
+        color: !root.enabled ? Theme.text-faint : root.on ? Theme.accent : Theme.text;
+        font-family: Theme.font;
+        font-size: Theme.fs-small;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component RecorderSurface inherits Rectangle {
+    init => { keys.focus(); }
+    property <bool> split: self.width >= 760px;
+    property <bool> show-takes: false;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            if (e.text == Key.Return && !RecState.busy) { RecState.toggle-record(); return accept; }
+            if (e.text == " " && RecState.recording && !RecState.busy) { RecState.pause-record(); return accept; }
+            if (e.text == "t") { root.show-takes = !root.show-takes; return accept; }
+            if (e.text == "f") { RecState.set-float(!RecState.float32); return accept; }
+            if (e.text == Key.UpArrow || e.text == "k") { RecState.move-source(-1); return accept; }
+            if (e.text == Key.DownArrow || e.text == "j") { RecState.move-source(1); return accept; }
+            return reject;
+        }
+        VerticalLayout {
+            if !root.split: HorizontalLayout {
+                spacing: Theme.s3;
+                padding-left: Theme.s4;
+                padding-top: Theme.s3;
+                Button { text: "Controls"; lit: !root.show-takes; clicked => { root.show-takes = false; } }
+                Button { text: "Takes · " + RecState.takes.length; lit: root.show-takes; clicked => { root.show-takes = true; } }
+            }
+            HorizontalLayout {
+                if root.split || !root.show-takes: Scroll {
+                    horizontal-stretch: 1;
+                VerticalLayout {
+                    padding: Theme.s5;
+                    spacing: Theme.s4;
+                    // Timecode — the thing you look at while recording.
+                    HorizontalLayout {
+                        spacing: Theme.s4;
+                        // State first, large, with its lamp; the size under it.
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: Theme.s2;
+                            HorizontalLayout {
+                                spacing: Theme.s3;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 18px;
+                                        height: 18px;
+                                        border-radius: 9px;
+                                        background: RecState.recording && !RecState.paused ? Theme.accent : transparent;
+                                        border-width: 2px;
+                                        border-color: RecState.recording ? Theme.accent : Theme.text-faint;
+                                    }
+                                }
+                                Label {
+                                    text: RecState.paused ? "PAUSED" : RecState.recording ? "REC" : "STANDBY";
+                                    tone: RecState.recording ? "accent" : "faint";
+                                    font-family: Theme.font-display;
+                                    font-size: Theme.fs-title;
+                                    font-weight: 700;
+                                }
+                            }
+                            Label { text: RecState.size; tone: "dim"; small: true; }
+                        }
+                        Rectangle { }
+                        Label {
+                            text: RecState.timecode;
+                            tone: RecState.recording ? "bright" : "dim";
+                            // Monospaced: a running clock must not jitter.
+                            font-family: Theme.font;
+                            font-size: Theme.fs-hero;
+                            font-weight: 700;
+                            horizontal-stretch: 0;
+                        }
+                    }
+                    // Level of what is being written to disk.
+                    VerticalLayout {
+                        spacing: 3px;
+                        Meter { vertical: false; kind: MeterKind.System; height: 10px; value: RecState.level-pos; peak: RecState.peak-pos; clipping: RecState.clips > 0; }
+                        HorizontalLayout {
+                            spacing: Theme.s5;
+                            Label { text: "peak " + RecState.peak + " dBFS"; tone: "dim"; small: true; horizontal-stretch: 0; }
+                            Label { text: "clips " + RecState.clips; tone: RecState.clips > 0 ? "error" : "dim"; small: true; horizontal-stretch: 0; }
+                            Label { text: "dropouts " + RecState.dropouts; tone: RecState.dropouts > 0 ? "warn" : "dim"; small: true; horizontal-stretch: 0; }
+                            Label { text: "I " + RecState.loudness + " LUFS"; tone: "dim"; small: true; horizontal-stretch: 0; }
+                            Rectangle { }
+                        }
+                    }
+                    RecButton { recording: RecState.recording; busy: RecState.busy; clicked => { RecState.toggle-record(); } }
+                    if !root.split: HorizontalLayout {
+                        spacing: Theme.s3;
+                        Button { text: "‹"; clicked => { RecState.move-source(-1); } }
+                        Label { text: RecState.sources.length > 0 ? RecState.sources[RecState.source-cursor].label : "No sources"; }
+                        Button { text: "›"; clicked => { RecState.move-source(1); } }
+                    }
+                    if RecState.recording: Button { text: RecState.paused ? "Resume recording" : "Pause recording"; clicked => { if !RecState.busy { RecState.pause-record(); } } }
+                    // Format
+                    HorizontalLayout {
+                        spacing: Theme.s3;
+                        alignment: start;
+                        Label { text: "Format"; tone: "faint"; small: true; caps: true; horizontal-stretch: 0; width: 64px; }
+                        Chip { enabled: !RecState.recording && !RecState.busy; text: "24-bit · TPDF"; on: !RecState.float32; clicked => { RecState.set-float(false); } }
+                        Chip { enabled: !RecState.recording && !RecState.busy; text: "32-bit float"; on: RecState.float32; clicked => { RecState.set-float(true); } }
+                    }
+                    Label {
+                        text: RecState.float32
+                            ? "Bit-exact copy of the PipeWire graph. Largest files; nothing is lost."
+                            : "Triangular dither at ±1 LSB before rounding to 24 bits: no truncation distortion.";
+                        tone: "faint";
+                        small: true;
+                        wrap: word-wrap;
+                    }
+                    if RecState.message != "": Label { text: RecState.message; tone: "dim"; small: true; wrap: word-wrap; }
+                    if RecState.file != "": Label { text: RecState.file; tone: "faint"; small: true; wrap: word-wrap; }
+                    Label { text: "Enter record/stop · Space pause/resume · T takes"; tone: "faint"; small: true; }
+                    Label { text: RecState.folder + " · " + RecState.free + " free"; tone: "faint"; small: true; }
+                }
+                }
+                if root.split: VLine { }
+                if root.split || root.show-takes: VerticalLayout {
+                    width: root.split ? Math.min(root.width * 0.42, 440px) : root.width;
+                    SectionHeading { text: "Source"; detail: "what gets recorded"; }
+                    Scroll {
+                    height: Math.min(RecState.sources.length * Theme.row-h, 150px);
+                    for s[i] in RecState.sources: ListRow {
+                        selected: s.selected;
+                        clicked => { RecState.move-source(i - RecState.source-cursor); keys.focus(); }
+                        VerticalLayout { alignment: center; Dot { state: s.selected ? "accent" : "off"; } }
+                        Label { text: s.label; tone: s.selected ? "bright" : "normal"; }
+                    }
+                    }
+                    SectionHeading { text: "Takes"; detail: RecState.takes.length + " files"; }
+                    if RecState.takes.length == 0: Label { text: "Your saved takes appear here."; tone: "faint"; small: true; }
+                    Scroll {
+                        vertical-stretch: 1;
+                        for t in RecState.takes: Rectangle {
+                            height: 2 * Theme.row-h + 8px;
+                            VerticalLayout {
+                                padding-left: Theme.s4;
+                                padding-right: Theme.s4;
+                                alignment: center;
+                                Label { text: t.name; }
+                                HorizontalLayout {
+                                    Label { text: t.detail; tone: "faint"; small: true; }
+                                    Button { text: "Play"; enabled: !RecState.recording || t.path != RecState.file; clicked => { RecState.play-take(t.path); Host.focus-surface("player"); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
