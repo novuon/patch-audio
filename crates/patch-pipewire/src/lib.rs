@@ -1363,7 +1363,7 @@ impl PipeWireAudioProvider {
             })
             .collect();
         // The DJ Booth: the decks' sum after its own fader.
-        let dj = self.engine.dj_level;
+        let dj = self.engine.peaks.dj;
         let dj_vu = self.engine.dj_vu().map_or(-120.0, |v| v[0].max(v[1]));
         // The Patch mix strip is the program: its level and VU are the
         // output's (it showed the bus channel: apps through Patch only).
@@ -1494,7 +1494,7 @@ impl PipeWireAudioProvider {
             .chain(deck_lr.iter().copied())
             .collect();
         MeterFrame {
-            buses_db: if self.engine.buses.is_some() { self.engine.bus_level.to_vec() } else { vec![] },
+            buses_db: if self.engine.buses.is_some() { self.engine.peaks.buses.to_vec() } else { vec![] },
             strips_lr: Some(strips_lr),
             strips_post_fader: self.engine.post_fader,
             deck_input_db: Some(["deck-a", "deck-b", "deck-c", "deck-d"].map(|name| {

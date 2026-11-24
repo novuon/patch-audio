@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Snapshot {
     /// VU per side (0 VU = reference level).
     pub vu: [f32; 2],
@@ -22,6 +22,22 @@ pub struct Snapshot {
     pub spectrum: Vec<f32>,
     /// Program frames analysed so far.
     pub frames: u64,
+}
+
+impl Default for Snapshot {
+    fn default() -> Self {
+        let silence = patch_model::audio::SILENCE_DB;
+        Self {
+            vu: [silence; 2],
+            momentary: silence,
+            short_term: silence,
+            integrated: silence,
+            range: 0.0,
+            true_peak_max: silence,
+            spectrum: Vec::new(),
+            frames: 0,
+        }
+    }
 }
 
 /// The Analyzer Unit's view: computed only while someone asks for it.
@@ -103,10 +119,7 @@ impl AnalyzerState {
 /// graph rate changes (the meters are rebuilt for it).
 pub fn spawn(params: Arc<Params>) -> Arc<Analysis> {
     let a = Arc::new(Analysis {
-        snapshot: Mutex::new(Snapshot {
-            true_peak_max: -120.0,
-            ..Default::default()
-        }),
+        snapshot: Mutex::default(),
         reset: false.into(),
         analyzer: Mutex::default(),
         analyzer_until: 0.into(),

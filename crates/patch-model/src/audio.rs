@@ -223,7 +223,7 @@ pub const SILENCE_DB: f32 = -120.0;
 /// One block of meter data: instantaneous sample peaks in dBFS, as an engine
 /// reports them. Ballistics (release, peak hold) are a display concern and
 /// live in the UI, so every surface can meter the same signal its own way.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MeterFrame {
     /// Post-fader peak per mixer strip (same order as `strips()`).
     pub strips_db: Vec<f32>,
@@ -260,6 +260,29 @@ pub struct MeterFrame {
     /// in the label): the Meter lists them on hover.
     pub input_sources: Vec<String>,
     pub output_label: String,
+}
+
+impl Default for MeterFrame {
+    fn default() -> Self {
+        Self {
+            strips_db: Vec::new(),
+            strips_vu: None,
+            strips_lr: None,
+            strips_post_fader: false,
+            deck_input_db: None,
+            input: Default::default(),
+            output: Default::default(),
+            true_peak_db: SILENCE_DB,
+            spectrum_db: Vec::new(),
+            loudness: None,
+            sync_ms: None,
+            timing: None,
+            buses_db: Vec::new(),
+            input_label: String::new(),
+            input_sources: Vec::new(),
+            output_label: String::new(),
+        }
+    }
 }
 
 pub trait AudioProvider {

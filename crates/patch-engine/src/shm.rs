@@ -229,7 +229,7 @@ impl Writer {
 impl Now {
     pub fn empty() -> Now {
         Now {
-            vu: [0.0; 2],
+            vu: [patch_model::audio::SILENCE_DB; 2],
             loudness: [-120.0; 5],
             bands: 0,
             spectrum: [-120.0; BANDS],

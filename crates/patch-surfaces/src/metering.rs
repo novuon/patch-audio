@@ -123,8 +123,8 @@ impl Default for Metering {
             input: Default::default(),
             output: Default::default(),
             spectrum: vec![],
-            momentary: db_to_power(-23.0),
-            integrated: db_to_power(-16.0 + 8.0),
+            momentary: 0.0,
+            integrated: 0.0,
             true_peak: SILENCE_DB,
             true_peak_age: 0.0,
         }
@@ -259,6 +259,14 @@ pub fn db_text(db: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loudness_history_starts_silent_without_a_measured_snapshot() {
+        let mut meter = Metering::default();
+        meter.step(&MeterFrame::default(), 1.0 / 60.0);
+        assert_eq!(lufs_pos(meter.lufs_momentary()), 0.0);
+        assert_eq!(lufs_pos(meter.lufs_integrated()), 0.0);
+    }
 
     #[test]
     fn deck_input_meter_is_independent_and_holds_overloads_then_releases() {

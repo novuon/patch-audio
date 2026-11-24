@@ -78,11 +78,38 @@ fn sends_of(v: &Value) -> Option<[patch_model::audio::Send; 4]> {
     })
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Snap {
     pub vu: [f32; 2],
     pub loudness: Option<LoudnessReading>,
     pub spectrum: Vec<f32>,
+}
+
+impl Default for Snap {
+    fn default() -> Self {
+        Self {
+            vu: [SILENCE_DB; 2],
+            loudness: None,
+            spectrum: Vec::new(),
+        }
+    }
+}
+
+/// Cached peak readings in dBFS. Until audio arrives, every meter is silent.
+pub struct MeterPeaks {
+    out: [f32; 2],
+    pub dj: [f32; 2],
+    pub buses: [[f32; 2]; 4],
+}
+
+impl Default for MeterPeaks {
+    fn default() -> Self {
+        Self {
+            out: [SILENCE_DB; 2],
+            dj: [SILENCE_DB; 2],
+            buses: [[SILENCE_DB; 2]; 4],
+        }
+    }
 }
 
 #[derive(Default)]
@@ -124,13 +151,12 @@ pub struct EngineFeed {
     /// graph blocks. A missing block is not a new silent audio measurement.
     last_ch: Vec<[f32; 2]>,
     pub input_ch: Vec<[f32; 2]>,
-    last_out: [f32; 2],
+    pub peaks: MeterPeaks,
     /// Channel VUs, run on the blocks as they come due (so they are
     /// delayed to the ear like the peaks). None: the engine doesn't send
     /// channel levels (an older engine).
     ch_vu: Vec<[patch_meter::BlockVu; 2]>,
-    /// The DJ Booth's level as shown (dB) and its VU.
-    pub dj_level: [f32; 2],
+    /// The DJ Booth's VU.
     dj_vu: [patch_meter::BlockVu; 2],
     has_dj: bool,
     /// The DJ Booth's fader (dB) and mute, from the status.
@@ -190,7 +216,6 @@ pub struct EngineFeed {
     /// The console's buses; None from an engine without them.
     pub buses: Option<Buses>,
     /// The buses' levels as last shown (peak dB, AUX 1, 2, FX 1, 2).
-    pub bus_level: [[f32; 2]; 4],
     pub mics: Vec<(String, String)>,
     /// Mic lanes kept out of Patch Input and every send (Remote voices).
     pub mix_minus: std::collections::BTreeSet<String>,
@@ -419,7 +444,7 @@ impl EngineFeed {
         if channels != self.channels {
             self.last_ch.clear();
             self.input_ch.clear();
-            self.last_out = [SILENCE_DB; 2];
+            self.peaks = MeterPeaks::default();
             self.ch_vu.clear();
             self.channels = channels;
         }
@@ -653,7 +678,7 @@ impl EngineFeed {
         if channels != self.channels {
             self.last_ch.clear();
             self.input_ch.clear();
-            self.last_out = [SILENCE_DB; 2];
+            self.peaks = MeterPeaks::default();
             self.ch_vu.clear();
             self.channels = channels;
         }
@@ -816,9 +841,9 @@ impl EngineFeed {
         let mut ch = self.last_ch.clone();
         self.input_ch.resize(n, [SILENCE_DB; 2]);
         let mut input = self.input_ch.clone();
-        let mut out = self.last_out;
-        let mut dj = self.dj_level;
-        let mut bus = self.bus_level;
+        let mut out = self.peaks.out;
+        let mut dj = self.peaks.dj;
+        let mut bus = self.peaks.buses;
         let mut newest = self.shown_until;
         let mut has_new_block = false;
         for b in self
@@ -890,12 +915,12 @@ impl EngineFeed {
         }
         self.shown_until = newest;
         if has_new_block {
-            self.dj_level = dj;
-            self.bus_level = bus;
+            self.peaks.dj = dj;
+            self.peaks.buses = bus;
         }
         self.input_ch = input;
         self.last_ch.clone_from(&ch);
-        self.last_out = out;
+        self.peaks.out = out;
         (ch, out)
     }
 
@@ -1197,6 +1222,46 @@ fn db_to_lin(db: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_engine_meters_start_silent_before_the_first_block() {
+        let mut feed = EngineFeed::default();
+        let (_, out) = feed.take_due(0);
+
+        assert_eq!(out, [SILENCE_DB; 2]);
+        assert_eq!(Snap::default().vu, [SILENCE_DB; 2]);
+        assert_eq!(patch_model::audio::MeterFrame::default().true_peak_db, SILENCE_DB);
+        assert_eq!(feed.peaks.dj, [SILENCE_DB; 2]);
+        assert_eq!(feed.peaks.buses, [[SILENCE_DB; 2]; 4]);
+    }
+
+    #[test]
+    fn dj_and_return_peaks_hold_until_a_silent_block_arrives() {
+        let mut feed = EngineFeed::default();
+        let block = |nsec, level| Block {
+            nsec,
+            ch: vec![],
+            out: [SILENCE_DB; 2],
+            abs: vec![],
+            gain: vec![],
+            secs: 256.0 / 48000.0,
+            decks: vec![],
+            loads: vec![],
+            dj: [level; 2],
+            dj_abs: [0.0; 2],
+            bus: [[level; 2]; 4],
+        };
+        feed.blocks.push_back(block(1, -9.0));
+        feed.take_due(0);
+        feed.take_due(0);
+        assert_eq!(feed.peaks.dj, [-9.0; 2]);
+        assert_eq!(feed.peaks.buses, [[-9.0; 2]; 4]);
+
+        feed.blocks.push_back(block(2, SILENCE_DB));
+        feed.take_due(0);
+        assert_eq!(feed.peaks.dj, [SILENCE_DB; 2]);
+        assert_eq!(feed.peaks.buses, [[SILENCE_DB; 2]; 4]);
+    }
 
     #[test]
     fn input_peaks_survive_closed_faders_and_clear_on_new_silent_audio() {

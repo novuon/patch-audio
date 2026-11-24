@@ -42,7 +42,7 @@ pub struct StereoMeter {
     peak: [f32; 2],
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StereoReading {
     /// −1 … +1 (1 = mono, 0 = unrelated, −1 = out of phase).
     pub correlation: f64,
@@ -61,6 +61,22 @@ pub struct StereoReading {
     /// Mid and side RMS, dBFS.
     pub mid_dbfs: f64,
     pub side_dbfs: f64,
+}
+
+impl Default for StereoReading {
+    fn default() -> Self {
+        Self {
+            correlation: 0.0,
+            balance_db: 0.0,
+            width_db: f64::NEG_INFINITY,
+            rms_dbfs: [f64::NEG_INFINITY; 2],
+            dc_dbfs: [f64::NEG_INFINITY; 2],
+            peak_dbfs: [f64::NEG_INFINITY; 2],
+            crest_db: [0.0; 2],
+            mid_dbfs: f64::NEG_INFINITY,
+            side_dbfs: f64::NEG_INFINITY,
+        }
+    }
 }
 
 fn db(x: f64) -> f64 {
