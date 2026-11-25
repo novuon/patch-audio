@@ -605,6 +605,15 @@ say "Applying your setup"
 MAIN_OUTPUT="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-patch/main-output"
 [[ -s $MAIN_OUTPUT ]] || { mkdir -p "${MAIN_OUTPUT%/*}" && echo patch > "$MAIN_OUTPUT"; }
 "$BIN/omarchy-patch" setup set --all "${SETUP[@]}"
+# Omarchy applies a theme from its own copy, and its wallpaper picker and
+# intros read that copy: a Patch theme in use is staged again, so the
+# wallpapers that arrived after it was applied show (before 0.8.8's fix the
+# Wallpapers download didn't, and a reinstall downloads nothing new). The
+# wallpaper on screen stays.
+theme_name=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
+if [[ $theme_name == patch-* ]] && command -v omarchy-theme-set >/dev/null; then
+  OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy-theme-set "$theme_name" </dev/null >/dev/null 2>&1 || true
+fi
 
 # A module key, then what downloads: small ones now, big ones
 # (the wallpapers, the stem separator) in the background, with a

@@ -621,8 +621,18 @@ fn remove(ids: &[&str], yes: bool) -> Result<()> {
         }
     }
     save_installed(&installed)?;
+    if going.iter().any(|id| into_themes(id)) {
+        crate::setup_cli::restage_theme();
+    }
     println!("✓ removed {}{}", names(c, &going), if freed > 0 { format!(", {} freed", human_size(freed)) } else { String::new() });
     Ok(())
+}
+
+/// A module whose files land in the Patch themes (the themes, the
+/// wallpapers and their intros). By id: the built-in catalogue `remove`
+/// reads has no payloads.
+fn into_themes(id: &str) -> bool {
+    matches!(id, "themes" | "wallpapers")
 }
 
 /// Delete these files, then the folders they leave empty.
@@ -790,6 +800,9 @@ fn work(c: &Catalogue, front: Option<bool>) -> Result<Handoff> {
                 }
                 if m.switch {
                     crate::setup_cli::switch(&[(m.id.as_str(), true)]).ok();
+                }
+                if into_themes(&m.id) {
+                    crate::setup_cli::restage_theme();
                 }
                 update_job(&m.id, |x| {
                     x.state = "done".into();

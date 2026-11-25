@@ -448,6 +448,41 @@ fn themes_source() -> Option<PathBuf> {
         .find(|t| t.join("patch-light/colors.toml").is_file())
 }
 
+/// Omarchy applies a theme from a copy (`~/.local/state/omarchy/current/
+/// theme`): its wallpaper picker and the intros read that copy, not the
+/// theme's folder. Files added to a Patch theme in use (the Wallpapers
+/// download, which lands minutes after the install applied the theme) only
+/// show once the theme is staged again. 2026-11-25, a clean install: the
+/// wallpapers and intros were "installed" but missing from the picker.
+/// The wallpaper on screen stays, unless it was one just removed.
+pub fn restage_theme() {
+    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    let current = home.join(".local/state/omarchy/current");
+    let active = std::fs::read_to_string(current.join("theme.name")).unwrap_or_default();
+    let active = active.trim();
+    if !active.starts_with("patch-") {
+        return;
+    }
+    let set = |keep_background: bool| {
+        let mut cmd = std::process::Command::new("omarchy-theme-set");
+        cmd.arg(active);
+        if keep_background {
+            cmd.env("OMARCHY_THEME_SKIP_BACKGROUND", "1");
+        }
+        let _ = cmd
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    };
+    set(true);
+    // The link points at a wallpaper that went: Omarchy picks one that is there.
+    let link = current.join("background");
+    if link.symlink_metadata().is_ok() && !link.exists() {
+        set(false);
+    }
+}
+
 fn themes(on: bool) -> anyhow::Result<()> {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     let dest = std::env::var_os("XDG_CONFIG_HOME")
@@ -472,14 +507,8 @@ fn themes(on: bool) -> anyhow::Result<()> {
     // wallpaper stays.
     let current = home.join(".local/state/omarchy/current/theme.name");
     let active = std::fs::read_to_string(current).unwrap_or_default();
-    if let Some(name) = changed.iter().find(|n| **n == active.trim()) {
-        let _ = std::process::Command::new("omarchy-theme-set")
-            .arg(name)
-            .env("OMARCHY_THEME_SKIP_BACKGROUND", "1")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
+    if changed.iter().any(|n| *n == active.trim()) {
+        restage_theme();
     }
     // The theme in use went (removed, no public copy to fall back on):
     // Omarchy back on its default theme, not on one missing from its menu.
