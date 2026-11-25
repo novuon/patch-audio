@@ -1,0 +1,29 @@
+# The build environment of Patch's generic Linux kit (scripts/build-generic.sh).
+#
+# Ubuntu 24.04 LTS is the oldest base the kit supports: glibc 2.39 and
+# PipeWire 1.0. A binary built here runs on every distribution at least
+# that new (Ubuntu 24.04+, Linux Mint 22+, Pop!_OS 24.04, Debian 13,
+# Fedora 40+, openSUSE Tumbleweed, Arch). It links only glibc, libstdc++,
+# libpipewire-0.3, SQLite, fontconfig and freetype from the system, all
+# stable ABIs; Wayland, X11, EGL and xkbcommon are loaded at run time.
+#
+# The Omarchy kit is not built here: it stays the Arch build
+# (scripts/build-kit.sh), so nothing about it changes.
+FROM docker.io/library/ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git python3 build-essential pkg-config \
+      libpipewire-0.3-dev libsqlite3-dev libfontconfig-dev libfreetype-dev \
+      libxkbcommon-dev libwayland-dev libegl-dev libgbm-dev libdrm-dev \
+      libudev-dev libinput-dev libseat-dev libx11-dev libxcursor-dev \
+      libxrandr-dev libxi-dev libx11-xcb-dev libxcb1-dev \
+      binutils xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust: rustup only. The toolchain itself comes from the checkout's
+# rust-toolchain.toml at build time (cached in the CARGO_HOME volume).
+ENV RUSTUP_HOME=/opt/rustup PATH=/opt/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | CARGO_HOME=/opt/cargo sh -s -- -y --default-toolchain none --profile minimal --no-modify-path \
+    && chmod -R a+rwX /opt/rustup /opt/cargo

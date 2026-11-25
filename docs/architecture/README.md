@@ -58,7 +58,7 @@ optimised implementation only when it passes the acceptance gate in
 
 ## Where things live (crates)
 
-The workspace (0.7.7) has these 25 members.
+The workspace (0.8.7) has these 27 members (`members` in the root `Cargo.toml`).
 
 | Concern | Crate | Plane |
 |---|---|---|
@@ -71,10 +71,12 @@ The workspace (0.7.7) has these 25 members.
 | Meter and analyzer kernels (assembly + reference) | `patch-meter` | RT |
 | Recorder conversion kernels and recorder process | `patch-record` | control/IO |
 | Broadcast process | `patch-broadcast` | control/IO |
+| Network Unit: audio to and from machines on the LAN (RTP with SAP, AES67-style L24, VBAN) | `patch-network` | control/IO |
 | Track analysis (tempo, grid, key, loudness, energy, bands) | `patch-analysis` | offline |
 | Background stem separation | `patch-stems` | offline |
 | Deterministic transition engine (next track, mix points, plans) | `patch-ai` | control |
 | Pattern unit (engine-owned, plays with windows closed) | `patch-pattern` | control |
+| Native VST3 loading: the engine's master rack chain and the plugin windows' mirror instances | `patch-plugin` | RT + UI |
 | Derived material cut from tracks the library already knows | `patch-material` | control/offline |
 | Output-optimization profiles (data only) | `patch-tune` | control |
 | Patch DJ format and library (SQLite, packages) | `patch-library` | control/IO |
@@ -119,5 +121,5 @@ Source in this repository is MIT (`LICENSE`, `[workspace.package]` in
 (GPL-2.0-or-later) and Slint (taken under its GPL-3.0 option), so that
 binary is a combined **GPL-3.0** work. `NOTICE.md` is the statement of
 that. The Arch package (`packaging/arch/PKGBUILD`) records both:
-`license=('MIT' 'GPL-3.0-only')`, and `pkgver` is the workspace version
-(0.7.7). Those licence terms are unchanged.
+`license=('MIT' 'GPL-3.0-only')`, and `pkgver` should follow the workspace
+version. Those licence terms are unchanged.

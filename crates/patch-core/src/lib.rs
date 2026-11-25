@@ -38,6 +38,7 @@ pub mod instance;
 pub mod intent;
 pub mod ipc;
 pub mod keys;
+pub mod desk;
 pub mod layout;
 pub mod licence;
 pub mod material;

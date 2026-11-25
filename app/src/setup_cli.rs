@@ -200,7 +200,19 @@ pub fn apply(s: &Setup, before: Option<Setup>) -> anyhow::Result<()> {
             r,
         );
     }
-    if changed("bar") {
+    // The bar's menu: in the Omarchy bar, or, on any other desktop (the
+    // generic kit), as a tray icon.
+    #[cfg(feature = "generic")]
+    let tray = !crate::tray::omarchy_bar();
+    #[cfg(not(feature = "generic"))]
+    let tray = false;
+    if changed("bar") && tray {
+        #[cfg(feature = "generic")]
+        say(
+            if s.bar { "Patch's menu in the panel's tray" } else { "Patch's menu out of the tray" },
+            if s.bar { crate::tray::install() } else { crate::tray::uninstall() },
+        );
+    } else if changed("bar") {
         let r = if s.bar {
             crate::bar::install()
         } else {

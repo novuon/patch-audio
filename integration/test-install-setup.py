@@ -3,9 +3,14 @@
 
 Runs the real install.sh in a throwaway HOME with a fake binary and every command
 that could touch the machine replaced by a stub (sudo, pacman, systemctl, pkill,
-pgrep, hyprctl, tailscale, usermod, udevadm). The fake gum presses Enter: a
-choice returns what the real one starts on, and an option passed to --selected
-that isn't on offer fails the run, as gum would silently drop it.
+pgrep, hyprctl, tailscale, usermod, udevadm, apt-get, dnf, groupadd). The fake
+gum presses Enter: a choice returns what the real one starts on, and an option
+passed to --selected that isn't on offer fails the run, as gum would silently
+drop it. Without gum (other distributions) the plain menus get Enter too.
+
+Other distributions are played with install.sh's test hooks: PATCH_INSTALL_PM
+(the package manager), PATCH_LIMITS_DIR (where the realtime limits go) and
+PATCH_INSTALL_PLAIN (no gum, even where this machine has one).
 """
 import os
 import pathlib
@@ -28,17 +33,17 @@ case "$1" in
 esac
 exit 0
 """
-# Pretends nothing runs here, and that nothing can be changed.
-STUB = """#!/bin/bash
-echo "$(basename "$0") $*" >> "$STUB_LOG"
-exit {code}
-"""
 # The groups: `id -nG <user>` answers the group database (FAKE_DB_GROUPS),
 # `id -nG` this session's groups (FAKE_SESSION_GROUPS); the rest is the real id.
 FAKE_ID = """#!/bin/bash
 if [[ $1 == -nG && -n ${2:-} ]]; then echo "${FAKE_DB_GROUPS:-tester}"; exit 0; fi
 if [[ $1 == -nG ]]; then echo "${FAKE_SESSION_GROUPS:-tester}"; exit 0; fi
 exec /usr/bin/id "$@"
+"""
+# Pretends nothing runs here, and that nothing can be changed.
+STUB = """#!/bin/bash
+echo "$(basename "$0") $*" >> "$STUB_LOG"
+exit {code}
 """
 FAKE_GUM = r"""#!/usr/bin/env python3
 import os, sys
@@ -90,8 +95,9 @@ def setup_toml(modules, layout, **core):
 class Box:
     """A throwaway kit and HOME."""
 
-    def __init__(self, root):
+    def __init__(self, root, omarchy=True, flavor=None, pm=None, plain=False):
         self.root = pathlib.Path(root)
+        self.extra = {}
         self.kit = self.root / "kit"
         self.home = self.root / "home"
         self.stubs = self.root / "stubs"
@@ -113,10 +119,20 @@ class Box:
             self.write(self.stubs / name.replace("_", "-"), STUB.format(code=code))
         self.write(self.stubs / "gum", FAKE_GUM)
         self.write(self.stubs / "id", FAKE_ID)
-        self.extra = {}
         self.config = self.home / ".config/omarchy-patch"
         self.config.mkdir(parents=True)
         self.installed = self.home / ".local/bin/omarchy-patch"
+        if omarchy:
+            (self.home / ".local/share/omarchy").mkdir(parents=True)
+        if flavor:
+            (self.kit / "FLAVOR").write_text(flavor + "\n")
+        if pm:
+            self.extra["PATCH_INSTALL_PM"] = pm
+            self.extra["PATCH_LIMITS_DIR"] = str(self.root / "security")
+            for name, code in {"apt-get": 0, "dnf": 0, "zypper": 0, "dpkg-query": 1, "rpm": 1, "groupadd": 0}.items():
+                self.write(self.stubs / name, STUB.format(code=code))
+        if plain:
+            self.extra["PATCH_INSTALL_PLAIN"] = "1"
 
     @staticmethod
     def write(path, text):
@@ -142,13 +158,15 @@ class Box:
             **self.extra,
         }
 
-    def run(self, *args, tty=False):
+    def run(self, *args, tty=False, deps=False, keys="\n" * 12, code_wanted=0):
         self.log.write_text("")
-        cmd = ["bash", str(self.kit / "install.sh"), "--no-deps", "--no-remote", *args]
+        cmd = ["bash", str(self.kit / "install.sh"), *([] if deps else ["--no-deps"]), "--no-remote", *args]
         if tty:
             parent, child = pty.openpty()
             p = subprocess.Popen(cmd, stdin=child, stdout=child, stderr=child, env=self.env(), close_fds=True)
             os.close(child)
+            # Enter for every plain menu (gum's fake answers by itself).
+            os.write(parent, keys.encode())
             out = b""
             try:
                 while chunk := os.read(parent, 65536):
@@ -162,7 +180,10 @@ class Box:
             r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, env=self.env())
             code, text = r.returncode, r.stdout + r.stderr
             self.stdout = r.stdout
-        assert code == 0, f"install.sh exited {code}:\n{text}\n{self.log.read_text()}"
+        assert code == code_wanted, f"install.sh exited {code}:\n{text}\n{self.log.read_text()}"
+        self.output = text
+        if code_wanted:
+            return None, self.log.read_text()
         return self.result()
 
     def result(self):
@@ -185,12 +206,12 @@ def main():
     assert shutil.which("bash")
     ok = True
 
-    def case(name, prepare, *args, tty=False, expect=None):
+    def case(name, prepare, *args, tty=False, expect=None, box_args=None, deps=False):
         nonlocal ok
         with tempfile.TemporaryDirectory(prefix="patch-install-") as tmp:
-            box = Box(tmp)
+            box = Box(tmp, **(box_args or {}))
             prepare(box)
-            setup, log = box.run(*args, tty=tty)
+            setup, log = box.run(*args, tty=tty, deps=deps)
             problems = expect(setup, log)
             ok &= check(name, not problems, f"{problems}\n{setup}")
 
@@ -222,9 +243,21 @@ def main():
 
     fresh = lambda box: None
     custom = ["dj", "plugins"]
-    standard = ["eq"]
-    dj = ["eq", "dj", "ai_dj"]
-    case("fresh, no terminal: Standard", fresh, expect=want(standard, "simple"))
+    standard = ["eq", "themes"]
+    dj = ["eq", "dj", "ai_dj", "themes"]
+    # A first install with no terminal and no choice (an AI agent, a
+    # script): the choices, and nothing installed (2026-11-25: an agent's
+    # install quietly became Standard without asking the user).
+    with tempfile.TemporaryDirectory(prefix="patch-install-") as tmp:
+        box = Box(tmp)
+        _, log = box.run(code_wanted=2)
+        out = box.output
+        listed = all(f"--profile {p}" in out for p in ("standard", "dj", "podcast", "live_coding", "full"))
+        ok &= check("fresh, no terminal, no choice: lists the choices and stops",
+                    listed and "--modules" in out and "ask the user" in out
+                    and "setup set" not in log and "sudo" not in log, out[-800:] + log)
+    case("fresh, no terminal, --profile standard: Standard", fresh, "--profile", "standard",
+         expect=want(standard, "simple"))
     case("fresh, Enter through: Standard, its layout", fresh, tty=True, expect=want(standard, "simple"))
     case("fresh, --profile dj: decks and the AI DJ, no stems download", fresh, "--profile", "dj",
          expect=want(dj, "ai-dj"))
@@ -295,10 +328,54 @@ def main():
     case("update from 0.7.x Full, Enter through: everything stays", old_setup(OLD), tty=True,
          expect=want(ALL, "simple"))
 
+    # ── Other distributions ────────────────────────────────────────────
+    def packages(pm, omarchy=False, **extra_stubs):
+        with tempfile.TemporaryDirectory(prefix="patch-install-") as tmp:
+            box = Box(tmp, omarchy=omarchy, flavor="omarchy" if omarchy else "generic", pm=pm)
+            for name, text in extra_stubs.items():
+                box.write(box.stubs / name, text)
+            r = subprocess.run(["bash", str(box.kit / "install.sh"), "--print-packages"],
+                               capture_output=True, text=True, env=box.env())
+            assert r.returncode == 0, r.stderr
+            return r.stdout.split()
+
+    apt = packages("apt-get")
+    ok &= check("Ubuntu/Debian: apt names (PipeWire tools, pactl), no Arch-only packages",
+                {"pipewire", "pipewire-bin", "pulseaudio-utils", "ffmpeg"} <= set(apt)
+                and not {"realtime-privileges", "libpulse", "rubberband", "uv"} & set(apt), apt)
+    dnf = packages("dnf")
+    ok &= check("Fedora without RPM Fusion: ffmpeg-free", "ffmpeg-free" in dnf and "ffmpeg" not in dnf, dnf)
+    fusion = packages("dnf", dnf='#!/bin/bash\n[[ $1 == repolist ]] && echo "rpmfusion-free RPM Fusion"\nexit 0\n')
+    ok &= check("Fedora with RPM Fusion: ffmpeg", "ffmpeg" in fusion and "ffmpeg-free" not in fusion, fusion)
+    ok &= check("openSUSE: zypper names", {"pipewire-tools", "libnotify-tools"} <= set(packages("zypper")))
+    omarchy_list = "pipewire libpulse wireplumber ffmpeg rubberband sqlite fontconfig libnotify xdg-user-dirs realtime-privileges uv python".split()
+    ok &= check("Arch: the Omarchy list, unchanged", packages("pacman", omarchy=True) == omarchy_list)
     # rtkit gives every PipeWire app's audio thread a 200 ms CPU limit and
     # the kernel kills the app past it (integration/test-rt-clients.py).
-    runtime = next(l for l in (REPO / "install.sh").read_text().splitlines() if l.startswith("RUNTIME=("))
-    ok &= check("No rtkit (it kills other apps' busy audio threads)", "rtkit" not in runtime.split(), runtime)
+    every = {pm: packages(pm) for pm in ("pacman", "apt-get", "dnf", "zypper")}
+    ok &= check("No rtkit on any system (it kills other apps' busy audio threads)",
+                not any("rtkit" in names for names in every.values()), every)
+    arch = packages("pacman")
+    ok &= check("Arch without Omarchy: the windowing libraries too",
+                arch[:len(omarchy_list)] == omarchy_list and {"libxkbcommon", "libglvnd"} <= set(arch), arch)
+
+    generic = dict(omarchy=False, flavor="generic", pm="apt-get")
+
+    def apt_expect(setup, log):
+        problems = want(standard, "simple")(setup, log)
+        if not any(l.startswith("sudo apt-get install -y") and " pipewire-bin" in l for l in log.splitlines()):
+            problems.append("apt didn't install the runtime")
+        if "sudo groupadd -r realtime" not in log or "95-patch-realtime.conf" not in log:
+            problems.append("no realtime group and limits")
+        if "sudo pacman" in log or any(l.startswith("curl ") for l in log.splitlines()):
+            problems.append("pacman or a download")
+        return problems
+    case("Ubuntu, generic kit: apt packages, realtime limits, Standard", fresh, "--profile", "standard",
+         box_args=generic, deps=True, expect=apt_expect)
+    case("Ubuntu, no gum, Enter through the plain menus: Standard, its layout", fresh, tty=True,
+         box_args=dict(generic, plain=True), expect=want(standard, "simple"))
+    case("Ubuntu, no gum, update Full + Pro, Enter through: kept", update(ALL, "pro"), tty=True,
+         box_args=dict(generic, plain=True), expect=want(ALL, "pro"))
 
     # The re-login step: in the realtime group, but this session started
     # before, so real-time only from the next login. Shown on every run
@@ -308,14 +385,28 @@ def main():
         ("just added to the realtime group: the log-out step, last", "tester realtime", "tester", True),
         ("run again before logging out: the log-out step again", "tester realtime", "tester", True),
         ("logged in again since: no log-out step", "tester realtime", "tester realtime", False),
-        ("no realtime group: no log-out step", "tester", "tester", False),
+        ("no realtime group (--no-deps): no log-out step", "tester", "tester", False),
     ):
         with tempfile.TemporaryDirectory(prefix="patch-install-") as tmp:
             box = Box(tmp)
             box.extra.update(FAKE_DB_GROUPS=db, FAKE_SESSION_GROUPS=session)
-            box.run()
+            box.run("--profile", "standard")
             out = box.stdout.rstrip()
-            ok &= check(name, (step in out) == shown and (not shown or out.endswith("Once is enough.")), out[-600:])
+            last = out[out.rfind(step):] if step in out else ""
+            ok &= check(name, (step in out) == shown and (not shown or (
+                "Once is enough" in last and out.endswith("Once is enough."))), out[-600:])
+
+    def fetches_generic(setup, log):
+        problems = want(standard, "simple")(setup, log)
+        if "linux-generic" not in log:
+            problems.append("the Omarchy kit on Ubuntu didn't fetch the generic build")
+        return problems
+
+    def omarchy_kit_on_ubuntu(box):
+        box.write(box.stubs / "curl", STUB.format(code=1))
+    case("the Omarchy kit on Ubuntu: asks for the generic build, falls back to its own", omarchy_kit_on_ubuntu,
+         "--profile", "standard",
+         box_args=dict(omarchy=False, flavor="omarchy", pm="apt-get"), expect=fetches_generic)
 
     print("install.sh keeps the setup" if ok else "FAILED")
     return 0 if ok else 1

@@ -107,7 +107,7 @@
    "group": "look",
    "switch": true,
    "download": true,
-   "about": "Patch Light and Patch Dark in Omarchy's theme menu (one wallpaper each)"
+   "about": "Patch Light and Patch Dark in Omarchy's theme menu (four wallpapers each: Stylus and the three newest)"
   },
   {
    "id": "wallpapers",
@@ -129,13 +129,13 @@
    "layout": "simple",
    "about": "Patch as your system's sound: volume and outputs · the Mixer · the EQ",
    "modules": [
-    "eq"
+    "eq",
+    "themes"
    ],
    "offer": [
     "mic",
     "studio",
     "player",
-    "themes",
     "wallpapers"
    ]
   },
@@ -147,7 +147,8 @@
    "modules": [
     "eq",
     "dj",
-    "ai_dj"
+    "ai_dj",
+    "themes"
    ],
    "offer": [
     "visualiser",
@@ -156,7 +157,6 @@
     "mic",
     "studio",
     "player",
-    "themes",
     "wallpapers"
    ]
   },
@@ -170,11 +170,11 @@
     "mic",
     "player",
     "studio",
-    "podcast"
+    "podcast",
+    "themes"
    ],
    "offer": [
     "plugins",
-    "themes",
     "wallpapers"
    ]
   },
@@ -186,13 +186,13 @@
    "modules": [
     "eq",
     "live_coding",
-    "visualiser"
+    "visualiser",
+    "themes"
    ],
    "offer": [
     "studio",
     "plugins",
     "controllers",
-    "themes",
     "wallpapers"
    ]
   },

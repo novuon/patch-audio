@@ -22,7 +22,8 @@ pub const CONTROLLER: &str = "controller";
 /// The compact Mixer can still show its faders below its full-detail height,
 /// but its tone and send banks collapse. Use the shared size warning at the
 /// full-console threshold so the user can choose to make room or keep it small.
-fn minimum_size(surface: &str, declared: (u16, u16)) -> (u16, u16) {
+/// (The desk sizes tiles and Make room by it too.)
+pub fn minimum_size(surface: &str, declared: (u16, u16)) -> (u16, u16) {
     if instance::base(surface) == "mixer" {
         (declared.0, declared.1.max(480))
     } else {
@@ -716,10 +717,30 @@ impl<U: HostedApp> Session<U> {
     }
 
     fn make_room_for(&self, surface: &str, w: u32, h: u32) {
+        if self.desk_make_room(surface) {
+            return;
+        }
         hypr::make_room(&self.title(surface), w + 40, h + 40);
     }
 
+    /// Inside a desk (generic kit): the window asks to be maximized, and the
+    /// desk makes room (a bigger desk, or the Unit alone on its page).
+    fn desk_make_room(&self, surface: &str) -> bool {
+        #[cfg(feature = "generic")]
+        if std::env::var_os("PATCH_DESK").is_some() {
+            if let Some((_, w)) = self.windows.borrow().iter().find(|(id, _)| id == surface) {
+                w.window().set_maximized(true);
+            }
+            return true;
+        }
+        let _ = surface;
+        false
+    }
+
     fn make_room(&self, surface: &str) {
+        if self.desk_make_room(surface) {
+            return;
+        }
         let Some((w, h)) = self
             .spec()
             .instance(surface)
@@ -1071,6 +1092,13 @@ impl<U: HostedApp> Session<U> {
 
     /// Replace the open surfaces with a layout recipe.
     pub fn open_layout(&self, id: &str) -> bool {
+        // Where nothing tiles these windows (the generic kit on GNOME, KDE,
+        // …), a layout opens in the desk; it takes this session's place.
+        #[cfg(feature = "generic")]
+        if desk_wanted() && egl_loads() && self.recipe(id).is_some() {
+            spawn_self(&["desk", id]);
+            return true;
+        }
         let Some(recipe) = self.recipe(id) else {
             return false;
         };
@@ -1547,11 +1575,20 @@ impl<U: HostedApp> Session<U> {
                 Some(v) => v,
                 None => format!("err nothing to query as '{q}'"),
             },
+            Request::Desk => self.desk_windows(),
             Request::Quit => {
                 self.quit();
                 "ok".into()
             }
         }
+    }
+
+    /// `{"layout": id or null, "windows": [[surface, title], …]}`: what the
+    /// desk compositor needs to place these windows (`docs/desk.md`).
+    fn desk_windows(&self) -> String {
+        let windows: Vec<(String, String)> =
+            self.windows.borrow().iter().map(|(s, _)| (s.clone(), self.title(s))).collect();
+        serde_json::json!({ "layout": self.shown_layout(), "windows": windows }).to_string()
     }
 
     pub fn launch(&self, launch: &Launch) {
@@ -1567,6 +1604,27 @@ impl<U: HostedApp> Session<U> {
             }
             Launch::Headless => {}
         }
+    }
+}
+
+/// A layout opens in the desk here (generic kit, `docs/desk.md`): no tiling
+/// window manager places Patch's windows (Hyprland, Sway, i3 and niri do,
+/// and keep real windows), this isn't a session inside a desk already, and
+/// `PATCH_NO_DESK` doesn't switch it off.
+#[cfg(feature = "generic")]
+pub fn desk_wanted() -> bool {
+    let set = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty());
+    !hypr::available()
+        && !["SWAYSOCK", "I3SOCK", "NIRI_SOCKET", "PATCH_DESK", "PATCH_NO_DESK"].iter().any(|k| set(k))
+        && (set("WAYLAND_DISPLAY") || set("DISPLAY"))
+}
+
+#[cfg(feature = "generic")]
+fn egl_loads() -> bool {
+    // SAFETY: dlopen and dlclose of a system library by name.
+    unsafe {
+        let h = libc::dlopen(c"libEGL.so.1".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
+        !h.is_null() && libc::dlclose(h) == 0
     }
 }
 

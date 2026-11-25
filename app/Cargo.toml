@@ -41,11 +41,25 @@ tikv-jemallocator = { version = "0.6", optional = true, features = ["unprefixed_
 # Heap profiling (diagnostics only): cargo build --no-default-features --features dhat-heap;
 # the run writes dhat-heap.json on exit (view it in dh_view.html).
 dhat = { version = "0.3", optional = true }
+# The tray menu (generic kit only): the zbus Slint's winit backend builds anyway.
+zbus = { version = "5", optional = true }
+# The desk (generic kit only, docs/desk.md): a small Wayland compositor for
+# layouts on desktops that don't tile, and its header drawn with the resvg
+# Slint already builds.
+smithay = { version = "0.7", optional = true, default-features = false, features = ["backend_winit", "wayland_frontend", "desktop"] }
+resvg = { version = "0.48", optional = true, default-features = false, features = ["text", "system-fonts"] }
+patch-ui = { workspace = true, optional = true }
+slint = { workspace = true, optional = true }
+# The desk's clipboard bridged to the desktop's (Slint's winit backend builds it).
+arboard = { version = "3.6", optional = true, default-features = false, features = ["wayland-data-control"] }
 
 [features]
 default = ["jemalloc"]
 jemalloc = ["dep:tikv-jemallocator", "patch-host/jemalloc"]
 dhat-heap = ["dep:dhat"]
+# The generic Linux kit (scripts/build-kit.sh with KIT_FLAVOR=generic):
+# what desktops other than Omarchy need. Never in the Omarchy build.
+generic = ["patch-host/generic", "dep:zbus", "dep:smithay", "dep:resvg", "dep:patch-ui", "dep:slint", "dep:arboard"]
 
 [lints]
 workspace = true

@@ -212,8 +212,20 @@ pub fn load_palette() -> Palette {
             .map(PathBuf::from)
             .or_else(theme_dir)
     };
-    let colors: ColorsToml = read_toml(dir.as_ref().map(|d| d.join("colors.toml")));
-    let exact: PatchToml = read_toml(dir.as_ref().map(|d| d.join("patch.toml")));
+    // Outside Omarchy there is no current theme: Patch Dark or Patch Light,
+    // as the desktop is set (desktop.rs).
+    let outside = !forced_default && dir.as_ref().is_none_or(|d| !d.join("colors.toml").is_file());
+    let outside_dark = outside && crate::desktop::dark();
+    let (colors, exact): (ColorsToml, PatchToml) = if outside {
+        use crate::desktop::{DARK_COLORS, DARK_EXACT, LIGHT_COLORS, LIGHT_EXACT};
+        let (c, e) = if outside_dark { (DARK_COLORS, DARK_EXACT) } else { (LIGHT_COLORS, LIGHT_EXACT) };
+        (toml::from_str(c).unwrap_or_default(), toml::from_str(e).unwrap_or_default())
+    } else {
+        (
+            read_toml(dir.as_ref().map(|d| d.join("colors.toml"))),
+            read_toml(dir.as_ref().map(|d| d.join("patch.toml"))),
+        )
+    };
     let shell: ShellToml = if forced_default {
         ShellToml::default()
     } else {
@@ -223,6 +235,8 @@ pub fn load_palette() -> Palette {
     };
     let name = if forced_default {
         "matte-black (built-in)".to_string()
+    } else if outside {
+        if outside_dark { "Patch Dark" } else { "Patch Light" }.to_string()
     } else {
         dir.as_ref()
             .and_then(|d| {
@@ -308,8 +322,10 @@ pub fn load_palette() -> Palette {
         code_control: code(colors.cyan.as_ref(), "#4fb3bd"),
         code_string: code(colors.green.as_ref(), "#7fb36f"),
         code_number: code(colors.orange.as_ref().or(colors.yellow.as_ref()), "#e07a45"),
-        font: if forced_default { None } else { omarchy_font() }
-            .unwrap_or_else(|| "JetBrainsMono Nerd Font".into()),
+        // Outside Omarchy: JetBrains Mono itself (install.sh adds the
+        // distribution's package; Omarchy's Nerd Font build isn't there).
+        font: if forced_default || outside { None } else { omarchy_font() }
+            .unwrap_or_else(|| if outside { "JetBrains Mono" } else { "JetBrainsMono Nerd Font" }.into()),
         font_size: shell
             .font
             .and_then(|f| f.base_size)
@@ -357,6 +373,8 @@ fn hex(c: Color) -> String {
 
 /// Changes whenever the active Omarchy theme changes (`omarchy-theme-set`
 /// rewrites the files in the current theme directory).
+/// Outside Omarchy (no theme there): the desktop's light/dark setting and
+/// the user's choice instead.
 pub fn theme_stamp() -> Option<std::time::SystemTime> {
     let dir = std::env::var_os("UNIT_THEME_DIR")
         .map(PathBuf::from)
@@ -364,6 +382,9 @@ pub fn theme_stamp() -> Option<std::time::SystemTime> {
     let colors = std::fs::metadata(dir.join("colors.toml"))
         .and_then(|m| m.modified())
         .ok();
+    if colors.is_none() && std::env::var("UNIT_THEME").is_err() {
+        return crate::desktop::stamp();
+    }
     let exact = std::fs::metadata(dir.join("patch.toml"))
         .and_then(|m| m.modified())
         .ok();

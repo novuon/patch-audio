@@ -666,12 +666,13 @@ mod tests {
         assert_eq!(Profile::ALL[0], Profile::Standard, "Standard first: the installer's default");
         let standard = Profile::Standard.setup();
         assert_eq!(standard.modules(), ["eq"], "Standard is the core and the EQ");
+        assert!(standard.themes, "and the Patch themes (the user, 2026-11-25)");
         assert_eq!(standard.layout, DefaultLayout::Simple);
         let min = Profile::Minimal.setup();
         assert!(min.modules().is_empty() && !min.themes, "Minimal is the core alone");
         assert_eq!(Profile::Full.setup().modules().len(), MODULES.len());
         let mut s = Profile::Dj.setup();
-        assert!(s.dj && s.ai_dj && !s.themes);
+        assert!(s.dj && s.ai_dj && s.themes);
         assert!(s.set("system_audio", false));
         assert_eq!(s.profile(), None, "custom");
         assert!(!s.set("nonsense", true));

@@ -34,6 +34,15 @@ another place.
 `./uninstall.sh` removes it again (your library and settings stay;
 `--purge` removes those too).
 
+**Installing with an AI agent.** An agent runs the installer without a
+terminal, so the setup screen can't show. A first install then stops
+before it changes anything and lists the choices; the agent asks you
+which setup you want and runs it again with it, for example
+`curl -fsSL https://get.patchaudio.app | bash -s -- --profile dj` or
+`… --modules eq,dj,ai_dj,themes,wallpapers`. You can also say it up
+front: "install Patch with `--profile dj`". An update without a terminal
+keeps the setup you have.
+
 **Then log out and back in once** (or restart). The installer adds you
 to the `realtime` group, and Linux applies a new group only at login.
 Patch plays right away, but its engine runs without real-time until then,

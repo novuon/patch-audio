@@ -1,0 +1,34 @@
+# The generic Linux kit for 64-bit ARM (aarch64), cross-built on x86_64:
+# the same Ubuntu 24.04 base as Containerfile (glibc 2.39, PipeWire 1.0),
+# with Ubuntu's arm64 libraries beside the build tools (multiarch) and the
+# GNU cross compiler. scripts/build-generic.sh uses it with
+# PATCH_GENERIC_ARCH=aarch64.
+FROM docker.io/library/ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+# amd64 from the archive, arm64 from ports.
+RUN sed -i 's|^Types: deb|Types: deb\nArchitectures: amd64|' /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble noble-updates noble-security\nComponents: main universe\nArchitectures: arm64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+      > /etc/apt/sources.list.d/ports.sources \
+    && dpkg --add-architecture arm64 \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git python3 build-essential pkg-config binutils xz-utils \
+      crossbuild-essential-arm64 \
+      libpipewire-0.3-dev:arm64 libsqlite3-dev:arm64 libfontconfig-dev:arm64 libfreetype-dev:arm64 \
+      libxkbcommon-dev:arm64 libwayland-dev:arm64 libegl-dev:arm64 libgbm-dev:arm64 libdrm-dev:arm64 \
+      libudev-dev:arm64 libinput-dev:arm64 libseat-dev:arm64 libx11-dev:arm64 libxcursor-dev:arm64 \
+      libxrandr-dev:arm64 libxi-dev:arm64 libx11-xcb-dev:arm64 libxcb1-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/opt/rustup PATH=/opt/cargo/bin:$PATH \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+    AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=65536" \
+    JEMALLOC_SYS_WITH_LG_PAGE=16
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | CARGO_HOME=/opt/cargo sh -s -- -y --default-toolchain none --profile minimal --no-modify-path \
+    && chmod -R a+rwX /opt/rustup /opt/cargo

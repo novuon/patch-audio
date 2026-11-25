@@ -1,7 +1,7 @@
 # Audit: Patch against the Omarchy audio environment architecture
 
 The review below is the 2026-09-26 pass over v0.6.0 (`42780d3`). It stays
-as the migration record. **What is true at workspace 0.7.7:**
+as the migration record. **What is true at workspace 0.8.7:**
 
 * The DJ session lives in the engine, not in the UI. Conflict 1 is
   historical; the progress table marks it done.
@@ -11,15 +11,15 @@ as the migration record. **What is true at workspace 0.7.7:**
 * Deck render-ahead is `target_frames()`: 43 ms, or four graph cycles, at
   most 4,096 frames. [ADR-005](ADR-005-timing-model.md) matches that. The
   old "~32 ms" figure is retired.
-* The workspace has 25 members. [The architecture README](README.md) lists
-  them, including `patch-remote`, `patch-stems`, `patch-pattern`,
+* The workspace has 27 members. [The architecture README](README.md) lists
+  them, including `patch-network`, `patch-plugin`, `patch-remote`, `patch-stems`, `patch-pattern`,
   `patch-material`, `patch-visual`, `patch-tune`, `patch-broadcast`,
   `patch-model`, `patch-mock`, `patch-build`, and the `app` binary.
 * Source is MIT. A distributed binary links Rubber Band, FFTW
   (GPL-2.0-or-later) and Slint (GPL-3.0 option), so the binary is
   GPL-3.0. `NOTICE.md` and `packaging/arch/PKGBUILD`
-  (`license=('MIT' 'GPL-3.0-only')`, `pkgver=0.7.7`) say so. Licensing was
-  not changed; the package version tracks the workspace.
+  (`license=('MIT' 'GPL-3.0-only')`) say so. Licensing was
+  not changed; the package version should follow the workspace.
 * Still open in the table below: item 3 (backend boundary), item 4
   (kernels not all behind the ABI), item 8 (`{"op":"graph"}` is not
   implemented).

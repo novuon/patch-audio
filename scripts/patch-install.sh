@@ -9,6 +9,9 @@
 # the Omarchy kit on Omarchy, the generic kit anywhere else) from GitHub (novuon/patch-releases), checks its SHA-256, unpacks it in a
 # temporary folder and runs its installer, which asks how you use Patch.
 # Arguments go to the installer: ... | bash -s -- --profile dj
+# AI agents and scripts (no terminal): a first install needs --profile
+# <standard|dj|podcast|live_coding|full> or --modules a,b,…; without one
+# the installer lists the choices and stops. Ask the user which they want.
 # PATCH_VERSION=v0.8.0 picks a release instead of the newest.
 set -euo pipefail
 

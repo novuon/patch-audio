@@ -305,7 +305,8 @@ mod tests {
         }
     }
 
-    /// The user's choices (2026-11-19): Standard is the core and the EQ; the
+    /// The user's choices (2026-11-19): Standard is the core and the EQ (and,
+    /// 2026-11-25, every profile brings the Patch themes); the
     /// DJ profile brings decks, crossfader, Mini Booth (the `dj` module) and
     /// Auto Mix (the AI DJ), and offers the Visualiser unticked; the themes
     /// and the wallpapers are two modules. Only Auto Mix is sold. Stems are
@@ -313,7 +314,10 @@ mod tests {
     #[test]
     fn the_profiles_the_user_chose() {
         let c = builtin();
-        assert_eq!(c.profile("standard").unwrap().modules, ["eq"]);
+        assert_eq!(c.profile("standard").unwrap().modules, ["eq", "themes"]);
+        for p in ["dj", "podcast", "live_coding", "full"] {
+            assert!(c.profile(p).unwrap().modules.iter().any(|m| m == "themes"), "{p} brings the themes");
+        }
         let dj = c.profile("dj").unwrap();
         assert!(["eq", "dj", "ai_dj"].iter().all(|m| dj.modules.iter().any(|x| x == m)));
         assert!(dj.offer.iter().any(|x| x == "visualiser"));

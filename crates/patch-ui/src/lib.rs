@@ -4,6 +4,7 @@
 //! Unit (see `patch-build`). Slint globals are per compilation, so each Unit
 //! applies the palette with [`apply_theme!`].
 
+mod desktop;
 pub mod meter;
 mod omarchy;
 pub mod style;

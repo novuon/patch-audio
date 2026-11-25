@@ -251,8 +251,10 @@ pub enum Step {
     },
 }
 
+/// The guillotine split tree of a workspace's tiles (Hyprland's dwindle
+/// splits, and the desk's: `desk.rs`).
 #[derive(Debug)]
-enum Split {
+pub(crate) enum Split {
     Leaf(Tile),
     Node {
         dir: char,
@@ -264,7 +266,7 @@ enum Split {
 
 const EPS: f32 = 0.002;
 
-fn build(tiles: &[Tile], (rx, ry, rw, rh): (f32, f32, f32, f32)) -> Option<Split> {
+pub(crate) fn build(tiles: &[Tile], (rx, ry, rw, rh): (f32, f32, f32, f32)) -> Option<Split> {
     if tiles.len() == 1 {
         return Some(Split::Leaf(tiles[0]));
     }

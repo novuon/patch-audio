@@ -34,6 +34,9 @@ pub enum Request {
     /// Read-only state for other frontends: `query ai` (see
     /// [`crate::intent::AiView`]).
     Query(String),
+    /// The layout on screen and each open window's title, for the desk
+    /// these windows are inside (`docs/desk.md`; the generic kit's).
+    Desk,
     Quit,
 }
 
@@ -69,6 +72,7 @@ impl Request {
                 }
             }
             ("query", Some(a)) => Request::Query(a),
+            ("desk", None) => Request::Desk,
             ("quit", None) => Request::Quit,
             _ => return None,
         })
@@ -98,6 +102,7 @@ impl Request {
                 }
             ),
             Request::Query(q) => format!("query {q}"),
+            Request::Desk => "desk".into(),
             Request::Quit => "quit".into(),
         }
     }

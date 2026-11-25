@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Install Patch, the Omarchy audio environment, for this user.
+# Install Patch, the Omarchy audio environment, for this user. On Omarchy,
+# and on any other Linux with PipeWire (Ubuntu, Mint, Debian, Fedora,
+# openSUSE, Arch, …): the packages come from the distribution's own
+# package manager (pacman, apt, dnf or zypper).
 #
 #   ./install.sh                     the Patch setup screen, then install
 #                                    (over an install it starts on your setup:
 #                                    Enter keeps it)
 #   ./install.sh --profile dj        no screen: standard | dj | podcast | live_coding | full
+#                                    (a first install with no terminal needs this or
+#                                    --modules: it lists the choices and stops)
 #   ./install.sh --modules eq,dj     no screen: Patch core and these modules (eq mic studio
 #                                    player dj ai_dj visualiser controllers plugins podcast
 #                                    live_coding themes wallpapers; ai_dj is Auto Mix)
@@ -13,7 +18,8 @@
 #                                    performance-dj dj-studio podcast live-code pro
 #   ./install.sh --no-stems          don't download Auto Mix's stem separator
 #   ./install.sh --no-remote         don't set up the phone remote (Tailscale)
-#   ./install.sh --no-deps           skip installing Arch packages
+#   ./install.sh --no-deps           skip installing packages
+#   ./install.sh --print-packages    the packages this system needs, then stop
 #   ./install.sh --no-bar            leave the bar's audio menu as it is
 #   ./install.sh --no-service        don't start Patch with the session
 #   ./install.sh --build             compile here, even with a ready-made build
@@ -45,6 +51,7 @@ fi
 REPO=novuon/Patch
 ARCH=$(uname -m)
 DEPS=1
+PRINT_PACKAGES=0
 BUILD_HERE=0
 PROFILE=""
 MODULES_ARG=""
@@ -56,6 +63,7 @@ OVERRIDES=()
 while (($#)); do
   case "$1" in
     --no-deps) DEPS=0 ;;
+    --print-packages) PRINT_PACKAGES=1 ;;
     --no-bar) OVERRIDES+=(bar=off) ;;
     --no-service) OVERRIDES+=(start_with_session=off) ;;
     --build) BUILD_HERE=1 ;;
@@ -76,6 +84,70 @@ while (($#)); do
 done
 
 say() { printf '\033[1m» %s\033[0m\n' "$*"; }
+
+# This system: its package manager (the package names below) and whether
+# it is Omarchy (the bar's Patch menu, the theme menu, Hyprland's layouts).
+# Anywhere else Patch installs the same, with the tray menu for the bar.
+# (PATCH_INSTALL_PM, PATCH_LIMITS_DIR and PATCH_INSTALL_PLAIN are for
+# integration/test-install-setup.py, which plays other distributions.)
+PM=${PATCH_INSTALL_PM:-}
+if [[ -z $PM ]]; then
+  for p in pacman apt-get dnf zypper; do
+    if command -v "$p" >/dev/null; then PM=$p; break; fi
+  done
+fi
+OMARCHY=0
+[[ -d ${XDG_DATA_HOME:-$HOME/.local/share}/omarchy ]] && OMARCHY=1
+# The kit made for this system: Omarchy's, or the generic one (built on
+# Ubuntu 24.04 for every distribution at least that new).
+WANT_FLAVOR=generic
+((OMARCHY)) && WANT_FLAVOR=omarchy
+KIT_FLAVOR=$(cat FLAVOR 2>/dev/null || echo omarchy)
+
+# packages <runtime|optional|build>: what Patch needs, in this system's
+# names. Runtime: PipeWire and its tools (pactl, pw-dump), FFmpeg
+# (decoding and analysis), SQLite (the library), fontconfig,
+# notifications, real-time scheduling (realtime-privileges: the realtime
+# group's limits; never rtkit, see below), Python and uv (the stem
+# separator). Rubber Band (keylock) only where Patch compiles against it:
+# the ready-made builds carry their own. To compile: Rust, pkg-config, a
+# C compiler and the libraries' headers.
+# The generic kit's windows (Wayland or X11, the desk's EGL) load the
+# windowing libraries at run time: listed, as a minimal install lacks some.
+packages() {
+  case $PM:$1 in
+    pacman:runtime)
+      echo pipewire libpulse wireplumber ffmpeg rubberband sqlite fontconfig libnotify xdg-user-dirs realtime-privileges uv python
+      # The generic binary's windows outside Omarchy (Omarchy has them all).
+      ((OMARCHY)) || echo libxkbcommon libxkbcommon-x11 libglvnd mesa ;;
+    # JetBrains Mono for an Arch without Omarchy (Omarchy has its Nerd Font build).
+    pacman:optional) echo wl-clipboard; ((OMARCHY)) || echo ttf-jetbrains-mono ;;
+    pacman:build) echo rust pkgconf gcc ;;
+    apt-get:runtime) echo pipewire pipewire-pulse pipewire-bin wireplumber pulseaudio-utils ffmpeg libsqlite3-0 libfontconfig1 libnotify-bin xdg-user-dirs python3 curl libegl1 libegl-mesa0 libwayland-egl1 libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 libxcursor1 libxi6 libxrandr2 ;;
+    apt-get:optional) echo wl-clipboard xclip fonts-jetbrains-mono ;;
+    apt-get:build) echo build-essential pkg-config libpipewire-0.3-dev librubberband-dev libsqlite3-dev libfontconfig-dev libxkbcommon-dev libwayland-dev libudev-dev libinput-dev libseat-dev libgbm-dev libegl-dev ;;
+    dnf:runtime) echo pipewire pipewire-pulseaudio pipewire-utils wireplumber pulseaudio-utils "$(fedora_ffmpeg)" sqlite-libs fontconfig libnotify xdg-user-dirs python3 uv curl mesa-libEGL libwayland-egl libxkbcommon libxkbcommon-x11 libX11-xcb libXcursor libXi libXrandr ;;
+    dnf:optional) echo wl-clipboard xclip gum jetbrains-mono-fonts-all ;;
+    dnf:build) echo gcc gcc-c++ pkgconf-pkg-config pipewire-devel rubberband-devel sqlite-devel fontconfig-devel libxkbcommon-devel wayland-devel systemd-devel libinput-devel libseat-devel mesa-libgbm-devel mesa-libEGL-devel ;;
+    zypper:runtime) echo pipewire pipewire-pulseaudio pipewire-tools wireplumber pulseaudio-utils ffmpeg libsqlite3-0 fontconfig libnotify-tools xdg-user-dirs python3 uv curl libglvnd Mesa-libEGL1 libwayland-egl1 libxkbcommon0 libxkbcommon-x11-0 libX11-xcb1 libXcursor1 libXi6 libXrandr2 ;;
+    zypper:optional) echo wl-clipboard xclip gum jetbrains-mono-fonts ;;
+    zypper:build) echo gcc gcc-c++ pkgconf pipewire-devel rubberband-devel sqlite3-devel fontconfig-devel libxkbcommon-devel wayland-devel libudev-devel libinput-devel libseat-devel libgbm-devel Mesa-libEGL-devel ;;
+  esac
+}
+# Fedora: FFmpeg from RPM Fusion when it is set up (every codec), else
+# Fedora's own ffmpeg-free (MP3, FLAC, Opus, Vorbis, WAV; no AAC/M4A).
+fedora_ffmpeg() {
+  if rpm -q ffmpeg >/dev/null 2>&1 || dnf repolist --enabled 2>/dev/null | grep -qi rpmfusion; then
+    echo ffmpeg
+  else
+    echo ffmpeg-free
+  fi
+}
+if ((PRINT_PACKAGES)); then
+  [[ -n $PM ]] || { echo "No known package manager (pacman, apt-get, dnf, zypper)" >&2; exit 1; }
+  packages runtime
+  exit 0
+fi
 
 # Patch places its windows with Hyprland's Lua API (0.56+). On an older
 # Hyprland the layouts don't work: windows land anywhere and the pointer
@@ -233,6 +305,61 @@ if [[ -r $SAVED_SETUP ]]; then
   [[ $SAVED_PROFILE == minimal ]] && SAVED_PROFILE=custom
 fi
 
+TAGLINE="The Omarchy audio environment"
+((OMARCHY)) || TAGLINE="The audio environment for Linux"
+
+# The screens use gum where it is (Omarchy has it) and plain numbered
+# menus on any other terminal, with the same choices and defaults.
+GUM=0
+command -v gum >/dev/null && [[ -z ${PATCH_INSTALL_PLAIN:-} ]] && GUM=1
+# pick_one <header> <selected> <item>…: the item chosen, on stdout.
+pick_one() {
+  local header=$1 selected=$2 i n=0 d=1 a
+  shift 2
+  printf '\n%s\n' "$header" >&2
+  for i in "$@"; do
+    n=$((n + 1))
+    [[ $i == "$selected" ]] && d=$n
+    printf '  %2d  %s\n' "$n" "$i" >&2
+  done
+  while :; do
+    read -rp "  Your choice (1-$n, Enter: $d): " a  || return 1
+    a=${a:-$d}
+    if [[ $a =~ ^[0-9]+$ ]] && ((a >= 1 && a <= n)); then
+      printf '%s\n' "${!a}"
+      return 0
+    fi
+  done
+}
+# pick_many <header> <selected lines> <item>…: the items chosen, a line each.
+pick_many() {
+  local header=$1 selected=$2 i n a k
+  shift 2
+  local on=()
+  for i in "$@"; do
+    if grep -qxF -- "$i" <<<"$selected"; then on+=(1); else on+=(0); fi
+  done
+  while :; do
+    printf '\n%s\n' "$header" >&2
+    n=0
+    for i in "$@"; do
+      printf '  %2d  [%s] %s\n' "$((n + 1))" "$( ((on[n])) && echo x || echo ' ')" "$i" >&2
+      n=$((n + 1))
+    done
+    read -rp "  Numbers to switch (e.g. 2 5), Enter when done: " a  || return 1
+    [[ -z $a ]] && break
+    for k in ${a//,/ }; do
+      if [[ $k =~ ^[0-9]+$ ]] && ((k >= 1 && k <= n)); then on[k - 1]=$((1 - on[k - 1])); fi
+    done
+  done
+  n=0
+  for i in "$@"; do
+    ((on[n])) && printf '%s\n' "$i"
+    n=$((n + 1))
+  done
+  return 0
+}
+
 logo() {
   cat <<'LOGO'
 █▀█ ▄▀█ ▀█▀ █▀▀ █ █
@@ -248,8 +375,14 @@ modules_screen() {
     items+=("$item")
     [[ " $ticked " == *" $id "* ]] && on+=(--selected "$item")
   done
-  out=$(gum choose --no-limit --height 16 "${on[@]}" --header "$header" \
-    --cursor "  › " "${items[@]}") || exit 1
+  if ((GUM)); then
+    out=$(gum choose --no-limit --height 16 "${on[@]}" --header "$header" \
+      --cursor "  › " "${items[@]}") || exit 1
+  else
+    local sel="" j
+    for ((j = 1; j < ${#on[@]}; j += 2)); do sel+="${on[j]}"$'\n'; done
+    out=$(pick_many "$header" "$sel" "${items[@]}") || exit 1
+  fi
   CHOSEN=""
   for id in $offer; do
     item=$(catalogue item "$id")
@@ -261,10 +394,15 @@ SCREEN_DONE=0
 setup_screen() {
   SCREEN_DONE=1
   clear
+  if ((!GUM)); then
+    logo
+    printf '\n%s\nv%s · routing, mixing, metering, recording, DJ\n' "$TAGLINE" "$VERSION"
+  else
   gum style --border rounded --border-foreground 1 --padding "1 4" --margin "1 2" \
     "$(gum style --foreground 1 --bold "$(logo)")" "" \
-    "$(gum style --bold "The Omarchy audio environment")" \
+    "$(gum style --bold "$TAGLINE")" \
     "$(gum style --faint "v$VERSION · routing, mixing, metering, recording, DJ")"
+  fi
   local header="  How do you use Patch? Patch core (your sound, volume and outputs, the Mixer) is always in" lines=() start=() line p name about pick
   local default=${SAVED_PROFILE:-$(catalogue default)}
   while IFS='|' read -r p name about; do
@@ -277,7 +415,11 @@ setup_screen() {
   lines+=("$custom")
   [[ $default == custom ]] && start=(--selected "$custom")
   [[ -n $SAVED_PROFILE ]] && header="  How do you use Patch? (your setup now is selected: Enter keeps it)"
-  pick=$(gum choose --header "$header" --cursor "  › " --height 9 "${start[@]}" "${lines[@]}") || exit 1
+  if ((GUM)); then
+    pick=$(gum choose --header "$header" --cursor "  › " --height 9 "${start[@]}" "${lines[@]}") || exit 1
+  else
+    pick=$(pick_one "$header" "${start[1]:-}" "${lines[@]}") || exit 1
+  fi
   PROFILE=custom
   while IFS='|' read -r p name about; do
     [[ $pick == "$name "* ]] && PROFILE=$p
@@ -306,19 +448,46 @@ layout_screen() {
     [[ $l == "$first" ]] && continue
     offered "$l" && items+=("$(printf '%-16s %s' "${LAYOUT_NAME[$l]}" "${LAYOUT_ABOUT[$l]}")")
   done
-  out=$(gum choose --height 10 --cursor "  › " \
-    --header "  Your default layout: what the Patch launcher opens (nothing opens at login)" \
-    "${items[@]}") || exit 1
+  local header="  Your default layout: what the Patch launcher opens (nothing opens at login)"
+  if ((GUM)); then
+    out=$(gum choose --height 10 --cursor "  › " --header "$header" "${items[@]}") || exit 1
+  else
+    out=$(pick_one "$header" "${items[0]}" "${items[@]}") || exit 1
+  fi
   for l in "${LAYOUT_IDS[@]}"; do
     if [[ $out == "${LAYOUT_NAME[$l]} "* ]]; then LAYOUT=$l; fi
   done
 }
 
-# Without a terminal (or gum): the profile or modules given, else what is
-# set up now, else the default profile (Standard). Every choice replaces
-# Omarchy's audio.
+# Without a terminal: the profile or modules given, else what is set up
+# now. A first install with neither stops before it changes anything and
+# lists the choices: an AI agent or a script runs it with no screen to
+# show, and 2026-11-25 an agent's install quietly became Standard without
+# asking the user. Every choice replaces the desktop's own audio.
 INTERACTIVE=0
-[[ -t 0 && -t 1 ]] && command -v gum >/dev/null && INTERACTIVE=1
+[[ -t 0 && -t 1 ]] && INTERACTIVE=1
+ask_for_setup() {
+  local p name about
+  {
+    printf '\n» Patch needs a setup choice. There is no terminal here to show the\n'
+    printf '  setup screen (an AI agent, a script, or ssh without -t).\n\n'
+    printf '  AI agent: ask the user which setup they want, then run the install\n'
+    printf '  again with it. Nothing has been installed or changed yet.\n\n'
+    printf '  How do you use Patch? (Patch core: your sound, volume and outputs, the Mixer)\n'
+    while IFS='|' read -r p name about; do
+      printf '    --profile %-12s %s\n' "$p" "${about//,/ ·}"
+    done < <(catalogue profiles)
+    printf '    --modules a,b,…        Patch core and only these modules:\n'
+    printf '                           %s\n' "${ALL_IDS[*]}"
+    printf '\n  Every profile includes the Patch themes (four wallpapers each); the\n'
+    printf '  module wallpapers adds the other wallpapers and the intros.\n'
+    printf '  Optional: --layout <%s>\n' "${LAYOUT_IDS[*]}"
+    printf '\n  For example:\n'
+    printf '    curl -fsSL https://get.patchaudio.app | bash -s -- --profile dj\n'
+    printf '    curl -fsSL https://get.patchaudio.app | bash -s -- --modules eq,dj,ai_dj,themes,wallpapers\n'
+    printf '    ./install.sh --profile %s    (from an unpacked kit)\n\n' "$(catalogue default)"
+  } >&2
+}
 if [[ -z $PROFILE ]]; then
   if ((INTERACTIVE)); then
     setup_screen
@@ -326,7 +495,8 @@ if [[ -z $PROFILE ]]; then
     PROFILE=custom
     CHOSEN=$SAVED_MODULES
   else
-    PROFILE=$(catalogue default)
+    ask_for_setup
+    exit 2
   fi
 elif [[ $PROFILE == full* ]]; then
   PROFILE=full
@@ -384,28 +554,43 @@ say "Setup: ${PROFILE} · modules: ${CHOSEN_LIST:-none (Patch core)} · default 
 # it in bin/; a checkout of a release tag fetches the kit's binary; any
 # other checkout (work in progress) is compiled here.
 PREBUILT=""
+REMOTE_PREBUILT=""
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 release_checkout() {
   if ! git rev-parse --git-dir >/dev/null 2>&1; then return 0; fi
   [[ $(git describe --exact-match --tags HEAD 2>/dev/null) == "v$VERSION" ]] && git diff --quiet HEAD 2>/dev/null
 }
+# fetch_prebuilt [repo]: this version's ready-made binaries for this system
+# (the Omarchy or the generic kit), from the release.
 fetch_prebuilt() {
-  local kit="patch-$VERSION-linux-$ARCH.tar.gz"
-  local url="https://github.com/$REPO/releases/download/v$VERSION"
-  say "Fetching the ready-made Patch $VERSION for $ARCH"
+  local repo=${1:-$REPO} os=linux
+  [[ $WANT_FLAVOR == generic ]] && os=linux-generic
+  local kit="patch-$VERSION-$os-$ARCH.tar.gz"
+  local url="https://github.com/$repo/releases/download/v$VERSION"
+  say "Fetching the ready-made Patch $VERSION for $ARCH ($WANT_FLAVOR)"
   if ! { curl -fsSL -o "$TMP/$kit" "$url/$kit" && curl -fsSL -o "$TMP/$kit.sha256" "$url/$kit.sha256"; } 2>/dev/null; then
     # A private repository: through the GitHub CLI when it's signed in.
     command -v gh >/dev/null && gh auth status >/dev/null 2>&1 \
-      && gh release download "v$VERSION" -R "$REPO" -D "$TMP" -p "$kit" -p "$kit.sha256" --clobber >/dev/null 2>&1 \
+      && gh release download "v$VERSION" -R "$repo" -D "$TMP" -p "$kit" -p "$kit.sha256" --clobber >/dev/null 2>&1 \
       || return 1
   fi
   (cd "$TMP" && sha256sum -c --quiet "$kit.sha256") || { echo "The download doesn't match its checksum" >&2; return 1; }
   tar -xzf "$TMP/$kit" -C "$TMP" "patch-$VERSION/bin/omarchy-patch" && PREBUILT="$TMP/patch-$VERSION/bin/omarchy-patch"
+  tar -xzf "$TMP/$kit" -C "$TMP" "patch-$VERSION/bin/patch-remote" 2>/dev/null \
+    && REMOTE_PREBUILT="$TMP/patch-$VERSION/bin/patch-remote"
+  return 0
 }
 if [[ $BUILD_HERE == 0 ]]; then
-  if [[ -x bin/omarchy-patch ]]; then
+  if [[ -x bin/omarchy-patch && $KIT_FLAVOR == "$WANT_FLAVOR" ]]; then
     PREBUILT=bin/omarchy-patch
+  elif [[ -x bin/omarchy-patch ]]; then
+    # The other system's kit (the Omarchy kit on Ubuntu, say): this
+    # version's kit for this system, from the public releases.
+    fetch_prebuilt novuon/patch-releases || {
+      echo "No $WANT_FLAVOR build of Patch $VERSION to fetch: trying this kit's own" >&2
+      PREBUILT=bin/omarchy-patch
+    }
   elif release_checkout; then
     fetch_prebuilt || echo "No ready-made build for $ARCH: compiling Patch here instead (a few minutes)" >&2
   fi
@@ -415,12 +600,50 @@ fi
 # analysis), Rubber Band (keylock), SQLite (the library), fontconfig,
 # notifications, real-time scheduling for the audio thread (the realtime
 # group). To compile: Rust, pkg-config, a C compiler.
-RUNTIME=(pipewire libpulse wireplumber ffmpeg rubberband sqlite fontconfig libnotify xdg-user-dirs realtime-privileges uv python)
-BUILD=(rust pkgconf gcc)
-OPTIONAL=(wl-clipboard)
+RUNTIME=($(packages runtime))
+BUILD=($(packages build))
+OPTIONAL=($(packages optional))
+# installed <package>: whether this system has it (by name, or for rpm
+# systems by what a package provides: openSUSE's ffmpeg is ffmpeg-7).
+installed() {
+  case $PM in
+    pacman) pacman -Qq "$1" >/dev/null 2>&1 ;;
+    apt-get) [[ $(dpkg-query -W -f '${Status}' "$1" 2>/dev/null) == "install ok installed" ]] ;;
+    dnf|zypper) rpm -q --whatprovides "$1" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+# Each of these at once, else one by one: a name this release of the
+# distribution lacks (uv on older ones) must not stop the rest.
+pm_install() {
+  local cmd
+  case $PM in
+    apt-get) cmd=(sudo apt-get install -y) ;;
+    dnf) cmd=(sudo dnf install -y) ;;
+    zypper) cmd=(sudo zypper --non-interactive install --no-recommends) ;;
+  esac
+  "${cmd[@]}" "$@" && return 0
+  local p failed=()
+  for p in "$@"; do "${cmd[@]}" "$p" >/dev/null 2>&1 || failed+=("$p"); done
+  ((${#failed[@]} == 0)) || echo "Not installed (not in this distribution's repositories?): ${failed[*]}" >&2
+}
 install_packages() {
   [[ $DEPS == 1 ]] || return 0
-  if command -v pacman >/dev/null; then
+  if [[ $PM == apt-get || $PM == dnf || $PM == zypper ]]; then
+    missing=()
+    for p in "$@"; do
+      installed "$p" || missing+=("$p")
+    done
+    if command -v cargo >/dev/null; then
+      missing=("${missing[@]/rust}")
+    fi
+    missing=($(printf '%s\n' "${missing[@]}" | sed '/^$/d'))
+    if ((${#missing[@]})); then
+      say "Installing packages: ${missing[*]}"
+      [[ $PM == apt-get ]] && { sudo apt-get update -qq || true; }
+      pm_install "${missing[@]}"
+    fi
+  elif [[ $PM == pacman ]]; then
     missing=()
     for p in "$@"; do
       pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p")
@@ -435,10 +658,20 @@ install_packages() {
       sudo pacman -S --needed --noconfirm "${missing[@]}"
     fi
   else
-    echo "No pacman: install these yourself if missing: $*" >&2
+    echo "No pacman, apt, dnf or zypper: install these yourself if missing: $*" >&2
   fi
 }
+# Patch is a PipeWire application: on a system still running PulseAudio
+# itself, switching the sound server is the user's step, not ours.
+if pgrep -u "$(id -u)" -x pulseaudio >/dev/null; then
+  echo "This system's sound server is PulseAudio; Patch needs PipeWire (the default on every current distribution)." >&2
+  echo "Switch to PipeWire first (your distribution's guide: pipewire-pulse), log in again, then run ./install.sh again." >&2
+  exit 1
+fi
 install_packages "${RUNTIME[@]}" "${OPTIONAL[@]}"
+if [[ $PM == dnf && $(fedora_ffmpeg) == ffmpeg-free ]]; then
+  echo "Note: Fedora's ffmpeg-free plays MP3, FLAC, Opus, Vorbis and WAV, not AAC/M4A. For every format: enable RPM Fusion, then sudo dnf swap ffmpeg-free ffmpeg --allowerasing" >&2
+fi
 # The ready-made binary has to run against this system's libraries.
 if [[ -n $PREBUILT ]] && ! "$PREBUILT" --version >/dev/null 2>&1; then
   echo "The ready-made build doesn't run on this system: compiling Patch here instead" >&2
@@ -456,6 +689,22 @@ fi
 # PipeWire uses the group's limits instead: no CPU limit, nothing killed.
 # integration/test-rt-clients.py checks it.
 RELOGIN=0
+# Other distributions have no realtime-privileges: the same group and the
+# same limits it sets (real-time priority, and locked memory for the
+# decks' audio), from the next login.
+LIMITS_DIR=${PATCH_LIMITS_DIR:-/etc/security}
+LIMITS=$LIMITS_DIR/limits.d/95-patch-realtime.conf
+if ((DEPS)) && [[ $PM != pacman ]] && [[ ! -f $LIMITS ]] \
+   && ! grep -qs '^@realtime' "$LIMITS_DIR/limits.conf" "$LIMITS_DIR"/limits.d/*.conf; then
+  say "Setting up real-time audio (the realtime group)"
+  if { getent group realtime >/dev/null || sudo groupadd -r realtime; } \
+     && printf '%s\n' "# Patch: real-time audio for the realtime group (as Arch's realtime-privileges)" \
+          "@realtime - rtprio 98" "@realtime - memlock unlimited" | sudo tee "$LIMITS" >/dev/null; then
+    :
+  else
+    echo "Could not set up the realtime group: the audio thread runs without real-time priority" >&2
+  fi
+fi
 if getent group realtime >/dev/null && ! id -nG "$USER" | tr ' ' '\n' | grep -qx realtime; then
   say "Adding $USER to the realtime group (real-time audio)"
   sudo usermod -aG realtime "$USER" || echo "Could not add you to 'realtime': sudo usermod -aG realtime $USER" >&2
@@ -486,13 +735,18 @@ fi
 # 3 · Compile, when there's no ready-made build.
 if [[ -z $PREBUILT && ! -f Cargo.toml ]]; then
   echo "This kit holds only the compiled Patch, and it can't run here (or --build was given)." >&2
+  if [[ $WANT_FLAVOR == generic ]]; then
+    echo "Patch needs Ubuntu 24.04, Debian 13, Fedora 40 or newer (glibc 2.39 and PipeWire 1.0 at least)." >&2
+  fi
   echo "Install from the source instead: https://github.com/$REPO" >&2
   exit 1
 fi
 if [[ -z $PREBUILT ]]; then
   command -v cargo >/dev/null || { echo "cargo not found: install rust (or rustup) first" >&2; exit 1; }
   say "Compiling Patch (release; a few minutes the first time)…"
-  cargo build --release --locked
+  features=()
+  [[ $WANT_FLAVOR == generic ]] && features=(--features generic)
+  cargo build --release --locked -p patch -p patch-remote "${features[@]}"
   PREBUILT=target/release/omarchy-patch
 fi
 
@@ -500,6 +754,8 @@ fi
 # found on PATH).
 say "Installing into $PREFIX"
 install -Dm755 "$PREBUILT" "$BIN/omarchy-patch"
+# Outside Omarchy the command has its plain name too.
+((OMARCHY)) || ln -sfn omarchy-patch "$BIN/patch-audio"
 # Installed over a running Patch: the engine hands over to this build now,
 # without a gap (otherwise the old one plays on until the next login).
 # Then the librarian stops: the new engine starts the new one on its next
@@ -542,6 +798,9 @@ mkdir -p "$APPS"
 install -m644 integration/desktop/*.desktop "$APPS/"
 # The app icon: the Module on an Ink tile (docs/patch-style.md).
 install -Dm644 integration/desktop/omarchy-patch.svg "$PREFIX/share/icons/hicolor/scalable/apps/omarchy-patch.svg"
+# The tray's alert icons (outside Omarchy: a take, a broadcast, a skip).
+install -m644 integration/desktop/omarchy-patch-red.svg integration/desktop/omarchy-patch-amber.svg \
+  "$PREFIX/share/icons/hicolor/scalable/apps/"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" >/dev/null 2>&1 || true
 case ":$PATH:" in
   *":$BIN:"*) ;;
@@ -560,7 +819,8 @@ mkdir -p "$SHARE/themes"
 # another format (an older install's PNG, a lossless WebP) goes, so
 # Omarchy's picker lists it once. 2026-11-13: 12–20 showed twice, a 4K and
 # a 1672×941 copy. Wallpapers of other names are the user's and stay.
-# Without the Wallpapers module a theme keeps its first wallpaper only.
+# Without the Wallpapers module a theme keeps four: Stylus (01) and the
+# three newest (18–20); keep in step with KEEP in scripts/build-modules.py.
 install_theme() {
   local from=$1 to=$2 f name stem old
   mkdir -p "$to/backgrounds"
@@ -570,7 +830,7 @@ install_theme() {
   done
   for f in "$from"/backgrounds/*; do
     name=${f##*/}
-    has wallpapers || [[ $name == 01-* ]] || continue
+    has wallpapers || [[ $name =~ ^(01|18|19|20)- ]] || continue
     [[ -d $f ]] && { cp -rT "$f" "$to/backgrounds/$name"; continue; }
     stem=${name%.*}
     for old in "$to/backgrounds/$stem".*; do
@@ -624,6 +884,14 @@ fi
 # Auto Mix brings its stem separator: refreshed when it is here, else
 # downloaded with Auto Mix once its key is active (later, when
 # the key comes, Patch adds it by itself).
+# The stem separator prepares its runtime with uv: where the distribution
+# has no uv package (Debian, Ubuntu), uv's own installer puts it in
+# ~/.local/bin.
+if has ai_dj && ((STEMS)) && ((DEPS)) && ! command -v uv >/dev/null && [[ ! -x $HOME/.local/bin/uv ]]; then
+  say "Installing uv (the stem separator's Python runtime)"
+  curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >/dev/null \
+    || echo "uv didn't install: the stem separator needs it (https://docs.astral.sh/uv/)" >&2
+fi
 if has ai_dj && ((STEMS)); then
   if [[ -e $STEMS_FILE ]]; then
     say "Refreshing the stem separator"
@@ -641,9 +909,10 @@ fi
 # phone's browser, over Tailscale only (https://<this machine>.ts.net:8124,
 # for your own Tailscale account). It runs once this machine is on
 # Tailscale; without it the remote is installed but stays off.
-if has dj && ((REMOTE)) && [[ -x bin/patch-remote || -x target/release/patch-remote ]]; then
+if has dj && ((REMOTE)) && [[ -x $REMOTE_PREBUILT || -x bin/patch-remote || -x target/release/patch-remote ]]; then
   say "Installing the phone remote"
-  remote_bin=bin/patch-remote
+  remote_bin=${REMOTE_PREBUILT:-bin/patch-remote}
+  [[ -x $remote_bin ]] || remote_bin=bin/patch-remote
   [[ -x $remote_bin ]] || remote_bin=target/release/patch-remote
   install -Dm755 "$remote_bin" "$BIN/patch-remote"
   install -Dm755 remote/patch-remote-launch "$SHARE/patch-remote-launch"

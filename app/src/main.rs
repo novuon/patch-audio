@@ -27,6 +27,12 @@ mod media_cli;
 mod modules_cli;
 mod plugins_cli;
 mod network_cli;
+#[cfg(feature = "generic")]
+mod desk;
+#[cfg(feature = "generic")]
+mod mpris;
+#[cfg(feature = "generic")]
+mod tray;
 
 const USAGE: &str = "\
 omarchy-patch — Patch, the Omarchy audio environment
@@ -413,6 +419,11 @@ fn main() -> anyhow::Result<()> {
         // Performance: Patch against the native audio layer, averaged.
         ["perf", rest @ ..] => return perf_cli::run(rest, send),
         // Patch in the Omarchy bar's audio dropdown.
+        // Outside Omarchy (the generic kit) the bar's menu is the tray.
+        #[cfg(feature = "generic")]
+        ["bar", "install"] if !tray::omarchy_bar() => return tray::install(),
+        #[cfg(feature = "generic")]
+        ["bar", "uninstall"] if !tray::omarchy_bar() => return tray::uninstall(),
         ["bar", "install"] => return bar::install(),
         // Never use the stock output helper here: it moves Patch's players
         // straight to a device, bypassing the mixer and its listening volume.
@@ -451,6 +462,14 @@ fn main() -> anyhow::Result<()> {
         ["health"] => return bar::health_status(),
         // The actions on the dropdown's rows: pause or end a set, stop a take.
         ["bar", "do", words @ ..] => return bar::act_on(words),
+        // The bar's Patch menu as a tray icon, outside Omarchy (generic kit).
+        #[cfg(feature = "generic")]
+        ["tray"] => return tray::run(),
+        // A layout in one window, on a desktop that doesn't tile (docs/desk.md).
+        #[cfg(feature = "generic")]
+        ["desk"] => return desk::open(patch_core::setup::load().layout.id()),
+        #[cfg(feature = "generic")]
+        ["desk", layout] => return desk::open(layout),
         ["bar", "status"] => {
             println!("{}", bar::status(send(Request::Status)));
             return Ok(());
@@ -806,6 +825,13 @@ fn main() -> anyhow::Result<()> {
     // changes nothing).
     if !matches!(launch, Launch::Headless) {
         modules_cli::spawn_detached(&["licence", "refresh-auto"]);
+    }
+    // Where nothing tiles Patch's windows, a layout opens in the desk.
+    #[cfg(feature = "generic")]
+    if let Launch::Layout(id) = &launch
+        && desk::wanted()
+    {
+        return desk::open(id);
     }
     patch_host::run::<AudioApp>(launch)
 }

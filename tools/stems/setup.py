@@ -18,12 +18,15 @@ try:
  if not a.reuse_runtime and shutil.disk_usage(data).free<minimum:raise RuntimeError('Insufficient free space for the optional separator runtime')
  runtime=a.reuse_runtime.resolve() if a.reuse_runtime else data/'runtime'
  if not a.reuse_runtime:
-  if not shutil.which('uv'):raise RuntimeError('Install uv to prepare the optional isolated runtime')
-  if not (runtime/'bin/python').exists():run(['uv','venv','--python','3.11',runtime])
+  # uv from the distribution, else uv's own installer's ~/.local/bin (Debian,
+  # Ubuntu: install.sh puts it there; a service's PATH may not have it).
+  uv=shutil.which('uv') or next((str(c) for c in [pathlib.Path.home()/'.local/bin/uv'] if c.exists()),None)
+  if not uv:raise RuntimeError('Install uv to prepare the optional isolated runtime')
+  if not (runtime/'bin/python').exists():run([uv,'venv','--python','3.11',runtime])
   index='https://download.pytorch.org/whl/cu128' if device=='cuda' else 'https://download.pytorch.org/whl/cpu'
-  run(['uv','pip','install','--python',runtime/'bin/python','--index-url',index,'torch==2.10.0','torchaudio==2.10.0'])
+  run([uv,'pip','install','--python',runtime/'bin/python','--index-url',index,'torch==2.10.0','torchaudio==2.10.0'])
   update('preparing',50)
-  run(['uv','pip','install','--python',runtime/'bin/python','demucs==4.1.0','numpy==2.3.5','soundfile==0.13.1'])
+  run([uv,'pip','install','--python',runtime/'bin/python','demucs==4.1.0','numpy==2.3.5','soundfile==0.13.1'])
  weight=data/'955717e8-8726e21a.th';digest='8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4'
  if not weight.exists() or hashlib.sha256(weight.read_bytes()).hexdigest()!=digest:
   temporary=weight.with_suffix('.download');urllib.request.urlretrieve('https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th',temporary)

@@ -72,8 +72,13 @@ for t in patch-light patch-dark; do
 done
 
 say "Removing the program and its desktop entries"
+[[ -L $PREFIX/bin/patch-audio ]] && rm -f "$PREFIX/bin/patch-audio"
 rm -f "$BIN" "$APPS"/omarchy-patch.desktop "$APPS"/omarchy-patch-*.desktop  # the controller and the layout apps
-rm -f "$PREFIX/share/icons/hicolor/scalable/apps/omarchy-patch.svg"
+rm -f "$PREFIX/share/icons/hicolor/scalable/apps/omarchy-patch.svg" \
+      "$PREFIX/share/icons/hicolor/scalable/apps/omarchy-patch-red.svg" \
+      "$PREFIX/share/icons/hicolor/scalable/apps/omarchy-patch-amber.svg"
+# The tray (outside Omarchy): no longer started with the session.
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/omarchy-patch-tray.desktop"
 rm -rf "$PREFIX/share/omarchy-patch/themes"  # only the themes: your library lives beside them
 # What `omarchy-patch modules` downloaded and kept track of (the stem
 # separator stays with your library; --purge takes it).

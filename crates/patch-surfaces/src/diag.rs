@@ -117,7 +117,13 @@ pub fn collect(i: &Inputs) -> Vec<Row> {
         f(&st["load_max"]) > 0.5,
     ));
     let rt = st["realtime"].as_bool().unwrap_or(false);
-    out.push(warn("scheduling", if rt { st["sched"].as_str().unwrap_or("real-time").to_string() } else { "not real-time: install realtime-privileges, join the realtime group (usermod -aG realtime), log in again".into() }, !rt));
+    // Arch has realtime-privileges; elsewhere install.sh sets up the same group.
+    let fix = if std::path::Path::new("/usr/bin/pacman").exists() {
+        "not real-time: install realtime-privileges, join the realtime group (usermod -aG realtime), log in again"
+    } else {
+        "not real-time: run Patch's installer again (it sets up the realtime group), log in again"
+    };
+    out.push(warn("scheduling", if rt { st["sched"].as_str().unwrap_or("real-time").to_string() } else { fix.into() }, !rt));
     out.push(warn(
         "ring drops",
         format!("{}", st["dropped"].as_u64().unwrap_or(0)),

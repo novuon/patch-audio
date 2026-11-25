@@ -9,7 +9,7 @@ import struct
 import tarfile
 
 RUNTIME_FILES = {
-    'VERSION', 'LICENSE', 'NOTICE.md', 'README.txt', 'install.sh', 'install-key.sh', 'uninstall.sh',
+    'VERSION', 'FLAVOR', 'LICENSE', 'NOTICE.md', 'README.txt', 'install.sh', 'install-key.sh', 'uninstall.sh',
     'crates/patch-core/modules.json',
     'THIRD_PARTY_LICENSES.html', 'THIRD_PARTY_LICENSES-CUSTOM.txt',
     'bin/omarchy-patch', 'bin/patch-remote',

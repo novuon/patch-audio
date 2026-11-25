@@ -53,6 +53,13 @@ fn shell_json() -> PathBuf {
     config().join("omarchy/shell.json")
 }
 
+/// Whether this desktop has the Omarchy shell's bar (its settings file):
+/// the generic kit's tray stands in for it elsewhere.
+#[cfg(feature = "generic")]
+pub fn has_shell() -> bool {
+    shell_json().exists()
+}
+
 fn state_file() -> PathBuf {
     config().join("omarchy-patch/bar.json")
 }

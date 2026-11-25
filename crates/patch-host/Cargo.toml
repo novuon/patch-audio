@@ -7,6 +7,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The generic kit: whether libEGL loads (the desk needs it).
+libc = { workspace = true, optional = true }
 serde_json = "1"
 patch-core.workspace = true
 patch-ui.workspace = true
@@ -17,6 +19,10 @@ tikv-jemalloc-sys = { version = "0.6", optional = true, features = ["stats", "un
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-sys"]
+# The generic Linux kit (scripts/build-generic.sh): Units on desktops other
+# than Omarchy. X11 sessions (Cinnamon, MATE, Xfce) besides Wayland. Off in
+# the Omarchy build, which stays Wayland-only.
+generic = ["slint/backend-winit-x11", "dep:libc"]
 
 [lints]
 workspace = true
