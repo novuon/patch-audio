@@ -96,8 +96,14 @@ if [[ -z $PM ]]; then
     if command -v "$p" >/dev/null; then PM=$p; break; fi
   done
 fi
+# Omarchy: installed as a package in /usr/share/omarchy (Omarchy 4), or
+# cloned into ~/.local/share/omarchy (before). 2026-11-25 only the clone
+# counted: Omarchy 4 got the generic kit, without the Omarchy theme menu
+# entries. PATCH_INSTALL_OMARCHY_DIR: the tests, on a machine with Omarchy.
 OMARCHY=0
-[[ -d ${XDG_DATA_HOME:-$HOME/.local/share}/omarchy ]] && OMARCHY=1
+for d in "${PATCH_INSTALL_OMARCHY_DIR-/usr/share/omarchy}" "${XDG_DATA_HOME:-$HOME/.local/share}/omarchy"; do
+  [[ -n $d && -d $d ]] && OMARCHY=1
+done
 # The kit made for this system: Omarchy's, or the generic one (built on
 # Ubuntu 24.04 for every distribution at least that new).
 WANT_FLAVOR=generic
@@ -955,6 +961,12 @@ if [[ -n $REOPEN ]]; then
   setsid -f "$BIN/omarchy-patch" $REOPEN </dev/null >/dev/null 2>&1 || true
 fi
 say "Done"
+# Omarchy's wallpaper picker lists only the theme in use: Patch's
+# wallpapers show once a Patch theme is chosen. The installer leaves the
+# look as it is (the user, 2026-11-25), and says where they are.
+if has themes && ((OMARCHY)) && [[ $theme_name != patch-* ]]; then
+  echo "  Patch Dark and Patch Light are in Omarchy's theme menu (Super+Shift+Ctrl+Space): choose one for its wallpapers."
+fi
 "$BIN/omarchy-patch" welcome
 # The last step, last on screen (after the guide, which would push it out
 # of sight).

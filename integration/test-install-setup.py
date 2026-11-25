@@ -155,6 +155,8 @@ class Box:
             "TERM": "dumb",
             "LANG": "C.UTF-8",
             "XDG_RUNTIME_DIR": str(self.root),
+            # This machine may run Omarchy: only the box's own home says so.
+            "PATCH_INSTALL_OMARCHY_DIR": "",
             **self.extra,
         }
 

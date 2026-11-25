@@ -23,8 +23,12 @@ die() { printf '\033[1;31m» %s\033[0m\n' "$*" >&2; exit 1; }
 command -v curl >/dev/null || die "curl is needed"
 command -v python3 >/dev/null || die "python3 is needed (sudo apt install python3, or your distribution's package)"
 # Omarchy gets its own kit; every other distribution the generic one.
+# Omarchy 4 is a package in /usr/share/omarchy, earlier ones a clone in
+# ~/.local/share/omarchy.
 os=linux-generic
-[[ -d ${XDG_DATA_HOME:-$HOME/.local/share}/omarchy ]] && os=linux
+for d in /usr/share/omarchy "${XDG_DATA_HOME:-$HOME/.local/share}/omarchy"; do
+  [[ -d $d ]] && os=linux
+done
 [[ $(id -u) != 0 ]] || die "Run this as your own user, not as root (the installer asks for sudo itself)"
 
 api="https://api.github.com/repos/$REPO/releases"
