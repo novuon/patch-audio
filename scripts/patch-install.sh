@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Install Patch on Omarchy in one line (served at https://get.patchaudio.app):
+# Install Patch in one line (served at https://get.patchaudio.app), on
+# Omarchy and on any other Linux with PipeWire (Ubuntu 24.04+, Mint 22,
+# Debian 13, Fedora 40+, openSUSE Tumbleweed, Arch, …):
 #
 #   curl -fsSL https://get.patchaudio.app | bash
 #
-# Downloads the newest Patch release for this computer (x86_64 or aarch64)
-# from GitHub (novuon/patch-releases), checks its SHA-256, unpacks it in a
+# Downloads the newest Patch release for this computer (x86_64 or aarch64;
+# the Omarchy kit on Omarchy, the generic kit anywhere else) from GitHub (novuon/patch-releases), checks its SHA-256, unpacks it in a
 # temporary folder and runs its installer, which asks how you use Patch.
 # Arguments go to the installer: ... | bash -s -- --profile dj
 # PATCH_VERSION=v0.8.0 picks a release instead of the newest.
@@ -16,22 +18,34 @@ say() { printf '\033[1m» %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31m» %s\033[0m\n' "$*" >&2; exit 1; }
 
 command -v curl >/dev/null || die "curl is needed"
-command -v pacman >/dev/null || die "Patch is for Omarchy (Arch Linux)"
+command -v python3 >/dev/null || die "python3 is needed (sudo apt install python3, or your distribution's package)"
+# Omarchy gets its own kit; every other distribution the generic one.
+os=linux-generic
+[[ -d ${XDG_DATA_HOME:-$HOME/.local/share}/omarchy ]] && os=linux
 [[ $(id -u) != 0 ]] || die "Run this as your own user, not as root (the installer asks for sudo itself)"
 
 api="https://api.github.com/repos/$REPO/releases"
 if [[ -n ${PATCH_VERSION:-} ]]; then api+="/tags/$PATCH_VERSION"; else api+="/latest"; fi
 release=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api" 2>/dev/null) \
   || die "Patch isn't released yet: https://patchaudio.app tells you when it is"
-url=$(python3 -c '
+pick='
 import json, sys
-arch = sys.argv[1]
+arch, os = sys.argv[1], sys.argv[2]
 for a in json.load(sys.stdin).get("assets", []):
     n = a["name"]
-    if n.endswith(f"-linux-{arch}.tar.gz"):
+    if n.endswith(f"-{os}-{arch}.tar.gz"):
         print(a["browser_download_url"])
         break
-' "$ARCH" <<<"$release")
+'
+url=$(python3 -c "$pick" "$ARCH" "$os" <<<"$release")
+if [[ -z $url && $os == linux-generic ]] && command -v pacman >/dev/null; then
+  # An older release without a generic kit: Arch runs the Omarchy one.
+  os=linux
+  url=$(python3 -c "$pick" "$ARCH" "$os" <<<"$release")
+fi
+if [[ -z $url && $os == linux-generic ]]; then
+  die "This release has no build for your distribution yet ($ARCH): https://patchaudio.app tells you when it has"
+fi
 [[ -n $url ]] || die "This release has no build for $ARCH"
 kit=${url##*/}
 

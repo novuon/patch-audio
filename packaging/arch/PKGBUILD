@@ -9,7 +9,7 @@ url="https://github.com/novuon/Patch"
 # and Slint (GPL-3.0 option): as built here it is distributed under GPL-3.0.
 # See NOTICE.md.
 license=('MIT' 'GPL-3.0-only')
-depends=('pipewire' 'libpulse' 'wireplumber' 'ffmpeg' 'rubberband' 'sqlite' 'fontconfig' 'libnotify' 'xdg-user-dirs' 'rtkit' 'realtime-privileges' 'uv' 'python')
+depends=('pipewire' 'libpulse' 'wireplumber' 'ffmpeg' 'rubberband' 'sqlite' 'fontconfig' 'libnotify' 'xdg-user-dirs' 'realtime-privileges' 'uv' 'python')
 makedepends=('git' 'rust' 'pkgconf' 'gcc')
 optdepends=('hyprland: tiled Unit windows and layouts (Omarchy)'
             'xdg-desktop-portal: the desktop'"'"'s folder chooser in the Library (any backend)'

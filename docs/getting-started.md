@@ -34,6 +34,14 @@ another place.
 `./uninstall.sh` removes it again (your library and settings stay;
 `--purge` removes those too).
 
+**Then log out and back in once** (or restart). The installer adds you
+to the `realtime` group, and Linux applies a new group only at login.
+Patch plays right away, but its engine runs without real-time until then,
+like the rest of the system's audio, and Diagnostics shows "not
+real-time". After that one login it is real-time for good (see
+[performance.md](performance.md#real-time)). The installer's last lines
+say so when it is needed.
+
 As an Arch package instead: `packaging/arch/PKGBUILD` (`makepkg -si` in
 that folder), then `systemctl --user enable --now omarchy-patch`.
 
@@ -46,7 +54,8 @@ opens by itself at login: only the audio service starts.
 The Patch service is part of PipeWire, like WirePlumber: it starts when
 PipeWire starts (at login), headless and minimal (no windows, no DJ
 Booth devices until a deck needs them) and restarts with PipeWire.
-Real-time needs rtkit or the realtime group (docs/performance.md).
+Real-time comes from the realtime group, from your first login after
+installing (docs/performance.md).
 After an update, the next start of Patch hands the running engine over
 to the new version without a gap (or run `omarchy-patch engine upgrade`).
 

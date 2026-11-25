@@ -413,9 +413,9 @@ fi
 
 # 2 · Packages. Runtime: PipeWire and its tools, FFmpeg (decoding and
 # analysis), Rubber Band (keylock), SQLite (the library), fontconfig,
-# notifications, real-time scheduling for the audio thread (rtkit and
-# the realtime group). To compile: Rust, pkg-config, a C compiler.
-RUNTIME=(pipewire libpulse wireplumber ffmpeg rubberband sqlite fontconfig libnotify xdg-user-dirs rtkit realtime-privileges uv python)
+# notifications, real-time scheduling for the audio thread (the realtime
+# group). To compile: Rust, pkg-config, a C compiler.
+RUNTIME=(pipewire libpulse wireplumber ffmpeg rubberband sqlite fontconfig libnotify xdg-user-dirs realtime-privileges uv python)
 BUILD=(rust pkgconf gcc)
 OPTIONAL=(wl-clipboard)
 install_packages() {
@@ -447,11 +447,25 @@ fi
 [[ -z $PREBUILT && -f Cargo.toml ]] && install_packages "${BUILD[@]}"
 # Real time: without it the engine's audio thread can be pre-empted and
 # the sound drops out under load. The realtime group's limits apply from
-# the next login.
+# the next login; until then the engine runs without real-time, as the
+# rest of PipeWire does.
+# Never rtkit: installed, it makes every PipeWire app's audio thread
+# real-time with rtkit's 200 ms CPU limit (soft = hard), and the kernel
+# SIGKILLs an app whose audio thread runs 200 ms without blocking (cliamp
+# died a second after it started, 2026-11-25). With the realtime group
+# PipeWire uses the group's limits instead: no CPU limit, nothing killed.
+# integration/test-rt-clients.py checks it.
 RELOGIN=0
 if getent group realtime >/dev/null && ! id -nG "$USER" | tr ' ' '\n' | grep -qx realtime; then
   say "Adding $USER to the realtime group (real-time audio)"
-  if sudo usermod -aG realtime "$USER"; then RELOGIN=1; else echo "Could not add you to 'realtime': sudo usermod -aG realtime $USER" >&2; fi
+  sudo usermod -aG realtime "$USER" || echo "Could not add you to 'realtime': sudo usermod -aG realtime $USER" >&2
+fi
+# In the group, but this session started before: real-time (and the decks'
+# locked memory) only from the next login. Checked on every run, so running
+# the installer again before logging out still says so.
+if id -nG "$USER" 2>/dev/null | tr ' ' '\n' | grep -qx realtime \
+   && ! id -nG | tr ' ' '\n' | grep -qx realtime; then
+  RELOGIN=1
 fi
 
 # Raw HID: a controller speaking a vendor protocol has no evdev node in the
@@ -657,9 +671,6 @@ print(s["DNSName"].rstrip("."), d["User"][str(s["UserID"])]["LoginName"])' 2>/de
   fi
 fi
 
-if [[ $RELOGIN == 1 ]]; then
-  say "Log out and in once: real-time audio starts with your next session"
-fi
 if [[ -n $REOPEN ]]; then
   say "Reopening Patch's windows ($REOPEN)"
   # shellcheck disable=SC2086 # the surfaces are separate words
@@ -667,4 +678,15 @@ if [[ -n $REOPEN ]]; then
 fi
 say "Done"
 "$BIN/omarchy-patch" welcome
+# The last step, last on screen (after the guide, which would push it out
+# of sight).
+if [[ $RELOGIN == 1 ]]; then
+  printf '\n'
+  say "One step left: log out and back in (or restart)"
+  cat <<'TXT'
+  Patch works now. Real-time audio, which keeps the sound steady when the
+  computer is busy, starts with your next login: until then Patch runs as
+  the rest of your system's audio does. Once is enough.
+TXT
+fi
 true

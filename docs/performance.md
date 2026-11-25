@@ -57,16 +57,37 @@ both sides real-time through rtkit):
 ## Real-time
 
 The engine asks for real-time scheduling itself (PipeWire's rt module, in
-its own context). It needs one of these:
+its own context). It comes from the **realtime group**
+(`realtime-privileges` on Arch; `install.sh` sets up the same group and
+limits elsewhere), from the first login after installing: real-time
+priority 83 (the decks 70), locked memory, and no real-time CPU limit.
+So **log out and back in once after installing** (the installer ends by
+saying so, and the install guides list it as a step). Until then the
+engine runs without real-time, as the rest of PipeWire does, and
+Diagnostics says "not real-time".
 
-* **rtkit** (`pacman -S rtkit`): works at once, priority up to 20;
-* the **realtime group** (`pacman -S realtime-privileges`, `usermod -aG
-  realtime $USER`, then log in again): higher priority and locked memory.
+What that first session costs: nothing in sound quality or DSP speed
+(the audio is bit-for-bit the same); real-time only decides who waits
+when the CPU is busy, so under heavy load that session can drop out where
+a real-time engine would not. After the login the engine runs exactly as
+it did with rtkit after a login (checked in a fresh Omarchy VM, Patch
+0.8.7 with and without rtkit): FIFO 83, decks FIFO 70, no time limit.
+
+Patch does **not** install rtkit. Installed, rtkit hands every PipeWire
+app real-time for its audio thread with a 200 ms CPU limit (soft = hard),
+and the kernel kills an app whose audio thread runs 200 ms without
+blocking: cliamp died a second after it started, between the install and
+the next login (2026-11-25). With the realtime group in force, PipeWire
+uses the group's limits instead and nothing is killed. If rtkit is there
+anyway (another package, or Patch 0.8.7 and earlier), the engine still
+uses it before the re-login: `real-time RR 20`.
+`integration/test-rt-clients.py` checks that a client with a busy audio
+thread survives, before and after the re-login.
 
 It never goes through the desktop's realtime portal. That path granted a
 real-time CPU limit of 0 µs, and the kernel killed the engine the moment
 its audio thread ran real-time. The Performance window's engine line
-shows `real-time RR 20` when it works.
+shows the policy and priority when it works (`real-time FIFO 83`).
 
 Patch's graph work includes its own idle devices (Deck A/B, the program
 source); 56 µs is 0.26 % of a 21.3 ms cycle.

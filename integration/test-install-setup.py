@@ -33,6 +33,13 @@ STUB = """#!/bin/bash
 echo "$(basename "$0") $*" >> "$STUB_LOG"
 exit {code}
 """
+# The groups: `id -nG <user>` answers the group database (FAKE_DB_GROUPS),
+# `id -nG` this session's groups (FAKE_SESSION_GROUPS); the rest is the real id.
+FAKE_ID = """#!/bin/bash
+if [[ $1 == -nG && -n ${2:-} ]]; then echo "${FAKE_DB_GROUPS:-tester}"; exit 0; fi
+if [[ $1 == -nG ]]; then echo "${FAKE_SESSION_GROUPS:-tester}"; exit 0; fi
+exec /usr/bin/id "$@"
+"""
 FAKE_GUM = r"""#!/usr/bin/env python3
 import os, sys
 args = sys.argv[1:]
@@ -105,6 +112,8 @@ class Box:
         ).items():
             self.write(self.stubs / name.replace("_", "-"), STUB.format(code=code))
         self.write(self.stubs / "gum", FAKE_GUM)
+        self.write(self.stubs / "id", FAKE_ID)
+        self.extra = {}
         self.config = self.home / ".config/omarchy-patch"
         self.config.mkdir(parents=True)
         self.installed = self.home / ".local/bin/omarchy-patch"
@@ -130,6 +139,7 @@ class Box:
             "TERM": "dumb",
             "LANG": "C.UTF-8",
             "XDG_RUNTIME_DIR": str(self.root),
+            **self.extra,
         }
 
     def run(self, *args, tty=False):
@@ -151,6 +161,7 @@ class Box:
         else:
             r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, env=self.env())
             code, text = r.returncode, r.stdout + r.stderr
+            self.stdout = r.stdout
         assert code == 0, f"install.sh exited {code}:\n{text}\n{self.log.read_text()}"
         return self.result()
 
@@ -283,6 +294,28 @@ def main():
          expect=want(new_core, "simple"))
     case("update from 0.7.x Full, Enter through: everything stays", old_setup(OLD), tty=True,
          expect=want(ALL, "simple"))
+
+    # rtkit gives every PipeWire app's audio thread a 200 ms CPU limit and
+    # the kernel kills the app past it (integration/test-rt-clients.py).
+    runtime = next(l for l in (REPO / "install.sh").read_text().splitlines() if l.startswith("RUNTIME=("))
+    ok &= check("No rtkit (it kills other apps' busy audio threads)", "rtkit" not in runtime.split(), runtime)
+
+    # The re-login step: in the realtime group, but this session started
+    # before, so real-time only from the next login. Shown on every run
+    # until then, as the last thing on screen (after the guide).
+    step = "One step left: log out and back in"
+    for name, db, session, shown in (
+        ("just added to the realtime group: the log-out step, last", "tester realtime", "tester", True),
+        ("run again before logging out: the log-out step again", "tester realtime", "tester", True),
+        ("logged in again since: no log-out step", "tester realtime", "tester realtime", False),
+        ("no realtime group: no log-out step", "tester", "tester", False),
+    ):
+        with tempfile.TemporaryDirectory(prefix="patch-install-") as tmp:
+            box = Box(tmp)
+            box.extra.update(FAKE_DB_GROUPS=db, FAKE_SESSION_GROUPS=session)
+            box.run()
+            out = box.stdout.rstrip()
+            ok &= check(name, (step in out) == shown and (not shown or out.endswith("Once is enough.")), out[-600:])
 
     print("install.sh keeps the setup" if ok else "FAILED")
     return 0 if ok else 1
